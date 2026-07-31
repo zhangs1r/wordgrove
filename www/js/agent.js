@@ -162,7 +162,11 @@ const Agent = {
     while (turns < 8) {
       turns++;
       const resp = await API.chat(msgs, { model, tools: this.toolDefs, maxTokens: 600 });
-      const msg = resp.choices[0].message;
+      const choices = resp.choices || [];
+      if (!choices.length || !choices[0].message) {
+        throw new Error('模型返回异常(空响应) [' + model + ']');
+      }
+      const msg = choices[0].message;
       msgs.push(msg);
 
       // token 截断保护（参考 Pi：length 截断时工具参数可能不完整，放弃执行让模型重发）

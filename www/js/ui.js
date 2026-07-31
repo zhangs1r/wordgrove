@@ -270,10 +270,15 @@ const UI = {
     if (!API.configured()) { this.toast('先到设置里填 API Key'); this.switchTab('settings'); return; }
     input.value = '';
     input.style.height = 'auto';
+    await this.sendText(text);
+  },
 
+  async sendText(text, opts = {}) {
     const scene = SCENES.find(s => s.id === this.state.sceneId);
-    this.state.chatHistory.push({ role: 'user', content: text });
-    this.appendMsg('user', text);
+    if (!opts.alreadyInHistory) {
+      this.state.chatHistory.push({ role: 'user', content: text });
+      this.appendMsg('user', text);
+    }
 
     this.state.chatBusy = true;
     const typing = this.appendMsg('assistant', '', { typing: true });
@@ -291,11 +296,35 @@ const UI = {
       }
     } catch (e) {
       typing.remove();
-      this.appendMsg('assistant', '⚠️ ' + (e.message || '出错了'));
+      const label = '⚠️ [' + scene.name + ' / ' + Settings.get('chatModel', 'deepseek-v4-flash') + '] ' + (e.message || '出错了');
+      const div = this.appendMsg('assistant', label);
+      const actions = div.querySelector('.msg-actions');
+      if (actions) {
+        const retryBtn = document.createElement('button');
+        retryBtn.className = 'msg-chip-btn';
+        retryBtn.textContent = '🔄 重试';
+        retryBtn.onclick = () => this.retryLast(scene);
+        actions.appendChild(retryBtn);
+      }
       this.saveChatState();
     }
     this.state.chatBusy = false;
     this.el('reviewPanel').classList.add('hidden');
+  },
+
+  /* 重试：清掉最后一条错误消息，用最后一条用户消息再跑一次 */
+  async retryLast(scene) {
+    if (this.state.chatBusy) return;
+    const last = this.state.chatHistory[this.state.chatHistory.length - 1];
+    if (last && last.role === 'assistant' && typeof last.content === 'string' && last.content.startsWith('⚠️')) {
+      this.state.chatHistory.pop();
+      const area = this.el('chatArea');
+      const lastMsg = area.lastElementChild;
+      if (lastMsg) lastMsg.remove();
+    }
+    const lastUser = [...this.state.chatHistory].reverse().find(m => m.role === 'user');
+    if (!lastUser) return;
+    await this.sendText(lastUser.content, { alreadyInHistory: true });
   },
 
   /* ---------- 复盘 ---------- */

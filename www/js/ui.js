@@ -15,6 +15,7 @@ const UI = {
     _naming: false,
     hintMode: false,
     hintBox: null,
+    genType: 'world',
   },
 
   init() {
@@ -22,6 +23,7 @@ const UI = {
     this.bindTheme();
     this.bindSettings();
     this.bindConv();
+    this.bindTavern();
     this.renderScenes();
     this.renderToday();
     this.renderWords();
@@ -62,6 +64,7 @@ const UI = {
     document.querySelectorAll('.tab-page').forEach(p => p.classList.toggle('active', p.id === 'tab-' + tab));
     if (tab === 'today') this.renderToday();
     if (tab === 'words') this.renderWords();
+    if (tab === 'tavern') this.renderTavern();
     if (tab === 'settings') this.renderProfile();
     if (tab === 'chat') this.loadChatState();
   },
@@ -805,6 +808,151 @@ const UI = {
 
     this.el('exportBtn').addEventListener('click', () => this.exportData());
     this.el('importBtn').addEventListener('click', () => this.el('importFile').click());
+  },
+
+  /* ============ 酒馆（世界卡/角色卡） ============ */
+  listWorlds() { return Settings.get('worldCards', []); },
+  saveWorld(w) { const l = this.listWorlds().filter(x => x.id !== w.id); l.push(w); Settings.set('worldCards', l); },
+  deleteWorld(id) { Settings.set('worldCards', this.listWorlds().filter(x => x.id !== id)); },
+  listChars() { return Settings.get('characterCards', []); },
+  saveChar(c) { const l = this.listChars().filter(x => x.id !== c.id); l.push(c); Settings.set('characterCards', l); },
+  deleteChar(id) { Settings.set('characterCards', this.listChars().filter(x => x.id !== id)); },
+  currentWorldId() { return Settings.get('currentWorldId', ''); },
+  setCurrentWorld(id) { Settings.set('currentWorldId', id); },
+  currentWorld() { return this.listWorlds().find(w => w.id === this.currentWorldId()) || null; },
+  activeChars() { return this.listChars().filter(c => c.active); },
+
+  renderTavern() {
+    const w = this.currentWorld();
+    this.el('tavernWorldName').textContent = w ? w.name : '未选择世界';
+    this.el('tavernWorldDesc').textContent = w ? (w.description || w.setting || '') : '先选择一个世界，或点"AI 生成"创建';
+    const chars = w ? this.listChars().filter(c => !c.worldId || c.worldId === w.id) : this.listChars().filter(c => !c.worldId);
+    this.el('tavernCharHint').textContent = w ? '' : '（先选世界）';
+    const wrap = this.el('tavernCharList');
+    if (!chars.length) { wrap.innerHTML = '<p class="empty-sub" style="text-align:center;padding:14px 0">还没有角色卡</p>'; return; }
+    wrap.innerHTML = chars.map(c => `
+      <div class="tavern-char ${c.active ? 'active' : ''}" data-id="${c.id}">
+        <div class="tavern-char-main">
+          <div class="tavern-char-name">${this.esc(c.name)}</div>
+          <div class="tavern-char-meta">${this.esc((c.persona || '').slice(0, 40))}</div>
+        </div>
+      </div>`).join('');
+    wrap.querySelectorAll('.tavern-char').forEach(el => el.addEventListener('click', () => {
+      const id = el.dataset.id;
+      Settings.set('characterCards', this.listChars().map(c => ({ ...c, active: c.id === id })));
+      this.renderTavern();
+    }));
+  },
+
+  bindTavern() {
+    this.el('tavernWorldListBtn').addEventListener('click', () => this.openTavernModal('world'));
+    this.el('tavernCharListBtn').addEventListener('click', () => this.openTavernModal('char'));
+    this.el('tavernWorldGenBtn').addEventListener('click', () => this.openGenModal('world'));
+    this.el('tavernCharGenBtn').addEventListener('click', () => this.openGenModal('char'));
+    this.el('tavernStartBtn').addEventListener('click', () => this.toast('角色扮演引擎开发中，下个版本上线 🎭'));
+    this.el('tavernClose').addEventListener('click', () => this.el('tavernModal').classList.add('hidden'));
+    this.el('tavernMask').addEventListener('click', () => this.el('tavernModal').classList.add('hidden'));
+    this.el('genClose').addEventListener('click', () => this.el('genModal').classList.add('hidden'));
+    this.el('genMask').addEventListener('click', () => this.el('genModal').classList.add('hidden'));
+    this.el('genSubmitBtn').addEventListener('click', () => this.submitGen());
+  },
+
+  openTavernModal(type) {
+    this.el('tavernModalTitle').textContent = type === 'world' ? '世界卡库' : '角色卡库';
+    const body = this.el('tavernModalBody');
+    if (type === 'world') {
+      const worlds = this.listWorlds();
+      body.innerHTML = (worlds.length ? worlds.map(w => `
+        <div class="conv-item ${w.id === this.currentWorldId() ? 'active' : ''}" data-id="${w.id}">
+          <div class="ci-main">
+            <div class="ci-title">${this.esc(w.name)}</div>
+            <div class="ci-meta">${this.esc((w.description || '').slice(0, 40))}</div>
+          </div>
+          <button class="ci-del" data-del="${w.id}">✕</button>
+        </div>`).join('') : '<p class="empty-sub" style="text-align:center;padding:24px 0">还没有世界卡</p>') +
+        `<button class="btn btn-ghost btn-sm btn-block" style="margin-top:10px" id="tavernAddWorld">＋ 新建世界卡</button>`;
+      body.querySelectorAll('.conv-item').forEach(item => item.addEventListener('click', e => {
+        if (e.target.dataset.del) return;
+        this.setCurrentWorld(item.dataset.id);
+        this.el('tavernModal').classList.add('hidden');
+        this.renderTavern();
+      }));
+      body.querySelectorAll('.ci-del').forEach(b => b.addEventListener('click', e => {
+        e.stopPropagation();
+        this.deleteWorld(e.target.dataset.del);
+        if (e.target.dataset.del === this.currentWorldId()) this.setCurrentWorld('');
+        this.openTavernModal('world');
+        this.renderTavern();
+      }));
+      const addBtn = body.querySelector('#tavernAddWorld');
+      if (addBtn) addBtn.addEventListener('click', () => { this.el('tavernModal').classList.add('hidden'); this.openGenModal('world'); });
+    } else {
+      const worlds = this.listWorlds();
+      const chars = this.listChars();
+      body.innerHTML = (chars.length ? chars.map(c => {
+        const w = worlds.find(x => x.id === c.worldId);
+        return `
+        <div class="conv-item ${c.active ? 'active' : ''}" data-id="${c.id}">
+          <div class="ci-main">
+            <div class="ci-title">${this.esc(c.name)}</div>
+            <div class="ci-meta">${this.esc((w ? w.name : '未绑定世界') + ' · ' + (c.persona || '').slice(0, 26))}</div>
+          </div>
+          <button class="ci-del" data-del="${c.id}">✕</button>
+        </div>`;
+      }).join('') : '<p class="empty-sub" style="text-align:center;padding:24px 0">还没有角色卡</p>') +
+        `<button class="btn btn-ghost btn-sm btn-block" style="margin-top:10px" id="tavernAddChar">＋ 新建角色卡</button>`;
+      body.querySelectorAll('.conv-item').forEach(item => item.addEventListener('click', e => {
+        if (e.target.dataset.del) return;
+        const id = item.dataset.id;
+        const cur = this.currentWorldId();
+        this.saveChar({ ...this.listChars().find(c => c.id === id), worldId: cur || undefined, active: true });
+        this.el('tavernModal').classList.add('hidden');
+        this.renderTavern();
+      }));
+      body.querySelectorAll('.ci-del').forEach(b => b.addEventListener('click', e => {
+        e.stopPropagation();
+        this.deleteChar(e.target.dataset.del);
+        this.openTavernModal('char');
+        this.renderTavern();
+      }));
+      const addBtn = body.querySelector('#tavernAddChar');
+      if (addBtn) addBtn.addEventListener('click', () => { this.el('tavernModal').classList.add('hidden'); this.openGenModal('char'); });
+    }
+    this.el('tavernModal').classList.remove('hidden');
+  },
+
+  openGenModal(type) {
+    this.state.genType = type;
+    this.el('genModalTitle').textContent = type === 'world' ? 'AI 生成世界卡' : 'AI 生成角色卡';
+    this.el('genInput').value = '';
+    this.el('genModal').classList.remove('hidden');
+    this.el('genInput').focus();
+  },
+
+  async submitGen() {
+    const desc = this.el('genInput').value.trim();
+    if (!desc) { this.toast('先描述一下你的想法'); return; }
+    if (!API.configured()) { this.toast('先到设置里填 API Key'); this.switchTab('settings'); return; }
+    this.el('genSubmitBtn').disabled = true;
+    this.el('genSubmitBtn').textContent = '生成中…';
+    try {
+      if (this.state.genType === 'world') {
+        const j = await Agent.generateWorldCard(desc);
+        this.saveWorld({ id: 'w_' + Date.now(), name: j.name || 'World', description: j.description || '', setting: j.setting || '', rules: j.rules || '', tone: j.tone || '', at: Date.now() });
+        this.setCurrentWorld(this.listWorlds()[this.listWorlds().length - 1].id);
+      } else {
+        const w = this.currentWorld();
+        const j = await Agent.generateCharacterCard(desc, w);
+        this.saveChar({ id: 'ch_' + Date.now(), worldId: w ? w.id : '', name: j.name || 'Character', persona: j.persona || '', appearance: j.appearance || '', background: j.background || '', speakingStyle: j.speakingStyle || '', exampleDialogue: j.exampleDialogue || '', active: true, at: Date.now() });
+      }
+      this.el('genModal').classList.add('hidden');
+      this.renderTavern();
+      this.toast('生成成功 🎉');
+    } catch (e) {
+      this.toast('生成失败：' + (e.message || e).slice(0, 60));
+    }
+    this.el('genSubmitBtn').disabled = false;
+    this.el('genSubmitBtn').textContent = '生成';
   },
 
   /* TTS 引擎检测 + 音色列表 */

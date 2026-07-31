@@ -285,6 +285,33 @@ const Agent = {
     return { better: j.better || '', reason: j.reason || '' };
   },
 
+  /* ---------- 酒馆卡生成 ---------- */
+  async generateWorldCard(desc) {
+    const model = Settings.get('buildModel', 'deepseek-v4-flash');
+    const resp = await API.chat([
+      { role: 'system', content: `你是世界卡设计师。根据用户描述生成角色扮演世界的世界卡，返回 JSON：
+{"name":"世界名(英文)","description":"一句话简介(英文)","setting":"详细世界设定(英文,3-5句)","rules":"世界规则(英文,2-3条,换行分隔)","tone":"叙述风格(英文,如 atmospheric、humorous)"}
+要求：英文输出，适合英语学习。只输出 JSON。` },
+      { role: 'user', content: '我的世界设想：' + desc },
+    ], { model, maxTokens: 800 });
+    const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
+    const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
+    return j;
+  },
+  async generateCharacterCard(desc, world) {
+    const model = Settings.get('buildModel', 'deepseek-v4-flash');
+    const worldCtx = world ? world.name + ' - ' + (world.setting || world.description || '') : '无';
+    const resp = await API.chat([
+      { role: 'system', content: `你是角色卡设计师。根据用户描述（和可选的世界设定）生成角色扮演角色卡，返回 JSON：
+{"name":"角色名(英文)","persona":"身份与性格(英文,2-3句)","appearance":"外貌(英文,1-2句)","background":"背景故事(英文,2-3句)","speakingStyle":"说话风格(英文,1-2句)","exampleDialogue":"一句示例台词(英文)"}
+要求：英文输出，适合英语学习。只输出 JSON。` },
+      { role: 'user', content: '世界设定：' + worldCtx + '\n我的角色设想：' + desc },
+    ], { model, maxTokens: 800 });
+    const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
+    const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
+    return j;
+  },
+
   /* ---------- 会话命名：根据对话内容生成中文标题 ---------- */
   async titleForConversation(history) {
     const model = Settings.get('buildModel', 'deepseek-v4-flash');

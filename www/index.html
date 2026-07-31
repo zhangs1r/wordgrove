@@ -85,6 +85,38 @@
     </div>
   </section>
 
+  <!-- ======== 酒馆（角色扮演） ======== -->
+  <section id="tab-tavern" class="tab-page">
+    <div class="page-head">
+      <h2>🎭 酒馆</h2>
+    </div>
+
+    <div class="settings-group">
+      <h3>🌍 世界卡</h3>
+      <div class="tavern-card" id="tavernWorldInfo">
+        <div class="tavern-card-name" id="tavernWorldName">未选择世界</div>
+        <div class="tavern-card-desc" id="tavernWorldDesc"></div>
+        <div class="tavern-card-actions">
+          <button class="btn btn-ghost btn-sm" id="tavernWorldListBtn">世界卡库</button>
+          <button class="btn btn-ghost btn-sm" id="tavernWorldGenBtn">AI 生成</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-group">
+      <h3>🎭 角色卡 <span class="tavern-hint" id="tavernCharHint"></span></h3>
+      <div id="tavernCharList" class="tavern-chars"></div>
+      <div class="tavern-card-actions">
+        <button class="btn btn-ghost btn-sm" id="tavernCharListBtn">角色卡库</button>
+        <button class="btn btn-ghost btn-sm" id="tavernCharGenBtn">AI 生成</button>
+      </div>
+    </div>
+
+    <div class="settings-group">
+      <button class="btn btn-primary btn-block" id="tavernStartBtn">开始角色扮演（引擎开发中）</button>
+    </div>
+  </section>
+
   <!-- ======== 设置 ======== -->
   <section id="tab-settings" class="tab-page">
     <div class="settings-group">
@@ -157,6 +189,31 @@
 
 </main>
 
+<!-- 酒馆卡库 modal -->
+<div id="tavernModal" class="modal hidden">
+  <div class="modal-mask" id="tavernMask"></div>
+  <div class="modal-panel">
+    <div class="modal-head">
+      <span id="tavernModalTitle">卡库</span>
+      <button id="tavernClose" class="icon-btn-sm">✕</button>
+    </div>
+    <div id="tavernModalBody" class="conv-list"></div>
+  </div>
+</div>
+
+<!-- 酒馆 AI 生成 modal -->
+<div id="genModal" class="modal hidden">
+  <div class="modal-mask" id="genMask"></div>
+  <div class="modal-panel">
+    <div class="modal-head">
+      <span id="genModalTitle">AI 生成</span>
+      <button id="genClose" class="icon-btn-sm">✕</button>
+    </div>
+    <textarea id="genInput" class="gen-input" rows="4" placeholder="描述你想要的世界/角色…（可以中文）"></textarea>
+    <button id="genSubmitBtn" class="btn btn-primary btn-block">生成</button>
+  </div>
+</div>
+
 <!-- 会话历史 modal -->
 <div id="convModal" class="modal hidden">
   <div class="modal-mask" id="convMask"></div>
@@ -172,7 +229,8 @@
 <nav class="tab-bar">
   <button class="tab-btn active" data-tab="today"><span class="tab-icon">🌱</span><span>今日</span></button>
   <button class="tab-btn" data-tab="chat"><span class="tab-icon">🗣️</span><span>对话</span></button>
-  <button class="tab-btn" data-tab="words"><span class="tab-icon">📖</span><span>生词本</span></button>
+  <button class="tab-btn" data-tab="tavern"><span class="tab-icon">🎭</span><span>酒馆</span></button>
+  <button class="tab-btn" data-tab="words"><span class="tab-icon">📚</span><span>生词</span></button>
   <button class="tab-btn" data-tab="settings"><span class="tab-icon">⚙️</span><span>设置</span></button>
 </nav>
 

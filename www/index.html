@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<title>EnglishApp</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="app-header">
+  <div class="brand">
+    <div class="brand-mark">🌱</div>
+    <div class="brand-text">
+      <h1 id="appTitle">EnglishApp</h1>
+      <p id="todayGoal" class="brand-sub">今天 12 个词，3 分钟</p>
+    </div>
+  </div>
+  <button id="themeToggle" class="icon-btn" title="切换日夜模式">🌙</button>
+</header>
+
+<main id="main">
+
+  <!-- ======== 今日复习 ======== -->
+  <section id="tab-today" class="tab-page active">
+    <div id="todaySummary" class="today-summary">
+      <div class="progress-ring-wrap"><svg id="progressRing" width="88" height="88" viewBox="0 0 88 88">
+        <circle cx="44" cy="44" r="38" class="ring-bg"/>
+        <circle cx="44" cy="44" r="38" class="ring-fg" id="ringFg"/>
+      </svg><div class="ring-num" id="ringNum">0/0</div></div>
+      <div class="today-text">
+        <p class="today-big" id="todayDue">今天待复习 <b>0</b> 个词</p>
+        <p class="today-small" id="todayTip">复习完再聊一局，效果更好</p>
+      </div>
+    </div>
+    <div id="cardArea"></div>
+    <div id="cardActions" class="card-actions hidden">
+      <button class="btn btn-ghost" data-grade="0">😣 忘了</button>
+      <button class="btn btn-ghost" data-grade="1">🤔 模糊</button>
+      <button class="btn btn-primary" data-grade="2">😎 记得</button>
+    </div>
+    <div id="cardEmpty" class="empty-state hidden">
+      <div class="empty-emoji">🌿</div>
+      <p>今天的词都复习完了</p>
+      <p class="empty-sub">去聊一局，把新词带回来</p>
+      <button class="btn btn-primary" id="goChatBtn">去对话</button>
+    </div>
+  </section>
+
+  <!-- ======== 对话 ======== -->
+  <section id="tab-chat" class="tab-page">
+    <div id="sceneBar" class="scene-bar">
+      <div class="scene-chips" id="sceneChips"></div>
+    </div>
+    <div id="chatArea" class="chat-area">
+      <div id="chatPlaceholder" class="chat-placeholder">
+        <div class="empty-emoji">🗣️</div>
+        <p id="chatPlaceholderText">选一个场景，开始 3 分钟对话</p>
+      </div>
+    </div>
+    <div id="chatInputBar" class="chat-input-bar">
+      <button id="chatReviewBtn" class="btn btn-ghost btn-round" title="复盘这一局">📋</button>
+      <textarea id="chatInput" rows="1" placeholder="输入英文…" enterkeyhint="send"></textarea>
+      <button id="chatSendBtn" class="btn btn-primary btn-round">➤</button>
+    </div>
+    <div id="reviewPanel" class="review-panel hidden"></div>
+  </section>
+
+  <!-- ======== 生词本 ======== -->
+  <section id="tab-words" class="tab-page">
+    <div id="words-toolbar" class="words-toolbar">
+      <input id="wordSearch" type="search" placeholder="搜索词 / 释义">
+      <button id="addWordBtn" class="btn btn-primary">＋ 加词</button>
+    </div>
+    <div id="wordList" class="word-list"></div>
+    <div id="wordEmpty" class="empty-state hidden">
+      <div class="empty-emoji">📖</div>
+      <p>生词本是空的</p>
+      <p class="empty-sub">对话里卡壳的词会自动进来</p>
+    </div>
+  </section>
+
+  <!-- ======== 设置 ======== -->
+  <section id="tab-settings" class="tab-page">
+    <div class="settings-group">
+      <h3>AI 配置</h3>
+      <label class="field">
+        <span>API Key</span>
+        <input id="setApiKey" type="password" placeholder="opencode.ai 的 key">
+      </label>
+      <label class="field">
+        <span>对话模型</span>
+        <select id="setChatModel">
+          <option value="deepseek-v4-flash">deepseek-v4-flash（快）</option>
+          <option value="mimo-v2.5">mimo-v2.5（聪明）</option>
+          <option value="deepseek-v4-pro">deepseek-v4-pro</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>建卡模型</span>
+        <select id="setBuildModel">
+          <option value="mimo-v2.5">mimo-v2.5（推荐）</option>
+          <option value="deepseek-v4-flash">deepseek-v4-flash</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>API 地址</span>
+        <input id="setApiBase" type="text" value="https://opencode.ai/zen/go/v1/chat/completions">
+      </label>
+      <div class="field-btns">
+        <button id="saveAiBtn" class="btn btn-primary">保存</button>
+        <button id="testAiBtn" class="btn btn-ghost">测试连接</button>
+      </div>
+      <div id="testResult" class="test-result"></div>
+    </div>
+    <div class="settings-group">
+      <h3>发音</h3>
+      <label class="field toggle">
+        <span>自动朗读单词</span>
+        <input id="setAutoSpeak" type="checkbox" checked>
+      </label>
+      <label class="field toggle">
+        <span>对话回复朗读</span>
+        <input id="setReadReply" type="checkbox" checked>
+      </label>
+      <label class="field">
+        <span>朗读语速</span>
+        <input id="setRate" type="range" min="0.5" max="1.2" step="0.05" value="0.95">
+      </label>
+    </div>
+    <div class="settings-group">
+      <h3>学习画像</h3>
+      <div id="profileView" class="profile-view">还没开始学习，聊一局就有画像了</div>
+    </div>
+    <div class="settings-group">
+      <h3>数据</h3>
+      <button id="exportBtn" class="btn btn-ghost">导出数据（JSON）</button>
+      <button id="importBtn" class="btn btn-ghost">导入数据</button>
+      <input id="importFile" type="file" accept=".json" class="hidden">
+    </div>
+    <p class="footnote">数据全在本地 · 自用版本 · v0.1</p>
+  </section>
+
+</main>
+
+<nav class="tab-bar">
+  <button class="tab-btn active" data-tab="today"><span class="tab-icon">🌱</span><span>今日</span></button>
+  <button class="tab-btn" data-tab="chat"><span class="tab-icon">🗣️</span><span>对话</span></button>
+  <button class="tab-btn" data-tab="words"><span class="tab-icon">📖</span><span>生词本</span></button>
+  <button class="tab-btn" data-tab="settings"><span class="tab-icon">⚙️</span><span>设置</span></button>
+</nav>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="js/db.js"></script>
+<script src="js/tts.js"></script>
+<script src="js/api.js"></script>
+<script src="js/srs.js"></script>
+<script src="js/agent.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

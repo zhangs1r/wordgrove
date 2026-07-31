@@ -1,0 +1,13 @@
+{
+  "appId": "com.qingran.englishapp",
+  "appName": "EnglishApp",
+  "webDir": "www",
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  },
+  "android": {
+    "adjustMarginsForEdgeToEdge": true
+  }
+}

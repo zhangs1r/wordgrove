@@ -1,0 +1,14 @@
+# dependencies
+node_modules/
+
+# build outputs
+android/.gradle/
+android/build/
+android/app/build/
+android/capacitor-cordova-android-plugins/build/
+android/app/src/main/assets/public/  # sync 生成，不入库
+
+# misc
+*.log
+.DS_Store
+*.apk

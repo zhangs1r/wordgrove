@@ -1,0 +1,58 @@
+# WordGrove · 言木
+
+> 单词如树，在对话的森林里生长。
+> 一款自用的英语学习 App：**单词积累** + **口语练习** + **AI 角色扮演**。
+
+## 这是什么
+
+WordGrove 是一个纯自用的安卓英语学习应用，核心理念：**单词在真实语境中学，学了立刻在对话里用**。
+
+- 🌱 **今日**：间隔重复背单词（SRS 记忆曲线），打卡看成长
+- 🗣️ **对话**：AI 场景口语陪练（咖啡店、面试、组会……），AI 助手帮你接话、纠错、复盘
+- 🎭 **酒馆**：角色扮演世界——世界卡 + 角色卡，每个角色一个子 Agent 独立推理内心活动，导演 Agent 推进剧情，全程全英语，中文求助自动翻译
+- 📖 **生词本**：点单词看详情（音标/词性/释义/例句/收藏来源），AI 一键建卡、一键补全
+- 🔊 **内置离线 TTS**：Piper 神经语音（美音），完全离线，Web Worker 合成不卡 UI，音频缓存读过的句子秒播
+
+## 技术栈
+
+| 部分 | 方案 |
+|------|------|
+| 前端 | 纯 HTML + JS + CSS（PWA 风格单页应用） |
+| 打包 | Capacitor 7 → Android APK |
+| 大脑 | DeepSeek 官方 API（国内直连，思考模式） |
+| 离线 TTS | onnxruntime-web + Piper en_US-kristin（Web Worker） |
+| 存储 | IndexedDB（生词/会话）+ localStorage（设置/卡片） |
+| 图标 | GPT 生图（gpt-image-2），三色设计系统 |
+
+## 设计系统
+
+麻纸手账 × 草木生长三色：米白 `#F1ECE0` / 草木绿 `#117C0D` / 麦秆黄 `#FAC75E`。
+
+## 构建
+
+```bash
+# 前置：JDK 21 + Android SDK + Capacitor 7
+export JAVA_HOME=~/jdk21 ANDROID_HOME=~/android-sdk
+npx cap sync android
+cd android && ./gradlew assembleDebug
+# 输出：android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+## 版本历史
+
+| 版本 | 内容 |
+|------|------|
+| v0.18 | 朗读按钮原地三点动画 + 音频缓存（50MB 上限可选）+ 去 emoji 化（SVG 图标集） |
+| v0.17 | GPT 生图新图标 + 改名 WordGrove·言木 + TTS 合成移 Web Worker（不卡 UI） |
+| v0.16 | 单词详情页 + TTS 管理简化 + 移除 OpenCode（只用 DeepSeek） |
+| v0.15 | 酒馆 RP 多角色对话引擎（子 Agent 推理 + 全英语 + 选项推进） |
+| v0.14 | 品牌升级（WordGrove 命名）+ SVG 图标 |
+| v0.13 | 酒馆卡库（世界卡/角色卡 + AI 生成） |
+| v0.12 | 内置 Piper 离线 TTS 引擎 |
+| v0.11 | 表达建议（口语教练） |
+| v0.10 | 原生 TTS 修复 + 会话管理 |
+| v0.1-0.9 | 生词本/间隔重复/AI 场景对话/一键建卡等基础功能 |
+
+## 隐私
+
+纯本地应用：无账号、无云端同步、无数据上报。对话数据只存在自己手机里（IndexedDB）。

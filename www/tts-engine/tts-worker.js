@@ -1,10 +1,11 @@
 /* tts-worker.js — 内置 Piper 引擎的 Web Worker（classic）
-   把 onnxruntime 推理 + phonemize 放到 worker，主线程 UI 不卡 */
+   onnxruntime 推理 + phonemize 在 worker 跑，UI 不卡
+   支持多音色：n=旁白/默认女声(female), f=女声, m=男声 —— 模型懒加载 */
 importScripts('ort.wasm.min.js');
 
 let createPiperPhonemize = null;
-let session = null;
-let config = null;
+let sessions = {};   // voice -> session
+let configs = {};    // voice -> config
 let paths = null;
 let ready = false;
 
@@ -20,17 +21,25 @@ async function init(cfg) {
   self.ort.env.wasm.numThreads = 1;
   // worker 内路径相对 worker script（tts-engine/）
   self.ort.env.wasm.wasmPaths = './';
-  const cfgRes = await fetch(cfg.modelJsonUrl);
-  if (!cfgRes.ok) throw new Error('model config fetch failed ' + cfgRes.status);
-  config = await cfgRes.json();
-  const modelRes = await fetch(cfg.modelUrl);
-  if (!modelRes.ok) throw new Error('model fetch failed ' + modelRes.status);
-  session = await self.ort.InferenceSession.create(await modelRes.arrayBuffer());
   await loadPhonemize();
   ready = true;
 }
 
-async function synthesize(text, speed) {
+async function getSession(voice) {
+  const v = voice || 'n';
+  if (sessions[v]) return { session: sessions[v], config: configs[v] };
+  const cfgRes = await fetch(paths.modelJsons[v]);
+  if (!cfgRes.ok) throw new Error('model config fetch failed ' + v + ' ' + cfgRes.status);
+  const cfg = await cfgRes.json();
+  const modelRes = await fetch(paths.modelUrls[v]);
+  if (!modelRes.ok) throw new Error('model fetch failed ' + v + ' ' + modelRes.status);
+  sessions[v] = await self.ort.InferenceSession.create(await modelRes.arrayBuffer());
+  configs[v] = cfg;
+  return { session: sessions[v], config: cfg };
+}
+
+async function synthesize(text, speed, voice) {
+  const { session, config } = await getSession(voice);
   const input = JSON.stringify([{ text: text.trim() }]);
   const phonemeIds = await new Promise((resolve, reject) => {
     createPiperPhonemize({
@@ -65,7 +74,7 @@ self.onmessage = async (e) => {
       await init(e.data);
       self.postMessage({ type: 'ready' });
     } else if (e.data.type === 'synth') {
-      const r = await synthesize(e.data.text, e.data.rate);
+      const r = await synthesize(e.data.text, e.data.rate, e.data.voice);
       self.postMessage({ type: 'result', id: e.data.id, samples: r.samples, sampleRate: r.sampleRate }, [r.samples.buffer]);
     }
   } catch (err) {

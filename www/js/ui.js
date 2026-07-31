@@ -41,6 +41,9 @@ const UI = {
     rpChars: [],
     rpHistory: [],
     rpBusy: false,
+    wordSet: new Set(),
+    _queryBusy: false,
+    _selBtn: null,
   },
 
   init() {
@@ -51,6 +54,8 @@ const UI = {
     this.bindAudioCache();
     this.bindConv();
     this.bindTavern();
+    this.bindSelection();
+    this.loadWordsSet();
     this.renderScenes();
     this.renderToday();
     this.renderWords();
@@ -87,7 +92,7 @@ const UI = {
       + '<path d="M18.5 5.5a9 9 0 0 1 0 13"/>'
       + '</svg>';
   },
-  addSpeakListener(btn, text) {
+  addSpeakListener(btn, text, voice) {
     if (!btn) return;
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
@@ -96,7 +101,7 @@ const UI = {
       btn.classList.add('tts-btn-loading');
       const orig = btn.innerHTML;
       btn.innerHTML = '<span class="tts-dots"><span></span><span></span><span></span></span>';
-      await TTS.speak(text);
+      await TTS.speak(text, { voice });
       btn.classList.remove('tts-btn-loading');
       btn.innerHTML = orig;
       delete btn.dataset.busy;
@@ -118,6 +123,7 @@ const UI = {
       tavernClose: Icons.x, genClose: Icons.x, wordClose: Icons.x, convClose: Icons.x,
       tavernHeadIcon: Icons.mug, worldHeadIcon: Icons.earth, charHeadIcon: Icons.user,
       emptyToday: Icons.sprout, emptyChat: Icons.chat, emptyWords: Icons.book,
+      apiKeyClearBtn: Icons.x,
     };
     Object.entries(btnMap).forEach(([id, svg]) => {
       const el = document.getElementById(id);
@@ -445,7 +451,7 @@ const UI = {
       }
       for (const m of this.state.rpHistory) {
         if (m.role === 'user') this.appendMsg('user', m.content);
-        else if (m.name) this.appendRpChar(m.name, m.content);
+        else if (m.name) this.appendRpChar(m.name, m.content, 'f');
         else this.appendMsg('assistant', m.content);
       }
       this.appendRpOptions([]);
@@ -489,11 +495,13 @@ const UI = {
       div.innerHTML = '<i></i><i></i><i></i>';
     } else {
       const cn = opts.cn ? `<div class="msg-cn">${this.esc(opts.cn)}</div>` : '';
-      const actions = role === 'assistant' ? `<div class="msg-actions"><button class="msg-chip-btn" data-say="${this.esc(text)}">${this.sayIcon()} 朗读</button></div>` : '';
-      div.innerHTML = `<div class="msg-en">${this.esc(text)}</div>${cn}${actions}`;
+      const v = opts.voice || 'n';
+      const actions = role === 'assistant' ? `<div class="msg-actions"><button class="msg-chip-btn" data-say="${this.esc(text)}" data-voice="${v}">${this.sayIcon()} 朗读</button></div>` : '';
+      div.innerHTML = `<div class="msg-en">${this.renderMsgText(text)}</div>${cn}${actions}`;
+      this.bindTapWords(div);
       if (role === 'assistant') {
         const sb = div.querySelector('[data-say]');
-        if (sb) this.addSpeakListener(sb, sb.dataset.say);
+        if (sb) this.addSpeakListener(sb, sb.dataset.say, sb.dataset.voice || 'n');
       }
     }
     area.appendChild(div);
@@ -681,12 +689,13 @@ const UI = {
 
   /* ---------- 复盘 ---------- */
   async startReview(auto = false) {
-    if (this.state.chatHistory.length < 2) { if (!auto) this.toast('先聊几句再复盘'); return; }
-    if (this.state.chatBusy || this.state.reviewing) return;
+    const history = this.state.rpMode ? this.state.rpHistory : this.state.chatHistory;
+    if (history.length < 2) { if (!auto) this.toast('先聊几句再复盘'); return; }
+    if (this.state.chatBusy || this.state.reviewing || this.state.rpBusy) return;
     this.state.reviewing = true;
     this.toast(auto ? '聊了 6 轮，AI 自动复盘…' : 'AI 正在复盘…');
     try {
-      const review = await Agent.review(this.state.chatHistory);
+      const review = await Agent.review(history);
       const p = Profile.load();
       p.sessions = (p.sessions || 0) + 1;
       if (review.mistakes) {
@@ -696,6 +705,14 @@ const UI = {
           else p.mistakes.push({ pat: m.pattern, fix: m.fix, count: 1 });
         }
         p.mistakes = p.mistakes.slice(-10);
+        // 表达修正收藏进句子本
+        for (const m of review.mistakes) {
+          if (!m.pattern || !m.fix) continue;
+          this.saveSentence({
+            id: 's_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+            text: m.pattern, cn: m.fix, note: m.note || '复盘纠错', source: 'review', ctx: '复盘纠错', at: Date.now(),
+          });
+        }
       }
       Profile.save(p);
       this.renderReviewPanel(review);
@@ -706,7 +723,7 @@ const UI = {
         })));
         if (added > 0) this.toast(`复盘把 ${added} 个词加入了生词本`);
       } else if (auto) {
-        this.toast('复盘完成 ✅');
+        this.toast('复盘完成');
       }
     } catch (e) {
       this.toast('复盘失败：' + (e.message || e));
@@ -728,11 +745,16 @@ const UI = {
         <div class="ri-note">${this.esc(w.meaning)}</div>
       </div>`).join('');
     panel.innerHTML = `
-      <h3>📋 复盘 <span style="font-weight:400;color:var(--muted);font-size:12px">${this.esc(review.good || '')}</span></h3>
+      <div class="review-head">
+        <h3>${Icons.chat} 复盘 <span style="font-weight:400;color:var(--muted);font-size:12px">${this.esc(review.good || '')}</span></h3>
+        <button id="reviewCloseBtn" class="icon-btn-sm">${Icons.x}</button>
+      </div>
       ${mistakes ? `<div style="font-size:13px;font-weight:700;margin:6px 0">说错/卡壳的地方</div>${mistakes}` : ''}
       ${words ? `<div style="font-size:13px;font-weight:700;margin:10px 0 6px">已加入生词本</div>${words}` : ''}
       ${!mistakes && !words ? '<p style="color:var(--muted);font-size:13px">这次没发现明显问题，继续保持</p>' : ''}
     `;
+    const closeBtn = panel.querySelector('#reviewCloseBtn');
+    if (closeBtn) closeBtn.addEventListener('click', () => panel.classList.add('hidden'));
     panel.classList.remove('hidden');
   },
 
@@ -831,6 +853,28 @@ const UI = {
       const w = all.find(x => x.id === item.dataset.id);
       if (w) this.showWordDetail(w);
     }));
+
+    // 句子本区块（与单词合并展示）
+    const sents = this.listSentences().filter(s => !filter ||
+      s.text.toLowerCase().includes(filter.toLowerCase()) || (s.cn || '').includes(filter));
+    const sentWrap = this.el('sentList');
+    if (!sents.length) { sentWrap.innerHTML = ''; return; }
+    sentWrap.innerHTML = `<div class="sent-head">句子本（${sents.length}）</div>` + sents.map(s => `
+      <div class="sent-item" data-id="${s.id}">
+        <div class="si-main">
+          <div class="si-text">${this.renderMsgText(s.text)}</div>
+          <div class="si-cn">${this.esc(s.cn || '')}${s.note ? ` <span class="wi-state">${this.esc(s.note)}</span>` : ''}</div>
+          ${s.ctx ? `<div class="si-ctx">${this.esc(s.ctx)}</div>` : ''}
+        </div>
+        <button class="wi-say" data-say="${this.esc(s.text)}">${this.sayIcon()}</button>
+        <button class="wi-del" data-del="${s.id}">✕</button>
+      </div>`).join('');
+    sentWrap.querySelectorAll('.wi-say').forEach(b => this.addSpeakListener(b, b.dataset.say));
+    sentWrap.querySelectorAll('.wi-del').forEach(b => b.addEventListener('click', async e => {
+      this.removeSentence(e.target.dataset.del);
+      this.renderWords(this.el('wordSearch').value.trim());
+    }));
+    this.bindTapWords(sentWrap);
   },
 
   /* ---------- 单词详情 ---------- */
@@ -844,7 +888,8 @@ const UI = {
       <div class="wd-meaning">${this.esc(w.meaning || '（暂无释义）')}</div>
       ${w.example ? `<div class="wd-ex">${this.esc(w.example)}</div>` : ''}
       ${w.exampleCn ? `<div class="wd-excn">${this.esc(w.exampleCn)}</div>` : ''}
-      <div class="wd-meta">🌿 来源：${this.esc(src)} · ${this.fmtDate(w.created)}</div>
+      <div class="wd-meta">来源：${this.esc(src)} · ${this.fmtDate(w.created)}${(w.forgot || 0) > 0 ? ` · 忘了 ${w.forgot} 次` : ''}</div>
+      ${w.ctx ? `<div class="si-ctx">收藏场景：${this.esc(w.ctx)}</div>` : ''}
       ${(!w.phonetic || !w.example || !w.pos) ? `<button class="btn btn-ghost btn-sm btn-block" id="wdEnrich" style="margin-top:10px">${Icons.search} 补全详情（音标/词性/例句）</button>` : ''}
       <div id="wdEnrichResult" class="wd-result"></div>`;
     this.el('wordModal').classList.remove('hidden');
@@ -876,11 +921,11 @@ const UI = {
     return (d.getMonth() + 1) + '/' + d.getDate();
   },
 
-  /* ---------- 音频缓存设置 ---------- */
+  /* ---------- 音频缓存 + 配音设置 ---------- */
   bindAudioCache() {
     const sel = this.el('setAudioCache');
     if (sel) {
-      sel.value = String(Settings.get('audioCacheMB', 50));
+      sel.value = String(Settings.get('audioCacheMB', 100));
       sel.addEventListener('change', () => {
         const mb = parseInt(sel.value, 10);
         Settings.set('audioCacheMB', mb);
@@ -889,6 +934,11 @@ const UI = {
         this.refreshAudioCacheInfo();
         this.toast('缓存上限已更新');
       });
+    }
+    const nv = this.el('setNarratorVoice');
+    if (nv) {
+      nv.value = Settings.get('narratorVoice', 'f');
+      nv.addEventListener('change', () => Settings.set('narratorVoice', nv.value));
     }
     const btn = this.el('audioCacheClearBtn');
     if (btn) btn.addEventListener('click', async () => {
@@ -902,7 +952,168 @@ const UI = {
     const el = this.el('audioCacheInfo');
     if (!el) return;
     const u = await AudioCache.usage();
-    el.textContent = `已用 ${(u.bytes / 1024 / 1024).toFixed(1)} MB · ${u.count} 句 · 上限 ${Settings.get('audioCacheMB', 50)} MB`;
+    el.textContent = `已用 ${(u.bytes / 1024 / 1024).toFixed(1)} MB · ${u.count} 句 · 上限 ${Settings.get('audioCacheMB', 100)} MB`;
+  },
+
+  /* 收藏上下文：当前场景/世界 + 最近一句 AI 消息 */
+  currentCtx() {
+    let where = '';
+    if (this.state.rpMode) where = '剧场 · ' + (this.state.rpWorld ? this.state.rpWorld.name : '');
+    else {
+      const scene = SCENES.find(s => s.id === this.state.sceneId);
+      where = scene ? scene.name : (this.state.convTitle || '对话');
+    }
+    const h = this.state.rpMode ? this.state.rpHistory : this.state.chatHistory;
+    for (let i = h.length - 1; i >= 0; i--) {
+      if (h[i].role === 'assistant' && typeof h[i].content === 'string' && h[i].content.length > 3) {
+        return where + ' · ' + h[i].content.replace(/\s+/g, ' ').slice(0, 90);
+      }
+    }
+    return where;
+  },
+
+  /* ---------- 生词/句子笔记本 ---------- */
+  async loadWordsSet() {
+    try {
+      const list = await Words.list();
+      this.state.wordSet = new Set(list.map(w => (w.word || '').toLowerCase()));
+    } catch {}
+  },
+  refreshWordsSet() { this.loadWordsSet(); },
+  matchStem(base, set) {
+    const cands = [base.replace(/ies$/, 'y'), base.replace(/es$/, ''), base.replace(/s$/, ''), base.replace(/ing$/, ''), base.replace(/ed$/, ''), base.replace(/ed$/, 'e')];
+    return cands.some(c => set.has(c));
+  },
+  /* 渲染消息文本：生词高亮 + 单词可点击查询 */
+  renderMsgText(text) {
+    const set = this.state.wordSet || new Set();
+    const safe = this.esc(text);
+    return safe.replace(/[A-Za-z]+(?:['’-][A-Za-z]+)*/g, (w) => {
+      const lower = w.toLowerCase();
+      const hit = set.has(lower) || this.matchStem(lower, set);
+      return `<span class="tap-word${hit ? ' hl' : ''}" data-w="${this.esc(w)}">${w}</span>`;
+    });
+  },
+  bindTapWords(container) {
+    container.querySelectorAll('.tap-word').forEach(el => {
+      el.addEventListener('click', () => this.showWordQuery(el.dataset.w));
+    });
+  },
+  /* 查词：AI 详细释义 + 自动入生词本 */
+  async showWordQuery(word) {
+    if (this._queryBusy) return;
+    this._queryBusy = true;
+    const body = this.el('wordModalBody');
+    body.innerHTML = `<div class="wd-word">${this.esc(word)}</div><div class="wd-result" style="margin-top:10px">查询中…</div>`;
+    this.el('wordModalTitle').textContent = '查词';
+    this.el('wordModal').classList.remove('hidden');
+    try {
+      const d = await Agent.queryWord(word);
+      const existing = await Words.list();
+      const exist = existing.find(w => (w.word || '').toLowerCase() === word.toLowerCase());
+      const inSet = !!exist;
+      if (inSet) {
+        // 又忘了 → 合并本次上下文 + 忘记次数 +1
+        const ctxNow = this.currentCtx();
+        const ctxNew = exist.ctx ? exist.ctx + '\n▸ 又忘了（' + this.fmtDate(Date.now()) + '）：' + ctxNow : ctxNow;
+        await Words.update(exist.id, { ctx: ctxNew.slice(0, 600), forgot: (exist.forgot || 0) + 1 });
+        this.refreshWordsSet();
+      } else {
+        await Words.add({
+          word: d.word, phonetic: d.phonetic || '', meaning: d.meaning || '',
+          example: (d.examples && d.examples[0] ? d.examples[0].en : '') || '',
+          exampleCn: (d.examples && d.examples[0] ? d.examples[0].cn : '') || '',
+          source: 'query', ctx: this.currentCtx(),
+        });
+        this.refreshWordsSet();
+      }
+      body.innerHTML = this.renderWordDetail(d, inSet ? '已在生词本（忘了 ' + ((exist.forgot || 0) + 1) + ' 次）' : '已加入生词本');
+    } catch (e) {
+      body.innerHTML = `<div class="wd-result">查询失败：${this.esc(e.message || e)}</div>`;
+    }
+    this._queryBusy = false;
+  },
+  renderWordDetail(d, savedNote) {
+    const exs = (d.examples || []).map(x => `<div class="wd-ex">${this.esc(x.en)}</div><div class="wd-excn">${this.esc(x.cn)}</div>`).join('');
+    const row = (k, v) => v ? `<div class="wd-row"><span class="wd-key">${k}</span> ${this.esc(v)}</div>` : '';
+    return `
+      <div class="wd-word">${this.esc(d.word)} ${d.phonetic ? `<span class="wi-phon">${this.esc(d.phonetic)}</span>` : ''}</div>
+      ${d.pos ? `<div class="wd-pos">${this.esc(d.pos)}</div>` : ''}
+      ${savedNote ? `<div class="wd-meta" style="color:var(--primary)">${savedNote}</div>` : ''}
+      <div class="wd-meaning">${this.esc(d.meaning || '')}</div>
+      ${row('词根', d.root)}${row('搭配', d.collocations)}${row('同义', d.synonyms)}${row('反义', d.antonyms)}
+      ${exs}
+      ${d.note ? `<div class="wd-note">${this.esc(d.note)}</div>` : ''}
+    `;
+  },
+
+  /* ---------- 句子本 ---------- */
+  listSentences() { return Settings.get('sentences', []); },
+  saveSentence(s) {
+    const l = this.listSentences().filter(x => x.id !== s.id);
+    l.unshift(s);
+    Settings.set('sentences', l.slice(0, 500));
+  },
+  removeSentence(id) { Settings.set('sentences', this.listSentences().filter(x => x.id !== id)); },
+
+  /* 选句翻译：长按选中消息文本 → 浮动按钮 */
+  bindSelection() {
+    document.addEventListener('selectionchange', () => {
+      const sel = window.getSelection();
+      const txt = sel ? sel.toString().trim() : '';
+      if (!txt || txt.length > 500 || !sel.rangeCount) { this.hideSelBtn(); return; }
+      let node = sel.anchorNode;
+      while (node && node.nodeType !== 1) node = node.parentNode;
+      if (!node || !node.closest || !node.closest('.msg-en, .msg-rp-char')) { this.hideSelBtn(); return; }
+      const rect = sel.getRangeAt(0).getBoundingClientRect();
+      if (!rect || (!rect.width && !rect.height)) { this.hideSelBtn(); return; }
+      this.showSelBtn(rect, txt);
+    });
+    document.addEventListener('scroll', () => this.hideSelBtn(), true);
+    document.addEventListener('touchend', () => setTimeout(() => this.hideSelBtn(), 2500));
+  },
+  showSelBtn(rect, txt) {
+    let btn = this._selBtn;
+    if (!btn) {
+      btn = document.createElement('button');
+      btn.id = 'selTranslateBtn';
+      btn.className = 'sel-btn';
+      document.body.appendChild(btn);
+      btn.addEventListener('click', () => {
+        const t = (btn.dataset.txt || '').trim();
+        this.hideSelBtn();
+        window.getSelection().removeAllRanges();
+        if (t) this.translateSelection(t);
+      });
+      this._selBtn = btn;
+    }
+    btn.dataset.txt = txt;
+    btn.innerHTML = `${Icons.search} 查这句`;
+    btn.style.top = Math.max(8, rect.top - 44) + 'px';
+    btn.style.left = Math.min(window.innerWidth - 132, Math.max(8, rect.left)) + 'px';
+    btn.classList.remove('hidden');
+  },
+  hideSelBtn() {
+    if (this._selBtn) this._selBtn.classList.add('hidden');
+  },
+  async translateSelection(text) {
+    const body = this.el('wordModalBody');
+    body.innerHTML = `<div class="wd-ex">${this.esc(text)}</div><div class="wd-result" style="margin-top:10px">翻译中…</div>`;
+    this.el('wordModalTitle').textContent = '查句';
+    this.el('wordModal').classList.remove('hidden');
+    try {
+      const r = await Agent.queryText(text);
+      const s = { id: 's_' + Date.now(), text, cn: r.cn, note: r.note, source: 'query', ctx: this.currentCtx(), at: Date.now() };
+      this.saveSentence(s);
+      body.innerHTML = `
+        <div class="wd-ex">${this.esc(text)}</div>
+        <div class="wd-meaning">${this.esc(r.cn || '')}</div>
+        ${r.note ? `<div class="wd-note">${this.esc(r.note)}</div>` : ''}
+        <div class="wd-meta" style="color:var(--primary)">已加入句子本</div>
+      `;
+    } catch (e) {
+      body.innerHTML = `<div class="wd-result">查询失败：${this.esc(e.message || e)}</div>`;
+    }
   },
 
   /* ---------- 设置 ---------- */
@@ -953,10 +1164,39 @@ const UI = {
       }
     };
     bind('setApiKey', 'apiKey');
+    // API key 清空按钮
+    const keyClearEl = this.el('setApiKey');
+    const keyClearBtn = this.el('apiKeyClearBtn');
+    if (keyClearEl && keyClearBtn) {
+      const syncClear = () => keyClearBtn.hidden = !keyClearEl.value;
+      keyClearEl.addEventListener('input', syncClear);
+      keyClearBtn.addEventListener('click', () => {
+        Settings.set('apiKey', '');
+        keyClearEl.value = '';
+        syncClear();
+        this.toast('API Key 已清空');
+      });
+      setTimeout(syncClear, 300);
+    }
     bind('setApiBase', 'apiBase', 'https://api.deepseek.com/v1/chat/completions');
     bind('setAutoSpeak', 'autoSpeak');
     bind('setReadReply', 'readReply');
     bind('setRate', 'rate');
+    // 语速滑块 + 数值双向同步（可精确输入）
+    const rateSlider = this.el('setRate');
+    const rateNum = this.el('setRateNum');
+    if (rateSlider && rateNum) {
+      const clamp = v => Math.min(1.2, Math.max(0.5, Math.round((parseFloat(v) || 0.95) * 20) / 20));
+      rateSlider.addEventListener('input', () => { rateNum.value = rateSlider.value; TTS.rate = parseFloat(rateSlider.value); });
+      rateNum.addEventListener('change', () => {
+        const v = clamp(rateNum.value);
+        rateNum.value = v;
+        rateSlider.value = v;
+        Settings.set('rate', v);
+        TTS.rate = v;
+      });
+      rateNum.addEventListener('keydown', e => { if (e.key === 'Enter') rateNum.blur(); });
+    }
     this.el('setChatModel').addEventListener('change', () => Settings.set('chatModel', this.el('setChatModel').value));
     this.el('setBuildModel').addEventListener('change', () => Settings.set('buildModel', this.el('setBuildModel').value));
 
@@ -1026,7 +1266,7 @@ const UI = {
     wrap.innerHTML = chars.map(c => `
       <div class="tavern-char ${c.active ? 'active' : ''}" data-id="${c.id}">
         <div class="tavern-char-main">
-          <div class="tavern-char-name">${this.esc(c.name)}</div>
+          <div class="tavern-char-name">${c.gender === 'male' ? '♂' : '♀'} ${this.esc(c.name)}</div>
           <div class="tavern-char-meta">${this.esc((c.persona || '').slice(0, 40))}</div>
         </div>
       </div>`).join('');
@@ -1087,8 +1327,8 @@ const UI = {
         return `
         <div class="conv-item ${c.active ? 'active' : ''}" data-id="${c.id}">
           <div class="ci-main">
-            <div class="ci-title">${this.esc(c.name)}</div>
-            <div class="ci-meta">${this.esc((w ? w.name : '未绑定世界') + ' · ' + (c.persona || '').slice(0, 26))}</div>
+            <div class="ci-title">${c.gender === 'male' ? '♂' : '♀'} ${this.esc(c.name)}</div>
+            <div class="ci-meta">${this.esc((w ? w.name : '未绑定世界') + ' · ' + (c.persona || '').slice(0, 30))}</div>
           </div>
           <button class="ci-del" data-del="${c.id}">✕</button>
         </div>`;
@@ -1136,7 +1376,7 @@ const UI = {
       } else {
         const w = this.currentWorld();
         const j = await Agent.generateCharacterCard(desc, w);
-        this.saveChar({ id: 'ch_' + Date.now(), worldId: w ? w.id : '', name: j.name || 'Character', persona: j.persona || '', appearance: j.appearance || '', background: j.background || '', speakingStyle: j.speakingStyle || '', exampleDialogue: j.exampleDialogue || '', active: true, at: Date.now() });
+        this.saveChar({ id: 'ch_' + Date.now(), worldId: w ? w.id : '', name: j.name || 'Character', gender: (j.gender === 'male' ? 'male' : 'female'), persona: j.persona || '', appearance: j.appearance || '', background: j.background || '', speakingStyle: j.speakingStyle || '', exampleDialogue: j.exampleDialogue || '', active: true, at: Date.now() });
       }
       this.el('genModal').classList.add('hidden');
       this.renderTavern();
@@ -1154,7 +1394,7 @@ const UI = {
     const chars = this.activeChars();
     if (!w) { this.toast('先选择或生成一个世界卡'); this.switchTab('tavern'); return; }
     const inWorld = chars.filter(c => !c.worldId || c.worldId === w.id);
-    if (!inWorld.length) { this.toast('先选择一个参与角色（酒馆里点亮绿边）'); this.switchTab('tavern'); return; }
+    if (!inWorld.length) { this.toast('先选择一个参与角色（剧场里点亮绿边）'); this.switchTab('tavern'); return; }
     this.state.rpMode = true;
     this.state.rpWorld = w;
     this.state.rpChars = inWorld;
@@ -1211,8 +1451,11 @@ const UI = {
       if (beat.narration) this.state.rpHistory.push({ role: 'assistant', content: beat.narration });
       for (const d of beat.dialogue || []) this.state.rpHistory.push({ role: 'assistant', name: d.name, content: d.line });
       this.state.rpHistory = this.state.rpHistory.slice(-60);
-      if (beat.narration) this.appendMsg('assistant', beat.narration);
-      for (const d of beat.dialogue || []) this.appendRpChar(d.name, d.line);
+      if (beat.narration) this.appendMsg('assistant', beat.narration, { voice: Settings.get('narratorVoice', 'f') });
+      for (const d of beat.dialogue || []) {
+        const c = this.state.rpChars.find(x => x.name === d.name);
+        this.appendRpChar(d.name, d.line, this.charVoice(c));
+      }
       if (beat.options && beat.options.length) this.appendRpOptions(beat.options);
       else this.appendRpOptions([]);
       this.saveChatState();
@@ -1221,17 +1464,22 @@ const UI = {
       this.appendMsg('assistant', '⚠️ RP 出错：' + (e.message || e));
     }
   },
-  appendRpChar(name, line) {
+  appendRpChar(name, line, voice) {
     const area = this.el('chatArea');
-    const ph = this.el('chatPlaceholder');
-    if (ph) ph.remove();
+    const ph = this.el('chatPlaceholder'); if (ph) ph.remove();
     const div = document.createElement('div');
     div.className = 'msg msg-ai msg-rp-char';
-    div.innerHTML = `<div class="msg-rp-name">${this.esc(name)}</div><div class="msg-en">${this.esc(line)}</div>`;
+    div.innerHTML = `<div class="msg-rp-name">${this.esc(name)}</div><div class="msg-en">${this.renderMsgText(line)}</div><div class="msg-actions"><button class="msg-chip-btn" data-say="${this.esc(line)}" data-voice="${voice || 'f'}">${this.sayIcon()} 朗读</button></div>`;
+    this.bindTapWords(div);
+    const sb = div.querySelector('[data-say]');
+    if (sb) this.addSpeakListener(sb, sb.dataset.say, sb.dataset.voice || 'f');
     area.appendChild(div);
     area.scrollTop = area.scrollHeight;
     return div;
   },
+  /* 角色 → 音色 */
+  charVoice(c) { return c && c.gender === 'male' ? 'm' : 'f'; },
+
   appendRpOptions(options) {
     const area = this.el('chatArea');
     const ph = this.el('chatPlaceholder');

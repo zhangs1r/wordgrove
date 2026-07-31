@@ -85,6 +85,8 @@ const Words = {
       word: w.word, phonetic: w.phonetic || '', pos: w.pos || '',
       meaning: w.meaning || '', example: w.example || '', exampleCn: w.exampleCn || '',
       source: w.source || 'manual', created: now,
+      ctx: w.ctx || '',
+      forgot: w.forgot || 0,
       srs: { due: now, interval: 0, reps: 0, lapses: 0, ease: 2.5 },
     };
     await tx('words', 'readwrite', s => s.add(word));

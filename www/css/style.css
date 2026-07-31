@@ -391,6 +391,49 @@ body {
 .wi-say:active .ic-say, .card-say-btn:active .ic-say, .msg-chip-btn:active .ic-say { transform: scale(0.8); }
 .wi-say.tts-btn-loading, .card-say-btn.tts-btn-loading, .msg-chip-btn.tts-btn-loading { transform: scale(1.06); }
 
+.review-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.review-head h3 { display: inline-flex; align-items: center; gap: 6px; margin: 0; }
+.review-head svg { color: var(--primary); }
+
+.input-wrap { position: relative; display: flex; align-items: center; }
+.input-wrap input { flex: 1; padding-right: 36px; }
+.input-clear {
+  position: absolute; right: 6px; width: 26px; height: 26px; border: none; background: none;
+  display: inline-flex; align-items: center; justify-content: center; color: var(--muted);
+  border-radius: 50%; cursor: pointer;
+}
+.input-clear:active { background: var(--card-2); }
+
+.rate-row { display: flex; align-items: center; gap: 10px; }
+.rate-row input[type="range"] { flex: 1; }
+.rate-num { width: 62px; text-align: center; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--text); font-size: 14px; }
+
+/* ============ 笔记本（点词查 / 高亮 / 句子） ============ */
+.tap-word { cursor: pointer; }
+.tap-word.hl {
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  color: var(--primary);
+  border-radius: 4px;
+  padding: 0 2px;
+  font-weight: 600;
+}
+.tap-word.hl:active { background: color-mix(in srgb, var(--primary) 28%, transparent); }
+.sel-btn {
+  position: fixed; z-index: 80; background: var(--primary); color: #fff; border: none;
+  border-radius: 999px; padding: 8px 14px; font-size: 13px; font-weight: 600;
+  display: inline-flex; align-items: center; gap: 6px; box-shadow: var(--shadow); cursor: pointer;
+}
+.sel-btn.hidden { display: none; }
+.sent-head { font-size: 13px; font-weight: 700; color: var(--primary); margin: 18px 4px 8px; }
+.sent-item { display: flex; align-items: center; gap: 8px; padding: 12px 14px; background: var(--card); border-radius: 14px; margin-bottom: 8px; box-shadow: var(--shadow); }
+.si-main { flex: 1; min-width: 0; }
+.si-text { font-size: 14.5px; line-height: 1.5; }
+.si-cn { font-size: 12.5px; color: var(--muted); margin-top: 3px; }
+.si-ctx { font-size: 11.5px; color: var(--muted); margin-top: 4px; opacity: 0.75; line-height: 1.5; }
+.wd-row { font-size: 13.5px; margin-top: 8px; line-height: 1.6; color: var(--text); }
+.wd-key { color: var(--primary); font-weight: 700; margin-right: 4px; }
+.wd-note { font-size: 13px; color: var(--primary); margin-top: 10px; padding: 8px 10px; background: color-mix(in srgb, var(--primary) 8%, transparent); border-radius: 10px; }
+
 /* ============ 通用 ============ */
 .empty-state { text-align: center; padding: 48px 0 32px; color: var(--muted); }
 .empty-emoji { font-size: 44px; margin-bottom: 12px; }

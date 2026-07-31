@@ -213,7 +213,9 @@ const Agent = {
   "mistakes": [{"pattern":"学习者说错/卡壳的表达（英文原文）","fix":"正确的说法","note":"简短中文说明"}],
   "newWords": [{"word":"值得记住的词","phonetic":"","meaning":"中文释义","example":"英文例句","exampleCn":"中文翻译"}]
 }
-要求：newWords 最多 3 个，必须是对话里真正出现且有学习价值的；mistakes 最多 3 条。没有就留空数组。` },
+要求：
+- newWords 最多 3 个，必须是对话里真正出现且有学习价值的；**如果学习者问过某个单词/表达的意思（比如 "what does X mean"、"X 什么意思"），那个词一定要放进 newWords**
+- mistakes 最多 3 条，没有就留空数组` },
       { role: 'user', content: brief },
     ], { model, maxTokens: 1500 });
     const content = resp.choices[0].message.content || '';
@@ -389,7 +391,7 @@ Output ONLY JSON: {"narration":"...","dialogue":[{"name":"CharacterName","line":
     const worldCtx = world ? world.name + ' - ' + (world.setting || world.description || '') : '无';
     const resp = await API.chat([
       { role: 'system', content: `你是角色卡设计师。根据用户描述（和可选的世界设定）生成角色扮演角色卡，返回 JSON：
-{"name":"角色名(英文)","persona":"身份与性格(英文,2-3句)","appearance":"外貌(英文,1-2句)","background":"背景故事(英文,2-3句)","speakingStyle":"说话风格(英文,1-2句)","exampleDialogue":"一句示例台词(英文)"}
+{"name":"角色名(英文)","gender":"male 或 female(男/女)","persona":"身份与性格(英文,2-3句)","appearance":"外貌(英文,1-2句)","background":"背景故事(英文,2-3句)","speakingStyle":"说话风格(英文,1-2句)","exampleDialogue":"一句示例台词(英文)"}
 要求：英文输出，适合英语学习。只输出 JSON。` },
       { role: 'user', content: '世界设定：' + worldCtx + '\n我的角色设想：' + desc },
     ], { model, maxTokens: 800 });
@@ -398,18 +400,50 @@ Output ONLY JSON: {"narration":"...","dialogue":[{"name":"CharacterName","line":
     return j;
   },
 
-  /* 单词详情补全：查音标/词性/释义/例句 */
+  /* 单词详情补全/查询：详细释义（音标/词性/词根/搭配/同反义/例句） */
   async queryWord(word) {
     const model = Settings.get('chatModel', 'deepseek-v4-flash');
     const resp = await API.chat([
-      { role: 'system', content: `你是英语词典。为单词 "${word}" 返回 JSON：
-{"phonetic":"音标(英式或美式)","pos":"词性(如 n./v./adj.)","meaning":"中文释义","example":"一个英文例句","exampleCn":"例句中文翻译"}
-只输出 JSON。` },
+      { role: 'system', content: `你是英语词典。为单词 "${word}" 输出详细解释，返回 JSON（不要输出其他内容）：
+{
+  "word": "${word}",
+  "phonetic": "英式音标",
+  "pos": "词性，如 v./n./adj.",
+  "meaning": "中文释义（含词性标注，1-2 条最常用）",
+  "root": "词根/词缀拆解（如 auto=self + bio=life，用中文说明）",
+  "collocations": "常用搭配 1-2 个（英文，如 take a break）",
+  "synonyms": "同义词 1-2 个",
+  "antonyms": "反义词（如有）",
+  "examples": [{"en":"英文例句","cn":"中文翻译"}],
+  "note": "学习提示（一句话，中文）"
+}
+要求：例句简单实用，适合口语。只输出 JSON。` },
       { role: 'user', content: word },
-    ], { model, maxTokens: 400 });
+    ], { model, maxTokens: 1200 });
     const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
-    const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
-    return { phonetic: j.phonetic || '', pos: j.pos || '', meaning: j.meaning || '', example: j.example || '', exampleCn: j.exampleCn || '' };
+    try {
+      const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
+      return { ...j, word: word };
+    } catch {
+      return { word, phonetic: '', pos: '', meaning: '', root: '', collocations: '', synonyms: '', antonyms: '', examples: [], note: '' };
+    }
+  },
+
+  /* 句子/词组翻译解释（查询后入句子本） */
+  async queryText(text) {
+    const model = Settings.get('chatModel', 'deepseek-v4-flash');
+    const resp = await API.chat([
+      { role: 'system', content: `你是英语翻译。翻译下面这句英文（或词组），返回 JSON（不要输出其他内容）：
+{"cn":"自然的中文翻译","note":"关键表达/语法点的一句话中文说明（如有）"}` },
+      { role: 'user', content: text },
+    ], { model, maxTokens: 500 });
+    const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
+    try {
+      const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
+      return { cn: j.cn || '', note: j.note || '' };
+    } catch {
+      return { cn: '', note: '' };
+    }
   },
 
   /* ---------- 会话命名：根据对话内容生成中文标题 ---------- */

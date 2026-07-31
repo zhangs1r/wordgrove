@@ -1,7 +1,7 @@
 /* ============ 音频缓存（IndexedDB，独立库） ============ */
 const AudioCache = {
   db: null,
-  limitMB: Settings.get('audioCacheMB', 20),
+  limitMB: Settings.get('audioCacheMB', 100),
   init() { this.open().catch(() => {}); },
   async open() {
     if (this.db) return this.db;
@@ -17,23 +17,41 @@ const AudioCache = {
     });
     return this.db;
   },
-  key(text, rate) { return rate + '|' + text; },
-  async get(text, rate) {
+  key(text, rate, voice) { return (voice || 'n') + '|' + rate + '|' + text; },
+  /* Float32 samples → Int16 buffer（省一半空间） */
+  _pack(samples) {
+    const i16 = new Int16Array(samples.length);
+    for (let i = 0; i < samples.length; i++) {
+      const s = Math.max(-1, Math.min(1, samples[i]));
+      i16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    }
+    return i16.buffer;
+  },
+  _unpack(buf) {
+    const i16 = new Int16Array(buf);
+    const f32 = new Float32Array(i16.length);
+    for (let i = 0; i < i16.length; i++) f32[i] = i16[i] / 32768;
+    return f32;
+  },
+  async get(text, rate, voice) {
     try {
       const db = await this.open();
-      return await new Promise((resolve) => {
-        const req = db.transaction('audio', 'readonly').objectStore('audio').get(this.key(text, rate));
-        req.onsuccess = () => resolve(req.result ? req.result.data : null);
+      const rec = await new Promise((resolve) => {
+        const req = db.transaction('audio', 'readonly').objectStore('audio').get(this.key(text, rate, voice));
+        req.onsuccess = () => resolve(req.result || null);
         req.onerror = () => resolve(null);
       });
+      if (!rec || rec.v !== 2) return null; // 旧格式（Float32）作废
+      return this._unpack(rec.data);
     } catch { return null; }
   },
-  async put(text, rate, data) {
+  async put(text, rate, voice, samples) {
     try {
       const db = await this.open();
+      const buf = this._pack(samples);
       await new Promise((resolve) => {
         const tx = db.transaction('audio', 'readwrite');
-        tx.objectStore('audio').put({ data, size: data.byteLength, at: Date.now() }, this.key(text, rate));
+        tx.objectStore('audio').put({ data: buf, size: buf.byteLength, at: Date.now(), v: 2 }, this.key(text, rate, voice));
         tx.oncomplete = resolve;
         tx.onerror = () => resolve();
       });
@@ -142,8 +160,8 @@ const TTS = {
       };
       this.worker.postMessage({
         type: 'init',
-        modelUrl: './model.onnx',
-        modelJsonUrl: './model.onnx.json',
+        modelUrls: { n: './model.onnx', f: './model.onnx', m: './modelMale.onnx' },
+        modelJsons: { n: './model.onnx.json', f: './model.onnx.json', m: './modelMale.onnx.json' },
         phonemizeWasm: './piper_phonemize.wasm',
         phonemizeData: './piper_phonemize.data',
         ortWasmDir: './',
@@ -173,10 +191,21 @@ const TTS = {
   async speak(text, opts = {}) {
     if (!text) return false;
     const rate = opts.rate ?? this.rate;
+    const voice = opts.voice || 'n'; // n=旁白(女), f=女声, m=男声
+
+    // 同一句正在读 → 再点取消
+    if (this.playing && this._currentText === text) {
+      this.stopCurrent();
+      return true;
+    }
+    // 别的句子在读 → 打断，播新的
+    if (this.playing) {
+      this.stopCurrent();
+    }
 
     if (this.engine === 'ready') {
       return new Promise((resolve) => {
-        this.queue.push({ text, rate, resolve });
+        this.queue.push({ text, rate, voice, resolve });
         this.pumpQueue();
       });
     }
@@ -185,7 +214,7 @@ const TTS = {
         const t0 = Date.now();
         const wait = () => {
           if (this.engine === 'ready') {
-            this.queue.push({ text, rate, resolve });
+            this.queue.push({ text, rate, voice, resolve });
             this.pumpQueue();
           } else if (this.engine === 'unavailable' || Date.now() - t0 > 8000) {
             resolve(this.speakSystem(text, rate));
@@ -206,18 +235,22 @@ const TTS = {
     this._current = item;
     this._pending(true);
     // 命中缓存直接播放，不再合成
-    AudioCache.get(item.text, item.rate).then((cached) => {
+    AudioCache.get(item.text, item.rate, item.voice).then((cached) => {
       if (!this.playing || this._current !== item) return; // 已被 stop 打断
       if (cached) {
         clearTimeout(this._synthTimer);
         this._pending(false);
         this.playing = false;
         this._current = null;
-        this.playSamples(new Float32Array(cached), 22050, () => { item.resolve(true); this.pumpQueue(); });
+        this._currentText = item.text;
+        this.playSamples(new Float32Array(cached), 22050, () => {
+          this._currentText = null;
+          item.resolve(true); this.pumpQueue();
+        });
         return;
       }
       const id = ++this.synthId;
-      this.worker.postMessage({ type: 'synth', id, text: item.text, rate: item.rate });
+      this.worker.postMessage({ type: 'synth', id, text: item.text, rate: item.rate, voice: item.voice });
       // 兜底超时
       this._synthTimer = setTimeout(() => {
         if (this.playing && this._current === item) {
@@ -239,8 +272,12 @@ const TTS = {
     const item = this._current;
     this._current = null;
     if (samples && samples.length) {
-      AudioCache.put(item.text, item.rate, samples.buffer); // 存入缓存（不阻塞播放）
-      this.playSamples(samples, sampleRate, () => { item.resolve(true); this.pumpQueue(); });
+      AudioCache.put(item.text, item.rate, item.voice, samples); // 存入缓存（不阻塞播放）
+      this._currentText = item.text;
+      this.playSamples(samples, sampleRate, () => {
+        this._currentText = null;
+        item.resolve(true); this.pumpQueue();
+      });
     } else {
       item.resolve(false);
       this.pumpQueue();
@@ -330,20 +367,25 @@ const TTS = {
     });
   },
 
-  stop() {
+  stopCurrent() {
     this.queue = [];
     clearTimeout(this._synthTimer);
     this._pending(false);
-    if (this.playing && this.audioCtx) {
-      try { this.audioCtx.suspend(); } catch {}
+    if (this.playing) {
       this.playing = false;
       if (this._current) { this._current.resolve(false); this._current = null; }
     }
+    this._currentText = null;
+    if (this.audioCtx) { try { this.audioCtx.suspend(); } catch {} }
     if (this.usingNative) {
       try { window.Capacitor.Plugins.TextToSpeech.stop(); } catch {}
     }
     if ('speechSynthesis' in window) {
       try { speechSynthesis.cancel(); } catch {}
     }
+  },
+
+  stop() {
+    this.stopCurrent();
   },
 };

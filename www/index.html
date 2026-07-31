@@ -71,24 +71,25 @@
     <div id="reviewPanel" class="review-panel hidden"></div>
   </section>
 
-  <!-- ======== 生词本 ======== -->
+  <!-- ======== 笔记本（单词 + 句子） ======== -->
   <section id="tab-words" class="tab-page">
     <div id="words-toolbar" class="words-toolbar">
-      <input id="wordSearch" type="search" placeholder="搜索词 / 释义">
+      <input id="wordSearch" type="search" placeholder="搜索词 / 句 / 释义">
       <button id="addWordBtn" class="btn btn-primary">＋ 加词</button>
     </div>
     <div id="wordList" class="word-list"></div>
+    <div id="sentList" class="word-list"></div>
     <div id="wordEmpty" class="empty-state hidden">
       <div class="empty-emoji" id="emptyWords"></div>
-      <p>生词本是空的</p>
-      <p class="empty-sub">对话里卡壳的词会自动进来</p>
+      <p>笔记本是空的</p>
+      <p class="empty-sub">对话里点词查意思 / 长按选句翻译，都会自动收进来</p>
     </div>
   </section>
 
-  <!-- ======== 酒馆（角色扮演） ======== -->
+  <!-- ======== 剧场（角色扮演） ======== -->
   <section id="tab-tavern" class="tab-page">
     <div class="page-head">
-      <h2><span id="tavernHeadIcon" class="h-icon"></span>酒馆</h2>
+      <h2><span id="tavernHeadIcon" class="h-icon"></span>剧场</h2>
     </div>
 
     <div class="settings-group">
@@ -129,7 +130,10 @@
       </label>
       <label class="field">
         <span>API Key</span>
-        <input id="setApiKey" type="password" placeholder="platform.deepseek.com 的 key">
+        <div class="input-wrap">
+          <input id="setApiKey" type="password" placeholder="platform.deepseek.com 的 key">
+          <button id="apiKeyClearBtn" class="input-clear" title="清空" hidden></button>
+        </div>
       </label>
       <label class="field">
         <span>对话模型</span>
@@ -161,7 +165,10 @@
       </label>
       <label class="field">
         <span>朗读语速</span>
-        <input id="setRate" type="range" min="0.5" max="1.2" step="0.05" value="0.95">
+        <div class="rate-row">
+          <input id="setRate" type="range" min="0.5" max="1.2" step="0.05" value="0.95">
+          <input id="setRateNum" class="rate-num" type="number" min="0.5" max="1.2" step="0.05" value="0.95" inputmode="decimal">
+        </div>
       </label>
       <label class="field">
         <span>TTS 引擎</span>
@@ -170,13 +177,21 @@
       <label class="field">
         <span>音频缓存（读过的句子直接播）</span>
         <select id="setAudioCache">
-          <option value="10">10 MB（约 200 句）</option>
-          <option value="20">20 MB（约 400 句）</option>
-          <option value="50">50 MB（约 1000 句）</option>
+          <option value="50">50 MB</option>
+          <option value="100">100 MB（默认）</option>
+          <option value="200">200 MB</option>
         </select>
       </label>
       <div id="audioCacheInfo" class="tts-status">计算中…</div>
       <button id="audioCacheClearBtn" class="btn btn-ghost">清空音频缓存</button>
+      <label class="field">
+        <span>旁白音色（剧场）</span>
+        <select id="setNarratorVoice">
+          <option value="f">女声</option>
+          <option value="m">男声</option>
+        </select>
+      </label>
+      <div class="tts-status">角色台词按性别自动配音（男角色男声 / 女角色女声）</div>
     </div>
     <div class="settings-group">
       <h3>学习画像</h3>
@@ -245,8 +260,8 @@
 <nav class="tab-bar">
   <button class="tab-btn active" data-tab="today"><span class="tab-icon">🌱</span><span>今日</span></button>
   <button class="tab-btn" data-tab="chat"><span class="tab-icon">🗣️</span><span>对话</span></button>
-  <button class="tab-btn" data-tab="tavern"><span class="tab-icon">🎭</span><span>酒馆</span></button>
-  <button class="tab-btn" data-tab="words"><span class="tab-icon">📚</span><span>生词</span></button>
+  <button class="tab-btn" data-tab="tavern"><span class="tab-icon">🎭</span><span>剧场</span></button>
+  <button class="tab-btn" data-tab="words"><span class="tab-icon">📚</span><span>笔记本</span></button>
   <button class="tab-btn" data-tab="settings"><span class="tab-icon">⚙️</span><span>设置</span></button>
 </nav>
 

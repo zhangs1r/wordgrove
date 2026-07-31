@@ -1,5 +1,5 @@
-/* tts.js — 朗读：内置 Piper 引擎(离线WASM) → 原生TTS插件 → speechSynthesis
-   内置引擎音质最好且完全离线；加载失败自动降级 */
+/* tts.js — 朗读：内置 Piper 引擎(Web Worker 离线合成) → 原生TTS插件 → speechSynthesis
+   合成在 worker 里跑，UI 不卡；合成期间通过 onPending 回调显示"生成音频"动画 */
 const TTS = {
   voice: null,
   rate: 0.95,
@@ -9,6 +9,10 @@ const TTS = {
   audioCtx: null,
   queue: [],
   playing: false,
+  worker: null,
+  synthId: 0,
+  pendingCount: 0,
+  onPending: null,       // 回调：合成开始/结束（true/false）
 
   init() {
     this.rate = Settings.get('rate', 0.95);
@@ -17,21 +21,38 @@ const TTS = {
     this.initSystemVoices();
   },
 
-  /* 内置离线引擎（Piper VITS WASM，美音女声） */
-  async initEngine() {
+  /* 内置离线引擎（Piper VITS WASM，Web Worker 运行） */
+  initEngine() {
     try {
-      if (!window.PiperTTS) { this.engine = 'unavailable'; return; }
+      if (typeof Worker === 'undefined') { this.engine = 'unavailable'; return; }
       this.engine = 'loading';
-      await window.PiperTTS.init({
-        modelUrl: 'tts-engine/model.onnx',
-        modelJsonUrl: 'tts-engine/model.onnx.json',
-        phonemizeWasm: 'tts-engine/piper_phonemize.wasm',
-        phonemizeData: 'tts-engine/piper_phonemize.data',
-        ortWasmDir: 'tts-engine/',
+      this.worker = new Worker('tts-engine/tts-worker.js');
+      this.worker.onmessage = (e) => {
+        const d = e.data;
+        if (d.type === 'ready') {
+          this.engine = 'ready';
+          this.pumpQueue();
+        } else if (d.type === 'result') {
+          this._onResult(d.id, d.samples, d.sampleRate);
+        } else if (d.type === 'error') {
+          this._onError(d.id, d.message);
+        }
+      };
+      this.worker.onerror = (e) => {
+        console.log('tts worker error', e.message);
+        this.engine = 'unavailable';
+        this._drainFail();
+      };
+      this.worker.postMessage({
+        type: 'init',
+        modelUrl: './model.onnx',
+        modelJsonUrl: './model.onnx.json',
+        phonemizeWasm: './piper_phonemize.wasm',
+        phonemizeData: './piper_phonemize.data',
+        ortWasmDir: './',
       });
-      this.engine = 'ready';
     } catch (e) {
-      console.log('piper engine fail, fallback to system', e);
+      console.log('tts worker create fail', e);
       this.engine = 'unavailable';
     }
   },
@@ -56,7 +77,6 @@ const TTS = {
     if (!text) return false;
     const rate = opts.rate ?? this.rate;
 
-    // 1) 内置引擎
     if (this.engine === 'ready') {
       return new Promise((resolve) => {
         this.queue.push({ text, rate, resolve });
@@ -64,7 +84,6 @@ const TTS = {
       });
     }
     if (this.engine === 'loading') {
-      // 等引擎加载完再走内置，最多等 8 秒
       return new Promise((resolve) => {
         const t0 = Date.now();
         const wait = () => {
@@ -80,42 +99,76 @@ const TTS = {
         wait();
       });
     }
-
-    // 2) 降级：系统引擎
     return this.speakSystem(text, rate);
   },
 
   pumpQueue() {
-    if (this.playing || !this.queue.length || this.engine !== 'ready') return;
+    if (this.playing || !this.queue.length || this.engine !== 'ready' || !this.worker) return;
     const item = this.queue.shift();
     this.playing = true;
-    const timeout = setTimeout(() => {
-      this.playing = false;
-      item.resolve(false);
-      this.pumpQueue();
-    }, 30000);
-    window.PiperTTS.synthesize(item.text, item.rate)
-      .then(res => {
-        clearTimeout(timeout);
-        if (res) {
-          this.playSamples(res.samples, res.sampleRate);
-          this._onPlayDone = () => {
-            this.playing = false;
-            item.resolve(true);
-            this.pumpQueue();
-          };
-        } else {
-          this.playing = false;
-          item.resolve(false);
-          this.pumpQueue();
-        }
-      })
-      .catch(() => {
-        clearTimeout(timeout);
+    this._current = item;
+    this._pending(true);
+    const id = ++this.synthId;
+    this.worker.postMessage({ type: 'synth', id, text: item.text, rate: item.rate });
+    // 兜底超时
+    this._synthTimer = setTimeout(() => {
+      if (this.playing && this._current === item) {
+        this._pending(false);
         this.playing = false;
         item.resolve(false);
         this.pumpQueue();
-      });
+      }
+    }, 30000);
+  },
+
+  _onResult(id, samples, sampleRate) {
+    if (!this._current) return;
+    clearTimeout(this._synthTimer);
+    this._pending(false);
+    this.playing = false;
+    const item = this._current;
+    this._current = null;
+    if (samples && samples.length) {
+      this.playSamples(samples, sampleRate);
+      this._playDone = () => { item.resolve(true); this.pumpQueue(); };
+    } else {
+      item.resolve(false);
+      this.pumpQueue();
+    }
+  },
+
+  _onError(id, message) {
+    console.log('tts synth error', message);
+    if (!this._current) return;
+    clearTimeout(this._synthTimer);
+    this._pending(false);
+    this.playing = false;
+    const item = this._current;
+    this._current = null;
+    item.resolve(false);
+    this.pumpQueue();
+  },
+
+  _drainFail() {
+    // worker 挂了：清空队列，全部降级系统引擎
+    clearTimeout(this._synthTimer);
+    this._pending(false);
+    if (this.playing && this._current) {
+      const item = this._current;
+      this.playing = false;
+      this._current = null;
+      item.resolve(this.speakSystem(item.text, item.rate));
+    }
+    while (this.queue.length) {
+      const it = this.queue.shift();
+      it.resolve(this.speakSystem(it.text, it.rate));
+    }
+  },
+
+  _pending(on) {
+    if (on) this.pendingCount++;
+    else this.pendingCount = Math.max(0, this.pendingCount - 1);
+    if (this.onPending) this.onPending(this.pendingCount > 0);
   },
 
   playSamples(samples, sampleRate) {
@@ -127,11 +180,11 @@ const TTS = {
       const source = this.audioCtx.createBufferSource();
       source.buffer = buffer;
       source.connect(this.audioCtx.destination);
-      source.onended = () => { if (this._onPlayDone) this._onPlayDone(); };
+      source.onended = () => { if (this._playDone) this._playDone(); };
       source.start();
     } catch (e) {
       console.log('play fail', e);
-      if (this._onPlayDone) this._onPlayDone();
+      if (this._playDone) this._playDone();
     }
   },
 
@@ -169,9 +222,12 @@ const TTS = {
 
   stop() {
     this.queue = [];
+    clearTimeout(this._synthTimer);
+    this._pending(false);
     if (this.playing && this.audioCtx) {
       try { this.audioCtx.suspend(); } catch {}
       this.playing = false;
+      if (this._current) { this._current.resolve(false); this._current = null; }
     }
     if (this.usingNative) {
       try { window.Capacitor.Plugins.TextToSpeech.stop(); } catch {}

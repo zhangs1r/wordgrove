@@ -38,6 +38,9 @@ const UI = {
     this.bindCardActions();
     this.loadTtsVoices();
 
+    // 朗读合成中的三点动画（worker 合成不卡 UI）
+    TTS.onPending = (p) => this.el('ttsPending').classList.toggle('hidden', !p);
+
     if (!API.configured()) {
       setTimeout(() => {
         this.toast('先到设置里填 API Key 🔑');

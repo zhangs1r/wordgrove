@@ -303,8 +303,32 @@ body {
   background: var(--bg); border-radius: var(--radius-sm); padding: 12px;
   font-size: 13px; line-height: 1.8; white-space: pre-wrap;
 }
+.tts-status { font-size: 13px; color: var(--primary); font-weight: 600; }
 .footnote { text-align: center; color: var(--muted); font-size: 12px; padding: 8px 0 4px; }
 .hidden { display: none !important; }
+
+/* ============ 会话管理 ============ */
+.conv-bar { display: flex; align-items: center; gap: 8px; padding: 2px 0 8px; }
+.conv-title { flex: 1; font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; color: var(--muted); }
+.icon-btn-sm { width: 36px; height: 36px; border: none; border-radius: 50%; background: var(--card); box-shadow: var(--shadow); font-size: 16px; color: var(--text); cursor: pointer; flex-shrink: 0; transition: transform 0.15s var(--spring); }
+.icon-btn-sm:active { transform: scale(0.92); }
+
+.modal { position: fixed; inset: 0; z-index: 50; }
+.modal-mask { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.45); }
+.modal-panel {
+  position: absolute; left: 0; right: 0; bottom: 0; max-height: 72%;
+  background: var(--bg); border-radius: 20px 20px 0 0;
+  padding: 16px 16px calc(env(safe-area-inset-bottom, 0px) + 16px);
+  display: flex; flex-direction: column; animation: pageIn 0.3s var(--spring);
+}
+.modal-head { display: flex; align-items: center; justify-content: space-between; font-weight: 700; font-size: 16px; margin-bottom: 12px; }
+.conv-list { overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.conv-item { display: flex; align-items: center; gap: 10px; background: var(--card); border-radius: 14px; padding: 12px 14px; box-shadow: var(--shadow); cursor: pointer; }
+.conv-item.active { border: 1.5px solid var(--primary); }
+.ci-main { flex: 1; min-width: 0; }
+.ci-title { font-weight: 700; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ci-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.ci-del { width: 32px; height: 32px; border: none; border-radius: 50%; background: var(--card-2); color: var(--danger); cursor: pointer; flex-shrink: 0; }
 
 /* ============ 通用 ============ */
 .empty-state { text-align: center; padding: 48px 0 32px; color: var(--muted); }

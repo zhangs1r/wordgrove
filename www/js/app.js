@@ -34,8 +34,19 @@ function initKeyboardFix() {
       if (main) main.style.height = '';
       const chatArea = document.getElementById('chatArea');
       if (chatArea) chatArea.scrollTop = chatArea.scrollHeight;
+    } else if (vh < lastVh - 80) {
+      // 键盘弹起：聊天区滚到最新消息
+      const chatArea = document.getElementById('chatArea');
+      if (chatArea) chatArea.scrollTop = chatArea.scrollHeight;
     }
     lastVh = vh;
+  });
+  // 输入框聚焦时也滚到最新
+  document.addEventListener('focusin', (e) => {
+    if (e.target && e.target.id === 'chatInput') {
+      const chatArea = document.getElementById('chatArea');
+      if (chatArea) setTimeout(() => { chatArea.scrollTop = chatArea.scrollHeight; }, 300);
+    }
   });
 }
 

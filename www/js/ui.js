@@ -10,12 +10,16 @@ const UI = {
     reviewing: false,
     autoTurn: 0,
     building: false,
+    convId: null,
+    convTitle: '',
+    _naming: false,
   },
 
   init() {
     this.bindTabs();
     this.bindTheme();
     this.bindSettings();
+    this.bindConv();
     this.renderScenes();
     this.renderToday();
     this.renderWords();
@@ -23,6 +27,7 @@ const UI = {
     this.bindChat();
     this.bindWords();
     this.bindCardActions();
+    this.loadTtsVoices();
 
     if (!API.configured()) {
       setTimeout(() => {
@@ -184,32 +189,148 @@ const UI = {
     wrap.querySelectorAll('.scene-chip').forEach(chip => {
       chip.addEventListener('click', () => {
         this.state.sceneId = chip.dataset.scene;
-        this.resetChat();
+        this.newConv();
         wrap.querySelectorAll('.scene-chip').forEach(c => c.classList.toggle('active', c === chip));
       });
     });
   },
 
-  resetChat() {
+  /* ================= 会话管理 ================= */
+  listConversations() {
+    return Settings.get('conversations', []);
+  },
+  saveConversation(conv) {
+    const list = this.listConversations().filter(c => c.id !== conv.id);
+    list.push(conv);
+    Settings.set('conversations', list);
+  },
+  deleteConversation(id) {
+    Settings.set('conversations', this.listConversations().filter(c => c.id !== id));
+  },
+  currentConv() {
+    return {
+      id: this.state.convId || ('c_' + Date.now()),
+      title: this.state.convTitle || '',
+      sceneId: this.state.sceneId,
+      history: this.state.chatHistory,
+      updated: Date.now(),
+    };
+  },
+  newConv() {
+    // 旧会话有内容就保存
+    if (this.state.chatHistory.length) this.saveConversation(this.currentConv());
+    this.state.convId = 'c_' + Date.now();
+    this.state.convTitle = '';
     this.state.chatHistory = [];
     this.state.autoTurn = 0;
-    Settings.set('chatState', null);
+    this.renderConvTitle();
     this.renderChatHistory();
     this.el('reviewPanel').classList.add('hidden');
     this.el('reviewPanel').innerHTML = '';
+    this.closeConvModal();
+  },
+  switchConv(id) {
+    if (this.state.chatHistory.length) this.saveConversation(this.currentConv());
+    const conv = this.listConversations().find(c => c.id === id);
+    if (!conv) return;
+    this.state.convId = conv.id;
+    this.state.convTitle = conv.title || '';
+    this.state.sceneId = conv.sceneId || this.state.sceneId;
+    this.state.chatHistory = conv.history || [];
+    this.state.autoTurn = 0;
+    document.querySelectorAll('.scene-chip').forEach(c => c.classList.toggle('active', c.dataset.scene === this.state.sceneId));
+    this.renderConvTitle();
+    this.renderChatHistory();
+    this.closeConvModal();
+  },
+  renderConvTitle() {
+    this.el('convTitle').textContent = this.state.convTitle || '新会话';
+  },
+  renderConvList() {
+    const list = this.listConversations().sort((a, b) => (b.updated || 0) - (a.updated || 0));
+    const wrap = this.el('convList');
+    if (!list.length) {
+      wrap.innerHTML = '<p class="empty-sub" style="text-align:center;padding:28px 0">还没有保存的会话</p>';
+      return;
+    }
+    wrap.innerHTML = list.map(c => {
+      const scene = SCENES.find(s => s.id === c.sceneId);
+      return `
+      <div class="conv-item ${c.id === this.state.convId ? 'active' : ''}" data-id="${c.id}">
+        <div class="ci-main">
+          <div class="ci-title">${this.esc(c.title || '新会话')}</div>
+          <div class="ci-meta">${this.esc(scene ? scene.name : (c.sceneId || ''))} · ${(c.history || []).length} 条 · ${this.fmtTime(c.updated)}</div>
+        </div>
+        <button class="ci-del" data-del="${c.id}">✕</button>
+      </div>`;
+    }).join('');
+    wrap.querySelectorAll('.conv-item').forEach(item => {
+      item.addEventListener('click', e => {
+        if (e.target.dataset.del) return;
+        this.switchConv(item.dataset.id);
+      });
+    });
+    wrap.querySelectorAll('.ci-del').forEach(b => {
+      b.addEventListener('click', e => {
+        e.stopPropagation();
+        const id = e.target.dataset.del;
+        this.deleteConversation(id);
+        if (id === this.state.convId) {
+          this.state.convId = null;
+          this.state.convTitle = '';
+          this.state.chatHistory = [];
+          this.renderConvTitle();
+          this.renderChatHistory();
+        }
+        this.renderConvList();
+      });
+    });
+  },
+  openConvModal() {
+    this.el('convModal').classList.remove('hidden');
+    this.renderConvList();
+  },
+  closeConvModal() {
+    this.el('convModal').classList.add('hidden');
+  },
+  bindConv() {
+    this.el('convListBtn').addEventListener('click', () => this.openConvModal());
+    this.el('convNewBtn').addEventListener('click', () => this.newConv());
+    this.el('convClose').addEventListener('click', () => this.closeConvModal());
+    this.el('convMask').addEventListener('click', () => this.closeConvModal());
+  },
+  fmtTime(ts) {
+    if (!ts) return '';
+    const d = new Date(ts);
+    const now = new Date();
+    if (d.toDateString() === now.toDateString()) {
+      return d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0');
+    }
+    return (d.getMonth() + 1) + '/' + d.getDate();
   },
 
-  /* 对话持久化：切页/重启都能恢复 */
+  resetChat() {
+    this.newConv();
+  },
+
+  /* 对话持久化：按会话保存（localStorage conversations 数组） */
   saveChatState() {
-    Settings.set('chatState', { sceneId: this.state.sceneId, history: this.state.chatHistory.slice(-30) });
+    if (this.state.chatHistory.length) this.saveConversation(this.currentConv());
   },
   loadChatState() {
-    const s = Settings.get('chatState', null);
-    if (s && s.history && s.history.length) {
-      this.state.sceneId = s.sceneId || this.state.sceneId;
-      this.state.chatHistory = s.history;
+    const list = this.listConversations();
+    if (list.length) {
+      const conv = [...list].sort((a, b) => (b.updated || 0) - (a.updated || 0))[0];
+      this.state.convId = conv.id;
+      this.state.convTitle = conv.title || '';
+      this.state.sceneId = conv.sceneId || this.state.sceneId;
+      this.state.chatHistory = conv.history || [];
       document.querySelectorAll('.scene-chip').forEach(c => c.classList.toggle('active', c.dataset.scene === this.state.sceneId));
+    } else {
+      this.state.convId = 'c_' + Date.now();
+      this.state.chatHistory = [];
     }
+    this.renderConvTitle();
     this.renderChatHistory();
   },
   renderChatHistory() {
@@ -294,6 +415,10 @@ const UI = {
       if (this.state.autoTurn >= 6 && !this.state.reviewing) {
         this.startReview(true);
       }
+      // 自动命名：对话有 2 条消息且还没标题时，让模型起个名
+      if (!this.state.convTitle && this.state.chatHistory.length >= 2) {
+        this.nameConversation();
+      }
     } catch (e) {
       typing.remove();
       const host = API.base.includes('deepseek.com') ? 'deepseek' : API.base.includes('opencode.ai') ? 'opencode' : API.base;
@@ -326,6 +451,21 @@ const UI = {
     const lastUser = [...this.state.chatHistory].reverse().find(m => m.role === 'user');
     if (!lastUser) return;
     await this.sendText(lastUser.content, { alreadyInHistory: true });
+  },
+
+  /* 会话自动命名 */
+  async nameConversation() {
+    if (this.state._naming) return;
+    this.state._naming = true;
+    try {
+      const title = await Agent.titleForConversation(this.state.chatHistory);
+      if (title) {
+        this.state.convTitle = title;
+        this.renderConvTitle();
+        this.saveChatState();
+      }
+    } catch {}
+    this.state._naming = false;
   },
 
   /* ---------- 复盘 ---------- */
@@ -571,6 +711,54 @@ const UI = {
 
     this.el('exportBtn').addEventListener('click', () => this.exportData());
     this.el('importBtn').addEventListener('click', () => this.el('importFile').click());
+  },
+
+  /* TTS 引擎检测 + 音色列表 */
+  async loadTtsVoices() {
+    const status = this.el('ttsStatus');
+    if (!status) return;
+    const plugin = window.Capacitor?.Plugins?.TextToSpeech;
+    if (!plugin) {
+      status.textContent = '浏览器引擎（备用）';
+      return;
+    }
+    status.textContent = '系统原生引擎 ✓';
+    try {
+      const res = await plugin.getSupportedVoices();
+      const voices = res.voices || [];
+      const sel = this.el('setVoice');
+      if (!voices.length) {
+        sel.innerHTML = '<option value="-1">默认音色</option>';
+      } else {
+        const display = [...voices].sort((a, b) => {
+          const ae = (a.lang || '').toLowerCase().startsWith('en') ? 0 : 1;
+          const be = (b.lang || '').toLowerCase().startsWith('en') ? 0 : 1;
+          return ae - be;
+        });
+        sel.innerHTML = '<option value="-1">默认音色</option>' + display.map(v => {
+          const idx = voices.indexOf(v);
+          const name = v.name || v.voiceURI || ('voice ' + idx);
+          const tag = v.localService === false ? ' (在线)' : '';
+          return `<option value="${idx}">${name}${tag} · ${v.lang || ''}</option>`;
+        }).join('');
+      }
+      const cur = Settings.get('voiceIdx', -1);
+      if (sel.querySelector(`option[value="${cur}"]`)) sel.value = String(cur);
+      sel.addEventListener('change', () => Settings.set('voiceIdx', parseInt(sel.value, 10)));
+    } catch (e) {
+      console.log('loadTtsVoices fail', e);
+    }
+    const installBtn = this.el('ttsInstallBtn');
+    if (installBtn && !installBtn.dataset.bound) {
+      installBtn.dataset.bound = '1';
+      installBtn.addEventListener('click', async () => {
+        try {
+          await plugin.openInstall();
+        } catch {
+          this.toast('系统设置 → 语音与输入 → 文字转语音');
+        }
+      });
+    }
   },
 
   renderProfile() {

@@ -246,4 +246,20 @@ const Agent = {
       return [];
     }
   },
+
+  /* ---------- 会话命名：根据对话内容生成中文标题 ---------- */
+  async titleForConversation(history) {
+    const model = Settings.get('buildModel', 'deepseek-v4-flash');
+    const brief = history.slice(-6).map(m => `${m.role}: ${(m.content || '').slice(0, 120)}`).join('\n');
+    try {
+      const resp = await API.chat([
+        { role: 'system', content: '你是标题生成器。给下面这段英语学习对话生成一个简短的中文标题，不超过 8 个字，概括对话主题（如"咖啡店点单""组会汇报"）。只输出标题本身，不要引号和其他内容。' },
+        { role: 'user', content: brief },
+      ], { model, maxTokens: 200 });
+      const title = (resp.choices?.[0]?.message?.content || '').trim().replace(/["「」']/g, '').slice(0, 12);
+      return title || '';
+    } catch {
+      return '';
+    }
+  },
 };

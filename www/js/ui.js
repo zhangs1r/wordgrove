@@ -57,6 +57,7 @@ const UI = {
     this.bindTavern();
     this.bindSelection();
     this.loadWordsSet();
+    Agent.refreshForgetWords();
     this.renderScenes();
     this.renderToday();
     this.renderWords();
@@ -248,6 +249,11 @@ const UI = {
         const w = this.state.dueQueue[this.state.cardIndex];
         if (!w) return;
         await SRS.applyGrade(w.id, parseInt(btn.dataset.grade, 10));
+        // 记得 → 清除一次忘记次数
+        if (parseInt(btn.dataset.grade, 10) >= 3 && (w.forgot || 0) > 0) {
+          await Words.update(w.id, { forgot: (w.forgot || 0) - 1 });
+          Agent.refreshForgetWords();
+        }
         this.state.cardIndex++;
         const next = this.state.dueQueue[this.state.cardIndex];
         if (next) this.showCard(next);
@@ -846,6 +852,16 @@ const UI = {
         this.renderWords(this.el('wordSearch').value.trim());
       }));
     }
+    // 忘记次数排行榜（前 5）
+    const forgotList = all.filter(w => (w.forgot || 0) > 0).sort((a, b) => (b.forgot || 0) - (a.forgot || 0)).slice(0, 5);
+    const rankWrap = this.el('forgotRank');
+    if (rankWrap) {
+      rankWrap.innerHTML = forgotList.length
+        ? `<div class="forgot-rank-title">最常忘（对话会自然带这些词）</div><div class="forgot-rank">` +
+          forgotList.map(w => `<button class="tag-chip rank" data-w="${this.esc(w.word)}">${this.esc(w.word)} · 忘${w.forgot}次</button>`).join('') + `</div>`
+        : '';
+      rankWrap.querySelectorAll('[data-w]').forEach(b => b.addEventListener('click', () => this.showWordQuery(b.dataset.w)));
+    }
     const wrap = this.el('wordList');
     this.el('wordEmpty').classList.toggle('hidden', list.length > 0);
     if (!list.length) { wrap.innerHTML = ''; return; }
@@ -1095,7 +1111,20 @@ const UI = {
         });
         this.refreshWordsSet();
       }
-      body.innerHTML = this.renderWordDetail(d, inSet ? '已在生词本（忘了 ' + ((exist.forgot || 0) + 1) + ' 次）' : '已加入生词本');
+      body.innerHTML = this.renderWordDetail(d, inSet ? '已在生词本（忘了 ' + ((exist.forgot || 0) + 1) + ' 次）' : '已加入生词本')
+        + (inSet ? `<button id="wdRemember" class="btn btn-ghost btn-sm btn-block" style="margin-top:10px">✓ 这次记住了（忘次 -1）</button>` : '');
+      if (inSet) {
+        const rb = body.querySelector('#wdRemember');
+        if (rb) rb.addEventListener('click', async () => {
+          const next = Math.max(0, (exist.forgot || 0) - 1);
+          await Words.update(exist.id, { forgot: next });
+          Agent.refreshForgetWords();
+          rb.disabled = true;
+          rb.textContent = next > 0 ? `已记录 ✓（还剩忘次 ${next}）` : '已记录 ✓（不再上榜）';
+          this.toast('记住了，忘次 -1');
+        });
+      }
+      Agent.refreshForgetWords();
     } catch (e) {
       body.innerHTML = `<div class="wd-result">查询失败：${this.esc(e.message || e)}</div>`;
     }

@@ -151,6 +151,7 @@ const Agent = {
 - 如果学习者说错或卡壳，用自然的方式把正确说法带进你的回复里，不要长篇纠错
 - 可以调用工具查/加生词，但别在对话中途打断节奏
 - 对话进行 5-8 轮后，如果学习者说"结束/复盘/好了"，回复 OK 并停
+${this.forgetLine()}
 `;
   },
 
@@ -289,15 +290,32 @@ const Agent = {
   },
 
   /* ================= 角色扮演（酒馆 RP）引擎 ================= */
+  // 最常忘词缓存（对话/剧场生成时自然带入，巩固记忆）
+  _forgetWords: [],
+  async refreshForgetWords(n = 5) {
+    try {
+      const list = await Words.list();
+      this._forgetWords = list
+        .filter(w => (w.forgot || 0) > 0)
+        .sort((a, b) => (b.forgot || 0) - (a.forgot || 0))
+        .slice(0, n)
+        .map(w => w.word);
+    } catch { this._forgetWords = []; }
+  },
+  forgetLine() {
+    return this._forgetWords.length
+      ? `\n- 学习者最常忘的词（请自然地把这些词带进对话里，帮他巩固，但别硬塞）：${this._forgetWords.join('、')}`
+      : '';
+  },
   // 基础提示词前缀（保持稳定 → DeepSeek 硬盘缓存命中）
   rpSystem(world) {
     const w = world || {};
     return `You are the engine of an immersive English roleplay game. RULES:
 1. Everything you output must be in English. All narration, dialogue, and choices must be English.
 2. Stay in character at all times. Never break the fourth wall.
-3. Advance the story naturally with vivid, sensory narration.
+3. Keep responses concise (under 150 words).
 4. If the user writes in Chinese, gently correct them: first show the correct English way to say what they meant, then continue the story in English.
-5. Keep responses concise (under 150 words).
+${this.forgetLine()}
 
 WORLD: ${w.name || 'Unknown world'}
 SETTING: ${w.setting || ''}

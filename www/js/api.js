@@ -25,9 +25,17 @@ const API = {
     if (temperature !== undefined) body.temperature = temperature;
 
     const headers = {
+      'User-Agent': 'Mozilla/5.0 (Linux; Android 14; 23127PN0CC) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36',
+      'Accept': 'application/json, text/plain, */*',
+      'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+      'Accept-Encoding': 'gzip, deflate',
+      'Origin': 'https://localhost',
+      'Referer': 'https://localhost/',
+      'Sec-Fetch-Dest': 'empty',
+      'Sec-Fetch-Mode': 'cors',
+      'Sec-Fetch-Site': 'cross-site',
       'Content-Type': 'application/json',
       'Authorization': 'Bearer ' + this.key,
-      'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36',
     };
 
     let lastErr = '';

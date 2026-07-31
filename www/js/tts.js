@@ -1,5 +1,101 @@
-/* tts.js — 朗读：内置 Piper 引擎(Web Worker 离线合成) → 原生TTS插件 → speechSynthesis
-   合成在 worker 里跑，UI 不卡；合成期间通过 onPending 回调显示"生成音频"动画 */
+/* ============ 音频缓存（IndexedDB，独立库） ============ */
+const AudioCache = {
+  db: null,
+  limitMB: Settings.get('audioCacheMB', 20),
+  init() { this.open().catch(() => {}); },
+  async open() {
+    if (this.db) return this.db;
+    this.db = await new Promise((resolve, reject) => {
+      const req = indexedDB.open('audioCache', 1);
+      req.onupgradeneeded = () => {
+        if (!req.result.objectStoreNames.contains('audio')) {
+          req.result.createObjectStore('audio');
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    return this.db;
+  },
+  key(text, rate) { return rate + '|' + text; },
+  async get(text, rate) {
+    try {
+      const db = await this.open();
+      return await new Promise((resolve) => {
+        const req = db.transaction('audio', 'readonly').objectStore('audio').get(this.key(text, rate));
+        req.onsuccess = () => resolve(req.result ? req.result.data : null);
+        req.onerror = () => resolve(null);
+      });
+    } catch { return null; }
+  },
+  async put(text, rate, data) {
+    try {
+      const db = await this.open();
+      await new Promise((resolve) => {
+        const tx = db.transaction('audio', 'readwrite');
+        tx.objectStore('audio').put({ data, size: data.byteLength, at: Date.now() }, this.key(text, rate));
+        tx.oncomplete = resolve;
+        tx.onerror = () => resolve();
+      });
+      this.trim();
+    } catch {}
+  },
+  /* 超限按最旧淘汰 */
+  async trim() {
+    try {
+      const db = await this.open();
+      const limit = this.limitMB * 1024 * 1024;
+      const entries = await new Promise((resolve) => {
+        const out = [];
+        const cur = db.transaction('audio', 'readonly').objectStore('audio').openCursor();
+        cur.onsuccess = () => {
+          const c = cur.result;
+          if (c) { out.push({ key: c.key, size: c.value.size || 0, at: c.value.at || 0 }); c.continue(); }
+          else resolve(out);
+        };
+        cur.onerror = () => resolve(out);
+      });
+      let total = entries.reduce((s, e) => s + e.size, 0);
+      if (total <= limit) return;
+      entries.sort((a, b) => a.at - b.at);
+      const tx = db.transaction('audio', 'readwrite');
+      const store = tx.objectStore('audio');
+      for (const e of entries) {
+        if (total <= limit) break;
+        total -= e.size;
+        store.delete(e.key);
+      }
+    } catch {}
+  },
+  async usage() {
+    try {
+      const db = await this.open();
+      return await new Promise((resolve) => {
+        let count = 0, bytes = 0;
+        const cur = db.transaction('audio', 'readonly').objectStore('audio').openCursor();
+        cur.onsuccess = () => {
+          const c = cur.result;
+          if (c) { count++; bytes += (c.value.size || 0); c.continue(); }
+          else resolve({ count, bytes });
+        };
+        cur.onerror = () => resolve({ count: 0, bytes: 0 });
+      });
+    } catch { return { count: 0, bytes: 0 }; }
+  },
+  async clear() {
+    try {
+      const db = await this.open();
+      await new Promise((resolve) => {
+        const tx = db.transaction('audio', 'readwrite');
+        tx.objectStore('audio').clear();
+        tx.oncomplete = resolve;
+        tx.onerror = () => resolve();
+      });
+    } catch {}
+  },
+};
+
+/* ============ TTS 引擎 ============ */
 const TTS = {
   voice: null,
   rate: 0.95,
@@ -17,6 +113,7 @@ const TTS = {
   init() {
     this.rate = Settings.get('rate', 0.95);
     this.usingNative = !!(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.TextToSpeech);
+    AudioCache.init();
     this.initEngine();
     this.initSystemVoices();
   },
@@ -108,17 +205,30 @@ const TTS = {
     this.playing = true;
     this._current = item;
     this._pending(true);
-    const id = ++this.synthId;
-    this.worker.postMessage({ type: 'synth', id, text: item.text, rate: item.rate });
-    // 兜底超时
-    this._synthTimer = setTimeout(() => {
-      if (this.playing && this._current === item) {
+    // 命中缓存直接播放，不再合成
+    AudioCache.get(item.text, item.rate).then((cached) => {
+      if (!this.playing || this._current !== item) return; // 已被 stop 打断
+      if (cached) {
+        clearTimeout(this._synthTimer);
         this._pending(false);
         this.playing = false;
-        item.resolve(false);
-        this.pumpQueue();
+        this._current = null;
+        this.playSamples(new Float32Array(cached), 22050, () => { item.resolve(true); this.pumpQueue(); });
+        return;
       }
-    }, 30000);
+      const id = ++this.synthId;
+      this.worker.postMessage({ type: 'synth', id, text: item.text, rate: item.rate });
+      // 兜底超时
+      this._synthTimer = setTimeout(() => {
+        if (this.playing && this._current === item) {
+          this._pending(false);
+          this.playing = false;
+          this._current = null;
+          item.resolve(false);
+          this.pumpQueue();
+        }
+      }, 30000);
+    });
   },
 
   _onResult(id, samples, sampleRate) {
@@ -129,8 +239,8 @@ const TTS = {
     const item = this._current;
     this._current = null;
     if (samples && samples.length) {
-      this.playSamples(samples, sampleRate);
-      this._playDone = () => { item.resolve(true); this.pumpQueue(); };
+      AudioCache.put(item.text, item.rate, samples.buffer); // 存入缓存（不阻塞播放）
+      this.playSamples(samples, sampleRate, () => { item.resolve(true); this.pumpQueue(); });
     } else {
       item.resolve(false);
       this.pumpQueue();
@@ -171,7 +281,7 @@ const TTS = {
     if (this.onPending) this.onPending(this.pendingCount > 0);
   },
 
-  playSamples(samples, sampleRate) {
+  playSamples(samples, sampleRate, onDone) {
     try {
       if (!this.audioCtx) this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       if (this.audioCtx.state === 'suspended') this.audioCtx.resume();
@@ -180,11 +290,11 @@ const TTS = {
       const source = this.audioCtx.createBufferSource();
       source.buffer = buffer;
       source.connect(this.audioCtx.destination);
-      source.onended = () => { if (this._playDone) this._playDone(); };
+      source.onended = () => { if (onDone) onDone(); };
       source.start();
     } catch (e) {
       console.log('play fail', e);
-      if (this._playDone) this._playDone();
+      if (onDone) onDone();
     }
   },
 

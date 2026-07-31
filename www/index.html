@@ -10,7 +10,7 @@
 
 <header class="app-header">
   <div class="brand">
-    <div class="brand-mark">🌱</div>
+    <div class="brand-mark"></div>
     <div class="brand-text">
       <h1 id="appTitle">WordGrove <span class="brand-en">言木</span></h1>
       <p id="todayGoal" class="brand-sub">今天 12 个词，3 分钟</p>
@@ -40,7 +40,7 @@
       <button class="btn btn-primary" data-grade="2">😎 记得</button>
     </div>
     <div id="cardEmpty" class="empty-state hidden">
-      <div class="empty-emoji">🌿</div>
+      <div class="empty-emoji" id="emptyToday"></div>
       <p>今天的词都复习完了</p>
       <p class="empty-sub">去聊一局，把新词带回来</p>
       <button class="btn btn-primary" id="goChatBtn">去对话</button>
@@ -59,7 +59,7 @@
     </div>
     <div id="chatArea" class="chat-area">
       <div id="chatPlaceholder" class="chat-placeholder">
-        <div class="empty-emoji">🗣️</div>
+        <div class="empty-emoji" id="emptyChat"></div>
         <p id="chatPlaceholderText">选一个场景，开始 3 分钟对话</p>
       </div>
     </div>
@@ -79,7 +79,7 @@
     </div>
     <div id="wordList" class="word-list"></div>
     <div id="wordEmpty" class="empty-state hidden">
-      <div class="empty-emoji">📖</div>
+      <div class="empty-emoji" id="emptyWords"></div>
       <p>生词本是空的</p>
       <p class="empty-sub">对话里卡壳的词会自动进来</p>
     </div>
@@ -88,11 +88,11 @@
   <!-- ======== 酒馆（角色扮演） ======== -->
   <section id="tab-tavern" class="tab-page">
     <div class="page-head">
-      <h2>🎭 酒馆</h2>
+      <h2><span id="tavernHeadIcon" class="h-icon"></span>酒馆</h2>
     </div>
 
     <div class="settings-group">
-      <h3>🌍 世界卡</h3>
+      <h3><span id="worldHeadIcon" class="h-icon"></span>世界卡</h3>
       <div class="tavern-card" id="tavernWorldInfo">
         <div class="tavern-card-name" id="tavernWorldName">未选择世界</div>
         <div class="tavern-card-desc" id="tavernWorldDesc"></div>
@@ -104,7 +104,7 @@
     </div>
 
     <div class="settings-group">
-      <h3>🎭 角色卡 <span class="tavern-hint" id="tavernCharHint"></span></h3>
+      <h3><span id="charHeadIcon" class="h-icon"></span>角色卡 <span class="tavern-hint" id="tavernCharHint"></span></h3>
       <div id="tavernCharList" class="tavern-chars"></div>
       <div class="tavern-card-actions">
         <button class="btn btn-ghost btn-sm" id="tavernCharListBtn">角色卡库</button>
@@ -167,6 +167,16 @@
         <span>TTS 引擎</span>
         <div id="ttsStatus" class="tts-status">检测中…</div>
       </label>
+      <label class="field">
+        <span>音频缓存（读过的句子直接播）</span>
+        <select id="setAudioCache">
+          <option value="10">10 MB（约 200 句）</option>
+          <option value="20">20 MB（约 400 句）</option>
+          <option value="50">50 MB（约 1000 句）</option>
+        </select>
+      </label>
+      <div id="audioCacheInfo" class="tts-status">计算中…</div>
+      <button id="audioCacheClearBtn" class="btn btn-ghost">清空音频缓存</button>
     </div>
     <div class="settings-group">
       <h3>学习画像</h3>
@@ -240,7 +250,6 @@
   <button class="tab-btn" data-tab="settings"><span class="tab-icon">⚙️</span><span>设置</span></button>
 </nav>
 
-<div id="ttsPending" class="tts-pending hidden"><span>正在生成音频</span><span class="tts-dots"><span></span><span></span><span></span></span></div>
 <div id="toast" class="toast hidden"></div>
 
 <script src="js/db.js"></script>

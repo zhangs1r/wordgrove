@@ -1,12 +1,32 @@
 /* ui.js — 渲染 + 交互 */
+const Icons = {
+  sprout: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22V12"/><path d="M12 12C12 8 9 5 5 5c0 4 3 7 7 7z"/><path d="M12 12c0-4 3-7 7-7 0 4-3 7-7 7z"/><path d="M9 22h6"/></svg>',
+  chat: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>',
+  mug: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 8H7l-1.2-5h12.4L17 8z"/><path d="M17 8c0 2.5-2.2 4.5-5 4.5S7 10.5 7 8"/><path d="M12 12.5V19"/><path d="M8 22h8"/></svg>',
+  book: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>',
+  gear: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+  x: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>',
+  menu: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M3 6h18"/><path d="M3 12h18"/><path d="M3 18h18"/></svg>',
+  plus: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>',
+  search: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>',
+  play: '<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M8 5.5v13l11-6.5-11-6.5z"/></svg>',
+  bulb: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.4 1 2.3h6c0-.9.4-1.8 1-2.3A7 7 0 0 0 12 2z"/></svg>',
+  earth: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18z"/></svg>',
+  user: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>',
+  pen: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>',
+  };
+
 const UI = {
   state: {
     tab: 'today',
     dueQueue: [],
     cardIndex: 0,
     sceneId: 'cafe',
-    chatHistory: [],
+    busy: false,
+    dark: false,
     chatBusy: false,
+    chatHistory: [],
+    chatTitle: '',
     reviewing: false,
     autoTurn: 0,
     building: false,
@@ -24,9 +44,11 @@ const UI = {
   },
 
   init() {
+    this.injectIcons();
     this.bindTabs();
     this.bindTheme();
     this.bindSettings();
+    this.bindAudioCache();
     this.bindConv();
     this.bindTavern();
     this.renderScenes();
@@ -37,9 +59,6 @@ const UI = {
     this.bindWords();
     this.bindCardActions();
     this.loadTtsVoices();
-
-    // 朗读合成中的三点动画（worker 合成不卡 UI）
-    TTS.onPending = (p) => this.el('ttsPending').classList.toggle('hidden', !p);
 
     if (!API.configured()) {
       setTimeout(() => {
@@ -59,6 +78,54 @@ const UI = {
   },
 
   el(id) { return document.getElementById(id); },
+
+  /* 朗读按钮：SVG 喇叭 + 点击反馈（生成三点 → 播放声波） */
+  sayIcon() {
+    return '<svg class="ic-say" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+      + '<path d="M11 5 6 9H2v6h4l5 4V5z"/>'
+      + '<path d="M15.5 8.5a5 5 0 0 1 0 7"/>'
+      + '<path d="M18.5 5.5a9 9 0 0 1 0 13"/>'
+      + '</svg>';
+  },
+  addSpeakListener(btn, text) {
+    if (!btn) return;
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (btn.dataset.busy) return;
+      btn.dataset.busy = '1';
+      btn.classList.add('tts-btn-loading');
+      const orig = btn.innerHTML;
+      btn.innerHTML = '<span class="tts-dots"><span></span><span></span><span></span></span>';
+      await TTS.speak(text);
+      btn.classList.remove('tts-btn-loading');
+      btn.innerHTML = orig;
+      delete btn.dataset.busy;
+    });
+  },
+
+  /* 静态 SVG 图标注入（tab/标题/关闭按钮） */
+  injectIcons() {
+    const tabMap = { today: Icons.sprout, chat: Icons.chat, tavern: Icons.mug, words: Icons.book, settings: Icons.gear };
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      const icon = tabMap[btn.dataset.tab];
+      if (icon) {
+        const el = btn.querySelector('.tab-icon');
+        if (el) el.innerHTML = icon;
+      }
+    });
+    const btnMap = {
+      convListBtn: Icons.menu, convNewBtn: Icons.plus,
+      tavernClose: Icons.x, genClose: Icons.x, wordClose: Icons.x, convClose: Icons.x,
+      tavernHeadIcon: Icons.mug, worldHeadIcon: Icons.earth, charHeadIcon: Icons.user,
+      emptyToday: Icons.sprout, emptyChat: Icons.chat, emptyWords: Icons.book,
+    };
+    Object.entries(btnMap).forEach(([id, svg]) => {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = svg;
+    });
+    const bm = document.querySelector('.brand-mark');
+    if (bm) bm.innerHTML = Icons.sprout;
+  },
 
   /* ---------- Tab ---------- */
   bindTabs() {
@@ -130,7 +197,7 @@ const UI = {
           <div class="card-face card-front">
             <div class="card-word">${this.esc(word.word)}</div>
             ${phonetic}
-            <button class="card-say-btn" id="cardSay">🔊</button>
+            <button class="card-say-btn" id="cardSay">${this.sayIcon()}</button>
             <span class="card-hint">点卡片翻面</span>
           </div>
           <div class="card-face card-back">
@@ -144,12 +211,9 @@ const UI = {
       </div>`;
     const card = this.el('wordCard');
     card.addEventListener('click', () => card.classList.toggle('flipped'));
-    this.el('cardSay').addEventListener('click', e => { e.stopPropagation(); TTS.speak(word.word); });
+    this.addSpeakListener(this.el('cardSay'), word.word);
     const sayBack = this.el('cardSayBack');
-    if (sayBack) sayBack.addEventListener('click', e => {
-      e.stopPropagation();
-      TTS.speak(word.word + '. ' + (word.example || ''));
-    });
+    if (sayBack) this.addSpeakListener(sayBack, word.word + '. ' + (word.example || ''));
     if (Settings.get('autoSpeak', true)) setTimeout(() => TTS.speak(word.word), 300);
   },
 
@@ -161,7 +225,7 @@ const UI = {
     const p1 = this.el('cardEmpty').querySelector('p');
     const sub = this.el('cardEmpty').querySelector('.empty-sub');
     if (firstTime) {
-      emoji.textContent = '🌱';
+      emoji.innerHTML = Icons.sprout;
       p1.textContent = '还没有生词';
       sub.textContent = '去聊一局，或者粘贴一段英文建卡';
     } else {
@@ -348,7 +412,7 @@ const UI = {
         this.state.rpWorld = w;
         this.state.rpChars = this.listChars().filter(c => (rp.charIds || []).includes(c.id));
         this.state.rpHistory = rp.history;
-        this.state.convTitle = '🎭 ' + w.name;
+        this.state.convTitle = w.name;
         this.el('sceneBar').classList.add('hidden');
         this.el('chatInput').placeholder = 'Say something… 或输入"继续"';
         this.renderConvTitle();
@@ -376,7 +440,7 @@ const UI = {
     area.innerHTML = '';
     if (this.state.rpMode) {
       if (!this.state.rpHistory.length) {
-        area.innerHTML = `<div class="chat-placeholder" id="chatPlaceholder"><div class="empty-emoji">🎭</div><p>选择世界和角色，开始你的故事</p></div>`;
+        area.innerHTML = `<div class="chat-placeholder" id="chatPlaceholder"><div class="empty-emoji">${Icons.mug}</div><p>选择世界和角色，开始你的故事</p></div>`;
         return;
       }
       for (const m of this.state.rpHistory) {
@@ -389,7 +453,7 @@ const UI = {
       return;
     }
     if (!this.state.chatHistory.length) {
-      area.innerHTML = `<div class="chat-placeholder" id="chatPlaceholder"><div class="empty-emoji">🗣️</div><p>选一个场景，开始 3 分钟对话</p></div>`;
+      area.innerHTML = `<div class="chat-placeholder" id="chatPlaceholder"><div class="empty-emoji">${Icons.chat}</div><p>选一个场景，开始 3 分钟对话</p></div>`;
       return;
     }
     for (const m of this.state.chatHistory) {
@@ -425,10 +489,11 @@ const UI = {
       div.innerHTML = '<i></i><i></i><i></i>';
     } else {
       const cn = opts.cn ? `<div class="msg-cn">${this.esc(opts.cn)}</div>` : '';
-      const actions = role === 'assistant' ? `<div class="msg-actions"><button class="msg-chip-btn" data-say="${this.esc(text)}">🔊 朗读</button></div>` : '';
+      const actions = role === 'assistant' ? `<div class="msg-actions"><button class="msg-chip-btn" data-say="${this.esc(text)}">${this.sayIcon()} 朗读</button></div>` : '';
       div.innerHTML = `<div class="msg-en">${this.esc(text)}</div>${cn}${actions}`;
       if (role === 'assistant') {
-        div.querySelector('[data-say]')?.addEventListener('click', e => TTS.speak(e.target.dataset.say));
+        const sb = div.querySelector('[data-say]');
+        if (sb) this.addSpeakListener(sb, sb.dataset.say);
       }
     }
     area.appendChild(div);
@@ -547,7 +612,7 @@ const UI = {
       userDiv.appendChild(box);
     }
     box.innerHTML = `
-      <div class="sg-head">💡 可以这样说</div>
+      <div class="sg-head">${Icons.bulb} 可以这样说</div>
       <div class="sg-better">${this.esc(sug.better || '')}</div>
       ${sug.reason ? `<div class="sg-reason">${this.esc(sug.reason)}</div>` : ''}
       <div class="sg-actions">
@@ -571,7 +636,7 @@ const UI = {
     box.innerHTML = `<div class="sg-done">✓ 已记入表达积累：${this.esc(better)}</div>`;
     TTS.speak(better);
     this.exitHintMode();
-    this.toast('已加入表达积累 🌱');
+    this.toast('已加入表达积累');
   },
   enterHintMode(box) {
     this.state.hintMode = true;
@@ -579,7 +644,7 @@ const UI = {
     const input = this.el('chatInput');
     input.placeholder = '用中文写你想表达的意思…';
     input.focus();
-    this.el('chatSendBtn').textContent = '📝';
+    this.el('chatSendBtn').innerHTML = Icons.pen;
     this.toast('输入中文，我帮你翻成地道英文');
   },
   exitHintMode() {
@@ -604,7 +669,7 @@ const UI = {
       } else if (lastUserDiv) {
         this.renderSuggestion(lastUserDiv, sug, 'hint');
       } else {
-        this.appendMsg('assistant', '💡 ' + sug.better + (sug.reason ? '\n' + sug.reason : ''));
+        this.appendMsg('assistant', 'Better: ' + sug.better + (sug.reason ? '\n' + sug.reason : ''));
       }
       if (sug.better) TTS.speak(sug.better);
     } catch (e) {
@@ -639,7 +704,7 @@ const UI = {
           word: w.word, phonetic: w.phonetic || '', meaning: w.meaning || '',
           example: w.example || '', exampleCn: w.exampleCn || '', source: 'review',
         })));
-        if (added > 0) this.toast(`复盘把 ${added} 个词加入了生词本 🌱`);
+        if (added > 0) this.toast(`复盘把 ${added} 个词加入了生词本`);
       } else if (auto) {
         this.toast('复盘完成 ✅');
       }
@@ -691,7 +756,7 @@ const UI = {
         div.innerHTML = `
           <textarea id="buildText" placeholder="粘贴英文文本（论文摘要、文章、聊天记录…），AI 会提取生词"></textarea>
           <div class="build-actions">
-            <button class="btn btn-primary" id="buildExtract">🌱 提取生词</button>
+            <button class="btn btn-primary" id="buildExtract">${Icons.sprout} 提取生词</button>
             <button class="btn btn-ghost" id="buildCancel">取消</button>
           </div>
           <div id="buildResult"></div>`;
@@ -722,7 +787,7 @@ const UI = {
                   word: w.word, phonetic: w.phonetic || '', meaning: w.meaning || '',
                   example: w.example || '', exampleCn: w.exampleCn || '', source: 'build',
                 })));
-                this.toast(`加入 ${added} 个词 🌱`);
+                this.toast(`加入 ${added} 个词`);
                 res.innerHTML = '';
                 this.el('buildText').value = '';
                 this.renderWords();
@@ -731,7 +796,7 @@ const UI = {
           } catch (e) {
             this.toast('提取失败：' + (e.message || e));
           }
-          extract.disabled = false; extract.textContent = '🌱 提取生词';
+          extract.disabled = false; extract.innerHTML = Icons.sprout + ' 提取生词';
         });
       }
       this.el('buildCancel').addEventListener('click', () => this.el('buildPanel').classList.add('hidden'));
@@ -752,10 +817,10 @@ const UI = {
           <div class="wi-word">${this.esc(w.word)}${w.phonetic ? `<span class="wi-phon">${this.esc(w.phonetic)}</span>` : ''}</div>
           <div class="wi-meaning">${this.esc(w.meaning)}${w.source === 'review' ? ' <span class="wi-state">· 对话</span>' : w.source === 'build' ? ' <span class="wi-state">· 建卡</span>' : ''}</div>
         </div>
-        <button class="wi-say" data-say="${this.esc(w.word)}">🔊</button>
+        <button class="wi-say" data-say="${this.esc(w.word)}">${this.sayIcon()}</button>
         <button class="wi-del" data-del="${w.id}">✕</button>
       </div>`).join('');
-    wrap.querySelectorAll('.wi-say').forEach(b => b.addEventListener('click', e => TTS.speak(e.target.dataset.say)));
+    wrap.querySelectorAll('.wi-say').forEach(b => this.addSpeakListener(b, b.dataset.say));
     wrap.querySelectorAll('.wi-del').forEach(b => b.addEventListener('click', async e => {
       await Words.remove(e.target.dataset.del);
       this.renderWords(this.el('wordSearch').value.trim());
@@ -780,7 +845,7 @@ const UI = {
       ${w.example ? `<div class="wd-ex">${this.esc(w.example)}</div>` : ''}
       ${w.exampleCn ? `<div class="wd-excn">${this.esc(w.exampleCn)}</div>` : ''}
       <div class="wd-meta">🌿 来源：${this.esc(src)} · ${this.fmtDate(w.created)}</div>
-      ${(!w.phonetic || !w.example || !w.pos) ? `<button class="btn btn-ghost btn-sm btn-block" id="wdEnrich" style="margin-top:10px">🔍 补全详情（音标/词性/例句）</button>` : ''}
+      ${(!w.phonetic || !w.example || !w.pos) ? `<button class="btn btn-ghost btn-sm btn-block" id="wdEnrich" style="margin-top:10px">${Icons.search} 补全详情（音标/词性/例句）</button>` : ''}
       <div id="wdEnrichResult" class="wd-result"></div>`;
     this.el('wordModal').classList.remove('hidden');
     const btn = body.querySelector('#wdEnrich');
@@ -800,7 +865,7 @@ const UI = {
           const r = document.getElementById('wdEnrichResult');
           if (r) r.textContent = '查询失败：' + (e.message || e);
           btn.disabled = false;
-          btn.textContent = '🔍 补全详情';
+          btn.innerHTML = Icons.search + ' 补全详情';
         }
       });
     }
@@ -809,6 +874,35 @@ const UI = {
     if (!ts) return '';
     const d = new Date(ts);
     return (d.getMonth() + 1) + '/' + d.getDate();
+  },
+
+  /* ---------- 音频缓存设置 ---------- */
+  bindAudioCache() {
+    const sel = this.el('setAudioCache');
+    if (sel) {
+      sel.value = String(Settings.get('audioCacheMB', 50));
+      sel.addEventListener('change', () => {
+        const mb = parseInt(sel.value, 10);
+        Settings.set('audioCacheMB', mb);
+        AudioCache.limitMB = mb;
+        AudioCache.trim();
+        this.refreshAudioCacheInfo();
+        this.toast('缓存上限已更新');
+      });
+    }
+    const btn = this.el('audioCacheClearBtn');
+    if (btn) btn.addEventListener('click', async () => {
+      await AudioCache.clear();
+      this.refreshAudioCacheInfo();
+      this.toast('缓存已清空');
+    });
+    this.refreshAudioCacheInfo();
+  },
+  async refreshAudioCacheInfo() {
+    const el = this.el('audioCacheInfo');
+    if (!el) return;
+    const u = await AudioCache.usage();
+    el.textContent = `已用 ${(u.bytes / 1024 / 1024).toFixed(1)} MB · ${u.count} 句 · 上限 ${Settings.get('audioCacheMB', 50)} MB`;
   },
 
   /* ---------- 设置 ---------- */
@@ -1046,7 +1140,7 @@ const UI = {
       }
       this.el('genModal').classList.add('hidden');
       this.renderTavern();
-      this.toast('生成成功 🎉');
+      this.toast('生成成功');
     } catch (e) {
       this.toast('生成失败：' + (e.message || e).slice(0, 60));
     }
@@ -1065,13 +1159,13 @@ const UI = {
     this.state.rpWorld = w;
     this.state.rpChars = inWorld;
     this.state.rpHistory = [];
-    this.state.convTitle = '🎭 ' + w.name;
+    this.state.convTitle = w.name;
     this.renderConvTitle();
     this.el('sceneBar').classList.add('hidden');
     this.el('chatInput').placeholder = 'Say something… 或输入"继续"';
     this.switchTab('chat');
     this.renderChatHistory();
-    this.appendMsg('assistant', '🎭 世界「' + w.name + '」已加载。你在场角色：' + inWorld.map(c => c.name).join('、') + '。故事开始了——');
+    this.appendMsg('assistant', '世界「' + w.name + '」已加载。你在场角色：' + inWorld.map(c => c.name).join('、') + '。故事开始了——');
     this.rpRound('');
   },
   async sendRpText(text) {
@@ -1146,7 +1240,7 @@ const UI = {
     div.className = 'rp-options';
     div.innerHTML = (options.length
       ? options.map(o => `<button class="rp-opt">${this.esc(o)}</button>`).join('')
-      : '') + `<button class="rp-opt rp-continue">▶ 继续</button>`;
+      : '') + `<button class="rp-opt rp-continue">${Icons.play} 继续</button>`;
     div.querySelectorAll('.rp-opt').forEach(b => b.addEventListener('click', () => {
       if (b.classList.contains('rp-continue')) this.sendRpText('continue');
       else this.sendRpText(b.textContent);

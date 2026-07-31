@@ -365,6 +365,16 @@ body {
 .rp-opt:active { background: var(--card-2); }
 .rp-continue { border-style: dashed; color: var(--primary); }
 
+/* ============ 单词详情 ============ */
+.word-detail { padding: 4px 2px; }
+.wd-word { font-size: 22px; font-weight: 700; line-height: 1.4; }
+.wd-pos { font-size: 13px; color: var(--primary); font-weight: 600; margin-top: 2px; }
+.wd-meaning { font-size: 16px; margin-top: 10px; line-height: 1.6; }
+.wd-ex { font-size: 15px; font-style: italic; color: var(--text); margin-top: 10px; line-height: 1.6; }
+.wd-excn { font-size: 13px; color: var(--muted); margin-top: 3px; }
+.wd-meta { font-size: 12px; color: var(--muted); margin-top: 12px; }
+.wd-result { font-size: 13px; color: var(--danger); margin-top: 8px; }
+
 /* ============ 通用 ============ */
 .empty-state { text-align: center; padding: 48px 0 32px; color: var(--muted); }
 .empty-emoji { font-size: 44px; margin-bottom: 12px; }

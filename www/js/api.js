@@ -9,10 +9,9 @@ const API = {
     const base = Settings.get('apiBase', '');
     const defaultBase = provider === 'deepseek'
       ? 'https://api.deepseek.com/v1/chat/completions'
-      : 'https://opencode.ai/zen/go/v1/chat/completions';
-    // 地址与提供商不匹配时自动校正（防止旧数据残留导致请求发错地方）
-    const ok = base && (base.includes('deepseek.com') || base.includes('opencode.ai'));
-    this.base = (ok && ((provider === 'deepseek') === base.includes('deepseek.com'))) ? base : defaultBase;
+      : 'https://api.deepseek.com/v1/chat/completions';
+    // 只用 DeepSeek：非 deepseek.com 地址一律重置，防残留 opencode 地址
+    this.base = (base && base.includes('deepseek.com')) ? base : defaultBase;
     this.key = Settings.get('apiKey', '');
     if (this.base !== base) Settings.set('apiBase', this.base);
   },

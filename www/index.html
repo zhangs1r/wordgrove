@@ -125,7 +125,6 @@
         <span>API 提供商</span>
         <select id="setProvider">
           <option value="deepseek">DeepSeek 官方（国内直连）</option>
-          <option value="opencode">OpenCode Go（备用）</option>
         </select>
       </label>
       <label class="field">
@@ -168,11 +167,6 @@
         <span>TTS 引擎</span>
         <div id="ttsStatus" class="tts-status">检测中…</div>
       </label>
-      <label class="field">
-        <span>朗读音色</span>
-        <select id="setVoice"><option value="-1">默认音色</option></select>
-      </label>
-      <button id="ttsInstallBtn" class="btn btn-ghost">安装 / 管理 TTS 引擎</button>
     </div>
     <div class="settings-group">
       <h3>学习画像</h3>
@@ -211,6 +205,18 @@
     </div>
     <textarea id="genInput" class="gen-input" rows="4" placeholder="描述你想要的世界/角色…（可以中文）"></textarea>
     <button id="genSubmitBtn" class="btn btn-primary btn-block">生成</button>
+  </div>
+</div>
+
+<!-- 单词详情 modal -->
+<div id="wordModal" class="modal hidden">
+  <div class="modal-mask" id="wordMask"></div>
+  <div class="modal-panel">
+    <div class="modal-head">
+      <span>单词详情</span>
+      <button id="wordClose" class="icon-btn-sm">✕</button>
+    </div>
+    <div id="wordModalBody" class="word-detail"></div>
   </div>
 </div>
 

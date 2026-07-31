@@ -670,6 +670,8 @@ const UI = {
 
   /* ---------- 生词本 ---------- */
   bindWords() {
+    this.el('wordClose').addEventListener('click', () => this.el('wordModal').classList.add('hidden'));
+    this.el('wordMask').addEventListener('click', () => this.el('wordModal').classList.add('hidden'));
     this.el('wordSearch').addEventListener('input', e => this.renderWords(e.target.value.trim()));
     this.el('addWordBtn').addEventListener('click', () => this.toggleBuildPanel());
     this.el('importFile').addEventListener('change', e => this.importData(e.target.files[0]));
@@ -755,14 +757,62 @@ const UI = {
       await Words.remove(e.target.dataset.del);
       this.renderWords(this.el('wordSearch').value.trim());
     }));
+    // 点击单词 → 详情
+    wrap.querySelectorAll('.word-item').forEach(item => item.addEventListener('click', async e => {
+      if (e.target.closest('.wi-say') || e.target.closest('.wi-del')) return;
+      const w = all.find(x => x.id === item.dataset.id);
+      if (w) this.showWordDetail(w);
+    }));
+  },
+
+  /* ---------- 单词详情 ---------- */
+  async showWordDetail(w) {
+    const body = this.el('wordModalBody');
+    const srcMap = { agent: 'AI 对话', review: '复盘收藏', build: '一键建卡', manual: '手动添加' };
+    const src = w.sourceScene || srcMap[w.source] || w.source || '未知';
+    body.innerHTML = `
+      <div class="wd-word">${this.esc(w.word)}${w.phonetic ? ` <span class="wi-phon">${this.esc(w.phonetic)}</span>` : ''}</div>
+      ${w.pos ? `<div class="wd-pos">${this.esc(w.pos)}</div>` : ''}
+      <div class="wd-meaning">${this.esc(w.meaning || '（暂无释义）')}</div>
+      ${w.example ? `<div class="wd-ex">${this.esc(w.example)}</div>` : ''}
+      ${w.exampleCn ? `<div class="wd-excn">${this.esc(w.exampleCn)}</div>` : ''}
+      <div class="wd-meta">🌿 来源：${this.esc(src)} · ${this.fmtDate(w.created)}</div>
+      ${(!w.phonetic || !w.example || !w.pos) ? `<button class="btn btn-ghost btn-sm btn-block" id="wdEnrich" style="margin-top:10px">🔍 补全详情（音标/词性/例句）</button>` : ''}
+      <div id="wdEnrichResult" class="wd-result"></div>`;
+    this.el('wordModal').classList.remove('hidden');
+    const btn = body.querySelector('#wdEnrich');
+    if (btn) {
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        btn.textContent = '查询中…';
+        try {
+          const d = await Agent.queryWord(w.word);
+          await Words.update(w.id, { ...w, phonetic: d.phonetic || w.phonetic, pos: d.pos || w.pos, meaning: d.meaning || w.meaning, example: d.example || w.example, exampleCn: d.exampleCn || w.exampleCn });
+          const updated = await Words.get(w.id);
+          this.el('wordModal').classList.add('hidden');
+          this.showWordDetail(updated || { ...w, ...d });
+          this.renderWords(this.el('wordSearch').value.trim());
+          this.toast('详情已补全 🌿');
+        } catch (e) {
+          const r = document.getElementById('wdEnrichResult');
+          if (r) r.textContent = '查询失败：' + (e.message || e);
+          btn.disabled = false;
+          btn.textContent = '🔍 补全详情';
+        }
+      });
+    }
+  },
+  fmtDate(ts) {
+    if (!ts) return '';
+    const d = new Date(ts);
+    return (d.getMonth() + 1) + '/' + d.getDate();
   },
 
   /* ---------- 设置 ---------- */
   bindSettings() {
-    // API 提供商预设
+    // API 提供商预设（只用 DeepSeek 官方，国内直连）
     const PROVIDERS = {
       deepseek: { base: 'https://api.deepseek.com/v1/chat/completions', models: ['deepseek-v4-flash', 'deepseek-v4-pro'] },
-      opencode: { base: 'https://opencode.ai/zen/go/v1/chat/completions', models: ['deepseek-v4-flash', 'mimo-v2.5', 'deepseek-v4-pro'] },
     };
     const fillModels = (provider) => {
       const chat = this.el('setChatModel');
@@ -1116,56 +1166,19 @@ const UI = {
     this.toast('已退出角色扮演');
   },
 
-  /* TTS 引擎检测 + 音色列表 */
-  async loadTtsVoices() {
+  /* TTS 引擎状态（内置引擎，管理已简化） */
+  loadTtsVoices() {
     const status = this.el('ttsStatus');
     if (!status) return;
-    const plugin = window.Capacitor?.Plugins?.TextToSpeech;
     if (TTS.engine === 'ready') {
       status.textContent = '内置引擎 ✓（Piper 离线美音）';
     } else if (TTS.engine === 'loading') {
       status.textContent = '内置引擎加载中…';
-    } else if (plugin) {
+      setTimeout(() => this.loadTtsVoices(), 800);
+    } else if (window.Capacitor?.Plugins?.TextToSpeech) {
       status.textContent = '系统原生引擎（内置引擎不可用）';
     } else {
       status.textContent = '浏览器引擎（备用）';
-    }
-    try {
-      if (!plugin) return;
-      const res = await plugin.getSupportedVoices();
-      const voices = res.voices || [];
-      const sel = this.el('setVoice');
-      if (!voices.length) {
-        sel.innerHTML = '<option value="-1">默认音色</option>';
-      } else {
-        const display = [...voices].sort((a, b) => {
-          const ae = (a.lang || '').toLowerCase().startsWith('en') ? 0 : 1;
-          const be = (b.lang || '').toLowerCase().startsWith('en') ? 0 : 1;
-          return ae - be;
-        });
-        sel.innerHTML = '<option value="-1">默认音色</option>' + display.map(v => {
-          const idx = voices.indexOf(v);
-          const name = v.name || v.voiceURI || ('voice ' + idx);
-          const tag = v.localService === false ? ' (在线)' : '';
-          return `<option value="${idx}">${name}${tag} · ${v.lang || ''}</option>`;
-        }).join('');
-      }
-      const cur = Settings.get('voiceIdx', -1);
-      if (sel.querySelector(`option[value="${cur}"]`)) sel.value = String(cur);
-      sel.addEventListener('change', () => Settings.set('voiceIdx', parseInt(sel.value, 10)));
-    } catch (e) {
-      console.log('loadTtsVoices fail', e);
-    }
-    const installBtn = this.el('ttsInstallBtn');
-    if (installBtn && !installBtn.dataset.bound) {
-      installBtn.dataset.bound = '1';
-      installBtn.addEventListener('click', async () => {
-        try {
-          await plugin.openInstall();
-        } catch {
-          this.toast('系统设置 → 语音与输入 → 文字转语音');
-        }
-      });
     }
   },
 

@@ -89,7 +89,7 @@ const Agent = {
   ],
 
   /* ---------- 工具执行 ---------- */
-  async execute(name, argsStr) {
+  async execute(name, argsStr, scene) {
     let args = {};
     try { args = JSON.parse(argsStr || '{}'); } catch {}
     try {
@@ -102,7 +102,8 @@ const Agent = {
           const items = (args.words || []).slice(0, 10);
           const result = await Words.addMany(items.map(it => ({
             word: it.word, phonetic: it.phonetic || '', meaning: it.meaning || '',
-            example: it.example || '', exampleCn: it.exampleCn || '', source: 'agent',
+            example: it.example || '', exampleCn: it.exampleCn || '',
+            source: 'agent', sourceScene: scene ? scene.name : '',
           })));
           return { added: result.added, duplicates: result.dup };
         }
@@ -193,7 +194,7 @@ const Agent = {
         return msg.content || '';
       }
       for (const tc of calls) {
-        const result = await this.execute(tc.function.name, tc.function.arguments);
+        const result = await this.execute(tc.function.name, tc.function.arguments, scene);
         msgs.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify(result) });
       }
     }
@@ -395,6 +396,20 @@ Output ONLY JSON: {"narration":"...","dialogue":[{"name":"CharacterName","line":
     const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
     const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
     return j;
+  },
+
+  /* 单词详情补全：查音标/词性/释义/例句 */
+  async queryWord(word) {
+    const model = Settings.get('chatModel', 'deepseek-v4-flash');
+    const resp = await API.chat([
+      { role: 'system', content: `你是英语词典。为单词 "${word}" 返回 JSON：
+{"phonetic":"音标(英式或美式)","pos":"词性(如 n./v./adj.)","meaning":"中文释义","example":"一个英文例句","exampleCn":"例句中文翻译"}
+只输出 JSON。` },
+      { role: 'user', content: word },
+    ], { model, maxTokens: 400 });
+    const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
+    const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
+    return { phonetic: j.phonetic || '', pos: j.pos || '', meaning: j.meaning || '', example: j.example || '', exampleCn: j.exampleCn || '' };
   },
 
   /* ---------- 会话命名：根据对话内容生成中文标题 ---------- */

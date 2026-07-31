@@ -87,6 +87,7 @@ const Words = {
       source: w.source || 'manual', created: now,
       ctx: w.ctx || '',
       forgot: w.forgot || 0,
+      tags: w.tags || [],
       srs: { due: now, interval: 0, reps: 0, lapses: 0, ease: 2.5 },
     };
     await tx('words', 'readwrite', s => s.add(word));

@@ -44,6 +44,7 @@ const UI = {
     wordSet: new Set(),
     _queryBusy: false,
     _selBtn: null,
+    tagFilter: '',
   },
 
   init() {
@@ -710,7 +711,7 @@ const UI = {
           if (!m.pattern || !m.fix) continue;
           this.saveSentence({
             id: 's_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-            text: m.pattern, cn: m.fix, note: m.note || '复盘纠错', source: 'review', ctx: '复盘纠错', at: Date.now(),
+            text: m.pattern, cn: m.fix, note: m.note || '复盘纠错', source: 'review', ctx: '复盘纠错', tags: ['复盘'], at: Date.now(),
           });
         }
       }
@@ -719,7 +720,7 @@ const UI = {
       if (review.newWords && review.newWords.length) {
         const { added } = await Words.addMany(review.newWords.map(w => ({
           word: w.word, phonetic: w.phonetic || '', meaning: w.meaning || '',
-          example: w.example || '', exampleCn: w.exampleCn || '', source: 'review',
+          example: w.example || '', exampleCn: w.exampleCn || '', source: 'review', tags: ['复盘'],
         })));
         if (added > 0) this.toast(`复盘把 ${added} 个词加入了生词本`);
       } else if (auto) {
@@ -828,8 +829,23 @@ const UI = {
   async renderWords(filter = '') {
     const all = await Words.list();
     const sorted = all.sort((a, b) => b.created - a.created);
-    const list = filter ? sorted.filter(w =>
-      w.word.toLowerCase().includes(filter.toLowerCase()) || (w.meaning || '').includes(filter)) : sorted;
+    const tagF = this.state.tagFilter || '';
+    const list = sorted.filter(w =>
+      (!tagF || (w.tags || []).includes(tagF)) &&
+      (!filter || w.word.toLowerCase().includes(filter.toLowerCase()) || (w.meaning || '').includes(filter)));
+    // 标签筛选条
+    const allTags = new Set();
+    all.forEach(w => (w.tags || []).forEach(t => allTags.add(t)));
+    this.listSentences().forEach(s => (s.tags || []).forEach(t => allTags.add(t)));
+    const tagBar = this.el('tagBar');
+    if (tagBar) {
+      tagBar.innerHTML = `<button class="tag-chip ${!tagF ? 'on' : ''}" data-tag="">全部</button>` +
+        [...allTags].map(t => `<button class="tag-chip ${tagF === t ? 'on' : ''}" data-tag="${this.esc(t)}">${this.esc(t)}</button>`).join('');
+      tagBar.querySelectorAll('.tag-chip').forEach(b => b.addEventListener('click', () => {
+        this.state.tagFilter = b.dataset.tag || '';
+        this.renderWords(this.el('wordSearch').value.trim());
+      }));
+    }
     const wrap = this.el('wordList');
     this.el('wordEmpty').classList.toggle('hidden', list.length > 0);
     if (!list.length) { wrap.innerHTML = ''; return; }
@@ -855,8 +871,9 @@ const UI = {
     }));
 
     // 句子本区块（与单词合并展示）
-    const sents = this.listSentences().filter(s => !filter ||
-      s.text.toLowerCase().includes(filter.toLowerCase()) || (s.cn || '').includes(filter));
+    const sents = this.listSentences().filter(s =>
+      (!tagF || (s.tags || []).includes(tagF)) &&
+      (!filter || s.text.toLowerCase().includes(filter.toLowerCase()) || (s.cn || '').includes(filter)));
     const sentWrap = this.el('sentList');
     if (!sents.length) { sentWrap.innerHTML = ''; return; }
     sentWrap.innerHTML = `<div class="sent-head">句子本（${sents.length}）</div>` + sents.map(s => `
@@ -874,7 +891,52 @@ const UI = {
       this.removeSentence(e.target.dataset.del);
       this.renderWords(this.el('wordSearch').value.trim());
     }));
+    // 点句子 → 详情（含标签编辑）
+    sentWrap.querySelectorAll('.sent-item').forEach(item => item.addEventListener('click', async e => {
+      if (e.target.closest('.wi-say') || e.target.closest('.wi-del') || e.target.closest('[data-rm]') || e.target.closest('.tag-input')) return;
+      const s = this.listSentences().find(x => x.id === item.dataset.id);
+      if (s) this.showSentenceDetail(s);
+    }));
     this.bindTapWords(sentWrap);
+  },
+
+  /* 句子详情：文本/翻译/上下文/标签编辑 */
+  showSentenceDetail(s) {
+    const body = this.el('wordModalBody');
+    this.el('wordModalTitle').textContent = '句子';
+    body.innerHTML = `
+      <div class="wd-ex">${this.renderMsgText(s.text)}</div>
+      <div class="wd-meaning">${this.esc(s.cn || '')}</div>
+      ${s.note ? `<div class="wd-note">${this.esc(s.note)}</div>` : ''}
+      ${s.ctx ? `<div class="si-ctx">场景：${this.esc(s.ctx)}</div>` : ''}
+      ${this.tagEditorHtml(s.tags)}
+    `;
+    this.bindTapWords(body);
+    this.el('wordModal').classList.remove('hidden');
+    this.bindTagEditor(body, s.tags || [], (next) => {
+      this.saveSentence({ ...s, tags: next });
+      this.renderWords(this.el('wordSearch').value.trim());
+      this.showSentenceDetail({ ...s, tags: next });
+    });
+  },
+
+  /* 标签编辑 UI */
+  tagEditorHtml(tags) {
+    const chips = (tags || []).map(t => `<span class="tag-chip sm">${this.esc(t)}<b data-rm="${this.esc(t)}">×</b></span>`).join('');
+    return `<div class="wd-tags">${chips || '<span style="color:var(--muted);font-size:12px">无标签</span>'}<input class="tag-input" placeholder="＋标签（回车添加）" maxlength="12"></div>`;
+  },
+  bindTagEditor(container, tags, saveFn) {
+    const input = container.querySelector('.tag-input');
+    if (input) input.addEventListener('keydown', async e => {
+      if (e.key !== 'Enter') return;
+      const t = input.value.trim();
+      if (!t) return;
+      await saveFn([...(tags || []), t]);
+    });
+    container.querySelectorAll('[data-rm]').forEach(b => b.addEventListener('click', async e => {
+      e.stopPropagation();
+      await saveFn((tags || []).filter(x => x !== b.dataset.rm));
+    }));
   },
 
   /* ---------- 单词详情 ---------- */
@@ -890,9 +952,15 @@ const UI = {
       ${w.exampleCn ? `<div class="wd-excn">${this.esc(w.exampleCn)}</div>` : ''}
       <div class="wd-meta">来源：${this.esc(src)} · ${this.fmtDate(w.created)}${(w.forgot || 0) > 0 ? ` · 忘了 ${w.forgot} 次` : ''}</div>
       ${w.ctx ? `<div class="si-ctx">收藏场景：${this.esc(w.ctx)}</div>` : ''}
+      ${this.tagEditorHtml(w.tags)}
       ${(!w.phonetic || !w.example || !w.pos) ? `<button class="btn btn-ghost btn-sm btn-block" id="wdEnrich" style="margin-top:10px">${Icons.search} 补全详情（音标/词性/例句）</button>` : ''}
       <div id="wdEnrichResult" class="wd-result"></div>`;
     this.el('wordModal').classList.remove('hidden');
+    this.bindTagEditor(body, w.tags || [], async (next) => {
+      await Words.update(w.id, { tags: next });
+      this.renderWords(this.el('wordSearch').value.trim());
+      this.showWordDetail({ ...w, tags: next });
+    });
     const btn = body.querySelector('#wdEnrich');
     if (btn) {
       btn.addEventListener('click', async () => {
@@ -1023,7 +1091,7 @@ const UI = {
           word: d.word, phonetic: d.phonetic || '', meaning: d.meaning || '',
           example: (d.examples && d.examples[0] ? d.examples[0].en : '') || '',
           exampleCn: (d.examples && d.examples[0] ? d.examples[0].cn : '') || '',
-          source: 'query', ctx: this.currentCtx(),
+          source: 'query', ctx: this.currentCtx(), tags: ['查词'],
         });
         this.refreshWordsSet();
       }
@@ -1103,7 +1171,7 @@ const UI = {
     this.el('wordModal').classList.remove('hidden');
     try {
       const r = await Agent.queryText(text);
-      const s = { id: 's_' + Date.now(), text, cn: r.cn, note: r.note, source: 'query', ctx: this.currentCtx(), at: Date.now() };
+      const s = { id: 's_' + Date.now(), text, cn: r.cn, note: r.note, source: 'query', ctx: this.currentCtx(), tags: ['查句'], at: Date.now() };
       this.saveSentence(s);
       body.innerHTML = `
         <div class="wd-ex">${this.esc(text)}</div>

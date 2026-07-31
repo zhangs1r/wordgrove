@@ -812,12 +812,17 @@ const UI = {
     const status = this.el('ttsStatus');
     if (!status) return;
     const plugin = window.Capacitor?.Plugins?.TextToSpeech;
-    if (!plugin) {
+    if (TTS.engine === 'ready') {
+      status.textContent = '内置引擎 ✓（Piper 离线美音）';
+    } else if (TTS.engine === 'loading') {
+      status.textContent = '内置引擎加载中…';
+    } else if (plugin) {
+      status.textContent = '系统原生引擎（内置引擎不可用）';
+    } else {
       status.textContent = '浏览器引擎（备用）';
-      return;
     }
-    status.textContent = '系统原生引擎 ✓';
     try {
+      if (!plugin) return;
       const res = await plugin.getSupportedVoices();
       const voices = res.voices || [];
       const sel = this.el('setVoice');

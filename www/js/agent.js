@@ -247,6 +247,44 @@ const Agent = {
     }
   },
 
+  /* ---------- 表达建议：检查用户最后一条英文，给更地道的说法 ---------- */
+  async suggestBetter(history) {
+    const model = Settings.get('chatModel', 'deepseek-v4-flash');
+    const lastUser = [...history].reverse().find(m => m.role === 'user');
+    if (!lastUser || !/[a-zA-Z]/.test(lastUser.content || '')) return null;
+    const ctx = history.slice(-6).map(m => `${m.role}: ${(m.content || '').slice(0, 200)}`).join('\n');
+    try {
+      const resp = await API.chat([
+        { role: 'system', content: `你是英语口语教练。分析用户最近一条英文表达，判断是否自然、准确。
+如果表达有明显问题（语法错误/不地道/用词不当/表达生硬），返回 JSON：
+{"needFix":true,"better":"更地道自然的英文说法","reason":"一句话中文解释哪里不对、为什么这样更好"}
+如果表达没问题，返回：{"needFix":false}
+要求：better 要贴合对话上下文语境，口语化地道。只输出 JSON，不要其他内容。` },
+        { role: 'user', content: ctx },
+      ], { model, maxTokens: 300 });
+      const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
+      const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
+      return j && j.needFix ? j : null;
+    } catch {
+      return null;
+    }
+  },
+
+  /* ---------- 中文求助：用户用中文描述想表达的意思，生成地道英文 ---------- */
+  async suggestFromChinese(history, chinese) {
+    const model = Settings.get('chatModel', 'deepseek-v4-flash');
+    const ctx = history.slice(-6).map(m => `${m.role}: ${(m.content || '').slice(0, 200)}`).join('\n');
+    const resp = await API.chat([
+      { role: 'system', content: `你是英语口语教练。用户用中文描述想表达的意思，请结合对话上下文，给出地道自然的英文表达。
+返回 JSON：{"better":"英文表达","reason":"一句话中文解释为什么这样说/用这个词"}
+要求：英文要口语化、贴合语境。只输出 JSON，不要其他内容。` },
+      { role: 'user', content: '对话上下文：\n' + ctx + '\n\n用户想表达（中文）：' + chinese },
+    ], { model, maxTokens: 300 });
+    const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
+    const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
+    return { better: j.better || '', reason: j.reason || '' };
+  },
+
   /* ---------- 会话命名：根据对话内容生成中文标题 ---------- */
   async titleForConversation(history) {
     const model = Settings.get('buildModel', 'deepseek-v4-flash');

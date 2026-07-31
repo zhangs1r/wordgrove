@@ -13,6 +13,8 @@ const UI = {
     convId: null,
     convTitle: '',
     _naming: false,
+    hintMode: false,
+    hintBox: null,
   },
 
   init() {
@@ -391,14 +393,23 @@ const UI = {
     if (!API.configured()) { this.toast('先到设置里填 API Key'); this.switchTab('settings'); return; }
     input.value = '';
     input.style.height = 'auto';
-    await this.sendText(text);
+    if (this.state.hintMode) {
+      await this.sendChineseHint(text);
+    } else {
+      await this.sendText(text);
+    }
   },
 
   async sendText(text, opts = {}) {
     const scene = SCENES.find(s => s.id === this.state.sceneId);
+    let userDiv = null;
     if (!opts.alreadyInHistory) {
       this.state.chatHistory.push({ role: 'user', content: text });
-      this.appendMsg('user', text);
+      userDiv = this.appendMsg('user', text);
+    }
+    // 表达建议：异步检查，不阻塞对话主线
+    if (!opts.alreadyInHistory && !opts.skipSuggest) {
+      this.maybeSuggest(text, userDiv);
     }
 
     this.state.chatBusy = true;
@@ -466,6 +477,89 @@ const UI = {
       }
     } catch {}
     this.state._naming = false;
+  },
+
+  /* ---------- 表达建议 ---------- */
+  async maybeSuggest(text, userDiv) {
+    if (!userDiv || !/[a-zA-Z]/.test(text || '')) return;
+    try {
+      const sug = await Agent.suggestBetter(this.state.chatHistory);
+      if (sug) this.renderSuggestion(userDiv, sug, 'auto');
+    } catch {}
+  },
+  renderSuggestion(userDiv, sug, mode) {
+    let box = userDiv.querySelector('.suggest-box');
+    if (!box) {
+      box = document.createElement('div');
+      box.className = 'suggest-box';
+      userDiv.appendChild(box);
+    }
+    box.innerHTML = `
+      <div class="sg-head">💡 可以这样说</div>
+      <div class="sg-better">${this.esc(sug.better || '')}</div>
+      ${sug.reason ? `<div class="sg-reason">${this.esc(sug.reason)}</div>` : ''}
+      <div class="sg-actions">
+        <button class="msg-chip-btn sg-ok">采纳 ✓</button>
+        <button class="msg-chip-btn sg-no">${mode === 'hint' ? '再写一次' : '不采纳，写中文'}</button>
+      </div>`;
+    box.querySelector('.sg-ok').addEventListener('click', () => this.adoptSuggestion(sug.better, box));
+    box.querySelector('.sg-no').addEventListener('click', () => {
+      if (mode === 'hint') {
+        this.enterHintMode(box);
+      } else {
+        this.enterHintMode(box);
+      }
+    });
+  },
+  adoptSuggestion(better, box) {
+    if (!better) return;
+    const list = Settings.get('expressions', []);
+    list.push({ en: better, at: Date.now() });
+    Settings.set('expressions', list.slice(-50));
+    box.innerHTML = `<div class="sg-done">✓ 已记入表达积累：${this.esc(better)}</div>`;
+    TTS.speak(better);
+    this.exitHintMode();
+    this.toast('已加入表达积累 🌱');
+  },
+  enterHintMode(box) {
+    this.state.hintMode = true;
+    this.state.hintBox = box;
+    const input = this.el('chatInput');
+    input.placeholder = '用中文写你想表达的意思…';
+    input.focus();
+    this.el('chatSendBtn').textContent = '📝';
+    this.toast('输入中文，我帮你翻成地道英文');
+  },
+  exitHintMode() {
+    this.state.hintMode = false;
+    this.state.hintBox = null;
+    const input = this.el('chatInput');
+    input.placeholder = '输入英文…';
+    this.el('chatSendBtn').textContent = '➤';
+  },
+  /* 中文求助：不进入对话主线，直接在建议框给地道说法 */
+  async sendChineseHint(chinese) {
+    const scene = SCENES.find(s => s.id === this.state.sceneId);
+    this.state.chatBusy = true;
+    const typing = this.appendMsg('assistant', '', { typing: true });
+    try {
+      const sug = await Agent.suggestFromChinese(this.state.chatHistory, chinese);
+      typing.remove();
+      const lastUserDiv = this.el('chatArea').querySelector('.msg-me:last-of-type');
+      let box = this.state.hintBox;
+      if (box && box.isConnected) {
+        this.renderSuggestion(box.closest('.msg-me') || lastUserDiv || box.closest('.msg'), sug, 'hint');
+      } else if (lastUserDiv) {
+        this.renderSuggestion(lastUserDiv, sug, 'hint');
+      } else {
+        this.appendMsg('assistant', '💡 ' + sug.better + (sug.reason ? '\n' + sug.reason : ''));
+      }
+      if (sug.better) TTS.speak(sug.better);
+    } catch (e) {
+      typing.remove();
+      this.appendMsg('assistant', '⚠️ 生成建议失败：' + (e.message || '出错了'));
+    }
+    this.state.chatBusy = false;
   },
 
   /* ---------- 复盘 ---------- */

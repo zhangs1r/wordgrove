@@ -330,6 +330,17 @@ body {
 .ci-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
 .ci-del { width: 32px; height: 32px; border: none; border-radius: 50%; background: var(--card-2); color: var(--danger); cursor: pointer; flex-shrink: 0; }
 
+/* ============ 表达建议 ============ */
+.suggest-box {
+  margin-top: 8px; background: var(--bg); border: 1px dashed var(--primary);
+  border-radius: 12px; padding: 10px 12px; max-width: 92%;
+}
+.sg-head { font-size: 12px; color: var(--primary); font-weight: 700; margin-bottom: 4px; }
+.sg-better { font-size: 14px; font-weight: 600; line-height: 1.5; }
+.sg-reason { font-size: 12px; color: var(--muted); margin-top: 3px; line-height: 1.5; }
+.sg-actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.sg-done { font-size: 13px; color: var(--primary); font-weight: 600; }
+
 /* ============ 通用 ============ */
 .empty-state { text-align: center; padding: 48px 0 32px; color: var(--muted); }
 .empty-emoji { font-size: 44px; margin-bottom: 12px; }

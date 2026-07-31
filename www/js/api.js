@@ -48,6 +48,12 @@ const API = {
           if (res.status === 401) throw new Error('API Key 无效，去设置里检查');
           throw new Error(msg + ' [' + res.status + ']');
         }
+        // 200 但响应体异常（无 choices）：多半是网络层截断/污染，重试
+        if (!data || !Array.isArray(data.choices) || !data.choices.length) {
+          lastErr = '响应异常: ' + text.slice(0, 120);
+          await sleep(1500 * (attempt + 1));
+          continue;
+        }
         return data;
       } catch (e) {
         if (e.message.includes('Key 无效')) throw e;

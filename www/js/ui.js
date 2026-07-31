@@ -296,7 +296,8 @@ const UI = {
       }
     } catch (e) {
       typing.remove();
-      const label = '⚠️ [' + scene.name + ' / ' + Settings.get('chatModel', 'deepseek-v4-flash') + '] ' + (e.message || '出错了');
+      const host = API.base.includes('deepseek.com') ? 'deepseek' : API.base.includes('opencode.ai') ? 'opencode' : API.base;
+      const label = '⚠️ [' + scene.name + ' / ' + Settings.get('chatModel', 'deepseek-v4-flash') + ' @' + host + '] ' + (e.message || '出错了');
       const div = this.appendMsg('assistant', label);
       const actions = div.querySelector('.msg-actions');
       if (actions) {
@@ -493,6 +494,11 @@ const UI = {
     };
     const providerEl = this.el('setProvider');
     providerEl.value = Settings.get('provider', 'deepseek');
+    // 校正历史遗留的 API 地址（provider 与地址不匹配时，按 provider 重置）
+    const savedBase = Settings.get('apiBase', '');
+    if (savedBase && savedBase.includes('deepseek.com') !== (providerEl.value === 'deepseek')) {
+      Settings.set('apiBase', PROVIDERS[providerEl.value].base);
+    }
     fillModels(providerEl.value);
     providerEl.addEventListener('change', () => {
       const p = providerEl.value;

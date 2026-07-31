@@ -16,6 +16,11 @@ const UI = {
     hintMode: false,
     hintBox: null,
     genType: 'world',
+    rpMode: false,
+    rpWorld: null,
+    rpChars: [],
+    rpHistory: [],
+    rpBusy: false,
   },
 
   init() {
@@ -222,6 +227,7 @@ const UI = {
     };
   },
   newConv() {
+    if (this.state.rpMode) { this.exitRp(); return; }
     // 旧会话有内容就保存
     if (this.state.chatHistory.length) this.saveConversation(this.currentConv());
     this.state.convId = 'c_' + Date.now();
@@ -320,9 +326,33 @@ const UI = {
 
   /* 对话持久化：按会话保存（localStorage conversations 数组） */
   saveChatState() {
+    if (this.state.rpMode) {
+      Settings.set('rpState', {
+        worldId: this.state.rpWorld ? this.state.rpWorld.id : '',
+        charIds: this.state.rpChars.map(c => c.id),
+        history: this.state.rpHistory.slice(-60),
+      });
+      return;
+    }
     if (this.state.chatHistory.length) this.saveConversation(this.currentConv());
   },
   loadChatState() {
+    const rp = Settings.get('rpState', null);
+    if (rp && rp.history && rp.history.length) {
+      const w = this.listWorlds().find(x => x.id === rp.worldId);
+      if (w) {
+        this.state.rpMode = true;
+        this.state.rpWorld = w;
+        this.state.rpChars = this.listChars().filter(c => (rp.charIds || []).includes(c.id));
+        this.state.rpHistory = rp.history;
+        this.state.convTitle = '🎭 ' + w.name;
+        this.el('sceneBar').classList.add('hidden');
+        this.el('chatInput').placeholder = 'Say something… 或输入"继续"';
+        this.renderConvTitle();
+        this.renderChatHistory();
+        return;
+      }
+    }
     const list = this.listConversations();
     if (list.length) {
       const conv = [...list].sort((a, b) => (b.updated || 0) - (a.updated || 0))[0];
@@ -341,6 +371,20 @@ const UI = {
   renderChatHistory() {
     const area = this.el('chatArea');
     area.innerHTML = '';
+    if (this.state.rpMode) {
+      if (!this.state.rpHistory.length) {
+        area.innerHTML = `<div class="chat-placeholder" id="chatPlaceholder"><div class="empty-emoji">🎭</div><p>选择世界和角色，开始你的故事</p></div>`;
+        return;
+      }
+      for (const m of this.state.rpHistory) {
+        if (m.role === 'user') this.appendMsg('user', m.content);
+        else if (m.name) this.appendRpChar(m.name, m.content);
+        else this.appendMsg('assistant', m.content);
+      }
+      this.appendRpOptions([]);
+      area.scrollTop = area.scrollHeight;
+      return;
+    }
     if (!this.state.chatHistory.length) {
       area.innerHTML = `<div class="chat-placeholder" id="chatPlaceholder"><div class="empty-emoji">🗣️</div><p>选一个场景，开始 3 分钟对话</p></div>`;
       return;
@@ -392,11 +436,13 @@ const UI = {
   async sendMessage() {
     const input = this.el('chatInput');
     const text = input.value.trim();
-    if (!text || this.state.chatBusy) return;
+    if (!text || this.state.chatBusy || this.state.rpBusy) return;
     if (!API.configured()) { this.toast('先到设置里填 API Key'); this.switchTab('settings'); return; }
     input.value = '';
     input.style.height = 'auto';
-    if (this.state.hintMode) {
+    if (this.state.rpMode) {
+      await this.sendRpText(text);
+    } else if (this.state.hintMode) {
       await this.sendChineseHint(text);
     } else {
       await this.sendText(text);
@@ -849,7 +895,7 @@ const UI = {
     this.el('tavernCharListBtn').addEventListener('click', () => this.openTavernModal('char'));
     this.el('tavernWorldGenBtn').addEventListener('click', () => this.openGenModal('world'));
     this.el('tavernCharGenBtn').addEventListener('click', () => this.openGenModal('char'));
-    this.el('tavernStartBtn').addEventListener('click', () => this.toast('角色扮演引擎开发中，下个版本上线 🎭'));
+    this.el('tavernStartBtn').addEventListener('click', () => this.startRp());
     this.el('tavernClose').addEventListener('click', () => this.el('tavernModal').classList.add('hidden'));
     this.el('tavernMask').addEventListener('click', () => this.el('tavernModal').classList.add('hidden'));
     this.el('genClose').addEventListener('click', () => this.el('genModal').classList.add('hidden'));
@@ -953,6 +999,121 @@ const UI = {
     }
     this.el('genSubmitBtn').disabled = false;
     this.el('genSubmitBtn').textContent = '生成';
+  },
+
+  /* ============ 角色扮演对话（RP） ============ */
+  startRp() {
+    const w = this.currentWorld();
+    const chars = this.activeChars();
+    if (!w) { this.toast('先选择或生成一个世界卡'); this.switchTab('tavern'); return; }
+    const inWorld = chars.filter(c => !c.worldId || c.worldId === w.id);
+    if (!inWorld.length) { this.toast('先选择一个参与角色（酒馆里点亮绿边）'); this.switchTab('tavern'); return; }
+    this.state.rpMode = true;
+    this.state.rpWorld = w;
+    this.state.rpChars = inWorld;
+    this.state.rpHistory = [];
+    this.state.convTitle = '🎭 ' + w.name;
+    this.renderConvTitle();
+    this.el('sceneBar').classList.add('hidden');
+    this.el('chatInput').placeholder = 'Say something… 或输入"继续"';
+    this.switchTab('chat');
+    this.renderChatHistory();
+    this.appendMsg('assistant', '🎭 世界「' + w.name + '」已加载。你在场角色：' + inWorld.map(c => c.name).join('、') + '。故事开始了——');
+    this.rpRound('');
+  },
+  async sendRpText(text) {
+    const w = this.state.rpWorld;
+    const chars = this.state.rpChars;
+    if (!w || !chars.length || this.state.rpBusy) return;
+    this.state.rpBusy = true;
+    let userMsg = text;
+    // 中文 → 翻译（全英语规则）
+    if (/[\u4e00-\u9fa5]/.test(text)) {
+      const tip = this.appendMsg('assistant', '', { typing: true });
+      try {
+        const en = await Agent.translateToEnglish(text);
+        tip.remove();
+        this.appendMsg('user', '（中文）' + text + '\n→ ' + en);
+        userMsg = en;
+      } catch {
+        tip.remove();
+        this.appendMsg('user', text);
+      }
+    } else {
+      this.appendMsg('user', text);
+    }
+    await this.rpRound(userMsg);
+    this.state.rpBusy = false;
+  },
+  /* 一轮 RP：子 Agent 逐角色推理 → 导演汇总 → 渲染 */
+  async rpRound(userMsg) {
+    const w = this.state.rpWorld;
+    const chars = this.state.rpChars;
+    const isContinue = !userMsg || /^(continue|继续|自己来|你来|你自己来|go on|let it continue|\.\.\.?|…)$/i.test(userMsg.trim());
+    if (userMsg) this.state.rpHistory.push({ role: 'user', content: userMsg });
+    const typing = this.appendMsg('assistant', '', { typing: true });
+    try {
+      const results = [];
+      const event = isContinue ? '(the player lets the story continue on its own)' : userMsg;
+      for (const c of chars) {
+        const r = await Agent.rpInferChar(c, w, this.state.rpHistory, event);
+        results.push(r);
+      }
+      const beat = await Agent.rpDirect(w, chars, this.state.rpHistory, isContinue ? '' : userMsg, results);
+      typing.remove();
+      if (beat.narration) this.state.rpHistory.push({ role: 'assistant', content: beat.narration });
+      for (const d of beat.dialogue || []) this.state.rpHistory.push({ role: 'assistant', name: d.name, content: d.line });
+      this.state.rpHistory = this.state.rpHistory.slice(-60);
+      if (beat.narration) this.appendMsg('assistant', beat.narration);
+      for (const d of beat.dialogue || []) this.appendRpChar(d.name, d.line);
+      if (beat.options && beat.options.length) this.appendRpOptions(beat.options);
+      else this.appendRpOptions([]);
+      this.saveChatState();
+    } catch (e) {
+      typing.remove();
+      this.appendMsg('assistant', '⚠️ RP 出错：' + (e.message || e));
+    }
+  },
+  appendRpChar(name, line) {
+    const area = this.el('chatArea');
+    const ph = this.el('chatPlaceholder');
+    if (ph) ph.remove();
+    const div = document.createElement('div');
+    div.className = 'msg msg-ai msg-rp-char';
+    div.innerHTML = `<div class="msg-rp-name">${this.esc(name)}</div><div class="msg-en">${this.esc(line)}</div>`;
+    area.appendChild(div);
+    area.scrollTop = area.scrollHeight;
+    return div;
+  },
+  appendRpOptions(options) {
+    const area = this.el('chatArea');
+    const ph = this.el('chatPlaceholder');
+    if (ph) ph.remove();
+    const div = document.createElement('div');
+    div.className = 'rp-options';
+    div.innerHTML = (options.length
+      ? options.map(o => `<button class="rp-opt">${this.esc(o)}</button>`).join('')
+      : '') + `<button class="rp-opt rp-continue">▶ 继续</button>`;
+    div.querySelectorAll('.rp-opt').forEach(b => b.addEventListener('click', () => {
+      if (b.classList.contains('rp-continue')) this.sendRpText('continue');
+      else this.sendRpText(b.textContent);
+    }));
+    area.appendChild(div);
+    area.scrollTop = area.scrollHeight;
+  },
+  /* 退出 RP：回到普通场景对话 */
+  exitRp() {
+    this.state.rpMode = false;
+    this.state.rpWorld = null;
+    this.state.rpChars = [];
+    this.state.rpHistory = [];
+    this.el('sceneBar').classList.remove('hidden');
+    this.el('chatInput').placeholder = '输入英文…';
+    this.state.convTitle = '';
+    this.renderConvTitle();
+    this.saveChatState();
+    this.renderChatHistory();
+    this.toast('已退出角色扮演');
   },
 
   /* TTS 引擎检测 + 音色列表 */

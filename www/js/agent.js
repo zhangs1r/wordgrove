@@ -285,6 +285,91 @@ const Agent = {
     return { better: j.better || '', reason: j.reason || '' };
   },
 
+  /* ================= 角色扮演（酒馆 RP）引擎 ================= */
+  // 基础提示词前缀（保持稳定 → DeepSeek 硬盘缓存命中）
+  rpSystem(world) {
+    const w = world || {};
+    return `You are the engine of an immersive English roleplay game. RULES:
+1. Everything you output must be in English. All narration, dialogue, and choices must be English.
+2. Stay in character at all times. Never break the fourth wall.
+3. Advance the story naturally with vivid, sensory narration.
+4. If the user writes in Chinese, gently correct them: first show the correct English way to say what they meant, then continue the story in English.
+5. Keep responses concise (under 150 words).
+
+WORLD: ${w.name || 'Unknown world'}
+SETTING: ${w.setting || ''}
+WORLD RULES: ${w.rules || 'None'}
+NARRATION TONE: ${w.tone || 'atmospheric'}`;
+  },
+
+  /* 角色子 Agent：推理一个角色的内心活动 → 行动 → 台词（每轮每个角色单独调用） */
+  async rpInferChar(char, world, history, userInput) {
+    const model = Settings.get('chatModel', 'deepseek-v4-flash');
+    const sys = this.rpSystem(world) + `
+
+You are playing: ${char.name}
+PERSONA: ${char.persona}
+APPEARANCE: ${char.appearance}
+BACKGROUND: ${char.background}
+SPEAKING STYLE: ${char.speakingStyle}
+EXAMPLE DIALOGUE: ${char.exampleDialogue}
+
+Now think as ${char.name}. Given the conversation so far and the player's latest action, infer this character's inner thoughts, decide their action, and write their spoken line.
+Output ONLY JSON: {"inner":"their inner thoughts in English","action":"what they physically do","speech":"their spoken line in English"}`;
+    const msgs = [
+      { role: 'system', content: sys },
+      ...history.slice(-10),
+      { role: 'user', content: 'Latest event: ' + userInput + '\n\nRespond as ' + char.name + '.' },
+    ];
+    const resp = await API.chat(msgs, { model, maxTokens: 800 });
+    const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
+    try {
+      const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
+      return { inner: j.inner || '', action: j.action || '', speech: j.speech || '' };
+    } catch {
+      return { inner: '', action: '', speech: content.slice(0, 200) };
+    }
+  },
+
+  /* 导演 Agent：汇总所有角色的推理，推进情节 + 给选项 */
+  async rpDirect(world, chars, history, userInput, charResults) {
+    const model = Settings.get('chatModel', 'deepseek-v4-flash');
+    const sys = this.rpSystem(world) + `
+
+You are the GAME MASTER / narrator of this story. Characters present: ${chars.map(c => c.name).join(', ')}.
+
+Given the conversation history, the player's latest action, and each character's inner thoughts and actions, write the next beat of the story:
+- A short vivid narration of the scene (2-4 sentences)
+- Each character's spoken line (from their speech; adjust if needed)
+- 3-4 English choices for the player's next move (second-person, actionable, short)
+
+Output ONLY JSON: {"narration":"...","dialogue":[{"name":"CharacterName","line":"..."}],"options":["Choice 1","Choice 2","Choice 3"]}`;
+    const charBrief = charResults.map((r, i) => `${chars[i].name}: inner="${r.inner}" action="${r.action}" speech="${r.speech}"`).join('\n');
+    const msgs = [
+      { role: 'system', content: sys },
+      ...history.slice(-8),
+      { role: 'user', content: 'Player action: ' + (userInput || '(the player lets the story continue on its own)') + '\n\nCharacter inner states:\n' + charBrief + '\n\nWrite the next beat.' },
+    ];
+    const resp = await API.chat(msgs, { model, maxTokens: 1000 });
+    const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
+    try {
+      const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
+      return { narration: j.narration || '', dialogue: j.dialogue || [], options: (j.options || []).slice(0, 4) };
+    } catch {
+      return { narration: content.slice(0, 300), dialogue: [], options: [] };
+    }
+  },
+
+  /* 中文 → 英文翻译（用户 RP 输入含中文时先翻译） */
+  async translateToEnglish(text) {
+    const model = Settings.get('chatModel', 'deepseek-v4-flash');
+    const resp = await API.chat([
+      { role: 'system', content: 'Translate the user input to natural, spoken English. Output ONLY the translation, nothing else.' },
+      { role: 'user', content: text },
+    ], { model, maxTokens: 300 });
+    return (resp.choices?.[0]?.message?.content || '').trim();
+  },
+
   /* ---------- 酒馆卡生成 ---------- */
   async generateWorldCard(desc) {
     const model = Settings.get('buildModel', 'deepseek-v4-flash');
@@ -320,7 +405,7 @@ const Agent = {
       const resp = await API.chat([
         { role: 'system', content: '你是标题生成器。给下面这段英语学习对话生成一个简短的中文标题，不超过 8 个字，概括对话主题（如"咖啡店点单""组会汇报"）。只输出标题本身，不要引号和其他内容。' },
         { role: 'user', content: brief },
-      ], { model, maxTokens: 200 });
+      ], { model, maxTokens: 300 });
       const title = (resp.choices?.[0]?.message?.content || '').trim().replace(/["「」']/g, '').slice(0, 12);
       return title || '';
     } catch {

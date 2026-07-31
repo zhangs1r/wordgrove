@@ -357,6 +357,14 @@ body {
 .btn-block { width: 100%; }
 .gen-input { width: 100%; min-height: 96px; background: var(--card); color: var(--text); border: none; border-radius: 14px; padding: 12px; font-size: 15px; font-family: inherit; resize: vertical; margin-bottom: 10px; }
 
+/* ============ 角色扮演对话 ============ */
+.msg-rp-char { border-left: 3px solid var(--primary); }
+.msg-rp-name { font-size: 12px; font-weight: 700; color: var(--primary); margin-bottom: 3px; }
+.rp-options { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
+.rp-opt { text-align: left; background: var(--card); border: 1px solid var(--primary); color: var(--text); border-radius: 12px; padding: 10px 12px; font-size: 14px; cursor: pointer; font-family: inherit; line-height: 1.5; }
+.rp-opt:active { background: var(--card-2); }
+.rp-continue { border-style: dashed; color: var(--primary); }
+
 /* ============ 通用 ============ */
 .empty-state { text-align: center; padding: 48px 0 32px; color: var(--muted); }
 .empty-emoji { font-size: 44px; margin-bottom: 12px; }

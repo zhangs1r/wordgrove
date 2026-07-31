@@ -1058,15 +1058,18 @@ const UI = {
     const cands = [base.replace(/ies$/, 'y'), base.replace(/es$/, ''), base.replace(/s$/, ''), base.replace(/ing$/, ''), base.replace(/ed$/, ''), base.replace(/ed$/, 'e')];
     return cands.some(c => set.has(c));
   },
-  /* 渲染消息文本：生词高亮 + 单词可点击查询 */
+  /* 渲染消息文本：生词高亮 + 单词可点击查询（先切词再转义，避免 HTML 实体被误当单词） */
   renderMsgText(text) {
     const set = this.state.wordSet || new Set();
-    const safe = this.esc(text);
-    return safe.replace(/[A-Za-z]+(?:['’-][A-Za-z]+)*/g, (w) => {
-      const lower = w.toLowerCase();
-      const hit = set.has(lower) || this.matchStem(lower, set);
-      return `<span class="tap-word${hit ? ' hl' : ''}" data-w="${this.esc(w)}">${w}</span>`;
-    });
+    const parts = String(text || '').split(/([A-Za-z]+(?:['’-][A-Za-z]+)*)/);
+    return parts.map(part => {
+      if (part && /^[A-Za-z]/.test(part)) {
+        const lower = part.toLowerCase();
+        const hit = set.has(lower) || this.matchStem(lower, set);
+        return `<span class="tap-word${hit ? ' hl' : ''}" data-w="${this.esc(part)}">${this.esc(part)}</span>`;
+      }
+      return this.esc(part);
+    }).join('');
   },
   bindTapWords(container) {
     container.querySelectorAll('.tap-word').forEach(el => {
@@ -1080,11 +1083,12 @@ const UI = {
   async showWordQuery(word) {
     if (this._queryBusy) return;
     this._queryBusy = true;
-    const body = this.el('wordModalBody');
-    body.innerHTML = `<div class="wd-word">${this.esc(word)}</div><div class="wd-result" style="margin-top:10px">查询中…</div>`;
-    this.el('wordModalTitle').textContent = '查词';
-    this.el('wordModal').classList.remove('hidden');
     try {
+      const body = this.el('wordModalBody');
+      if (!body) return;
+      body.innerHTML = `<div class="wd-word">${this.esc(word)}</div><div class="wd-result" style="margin-top:10px">查询中…</div>`;
+      this.el('wordModalTitle').textContent = '查词';
+      this.el('wordModal').classList.remove('hidden');
       const d = await Agent.queryWord(word);
       const existing = await Words.list();
       const exist = existing.find(w => (w.word || '').toLowerCase() === word.toLowerCase());
@@ -1119,9 +1123,11 @@ const UI = {
       }
       Agent.refreshForgetWords();
     } catch (e) {
-      body.innerHTML = `<div class="wd-result">查询失败：${this.esc(e.message || e)}</div>`;
+      const body = this.el('wordModalBody');
+      if (body) body.innerHTML = `<div class="wd-result">查询失败：${this.esc(e.message || e)}</div>`;
+    } finally {
+      this._queryBusy = false;
     }
-    this._queryBusy = false;
   },
   renderWordDetail(d, savedNote) {
     const exs = (d.examples || []).map(x => `<div class="wd-ex">${this.esc(x.en)}</div><div class="wd-excn">${this.esc(x.cn)}</div>`).join('');

@@ -24,15 +24,18 @@ const API = {
     if (tools && tools.length) body.tools = tools;
     if (temperature !== undefined) body.temperature = temperature;
 
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + this.key,
+      'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36',
+    };
+
     let lastErr = '';
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         const res = await fetch(this.base, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + this.key,
-          },
+          headers,
           body: JSON.stringify(body),
         });
         if (res.status === 429 || res.status === 529) {
@@ -48,9 +51,15 @@ const API = {
           if (res.status === 401) throw new Error('API Key 无效，去设置里检查');
           throw new Error(msg + ' [' + res.status + ']');
         }
+        // HTML 响应：网络层被拦截（Cloudflare 挑战/运营商劫持页）
+        if (text.trimStart().startsWith('<')) {
+          lastErr = '网络被拦截(返回网页而非数据)，请检查代理/VPN 或稍后重试';
+          await sleep(2000 * (attempt + 1));
+          continue;
+        }
         // 200 但响应体异常（无 choices）：多半是网络层截断/污染，重试
         if (!data || !Array.isArray(data.choices) || !data.choices.length) {
-          lastErr = '响应异常: ' + text.slice(0, 120);
+          lastErr = '响应异常: ' + text.slice(0, 300);
           await sleep(1500 * (attempt + 1));
           continue;
         }

@@ -155,8 +155,20 @@ const Agent = {
 
   /* ---------- 核心 agent loop ---------- */
   async run(scene, history) {
-    const msgs = [{ role: 'system', content: this.buildSystem(scene) }, ...history];
     const model = Settings.get('chatModel', 'deepseek-v4-flash');
+    try {
+      return await this._run(scene, history, model);
+    } catch (e) {
+      // mimo 对话网络不稳时自动换 deepseek 重试一次
+      if (model === 'mimo-v2.5') {
+        return await this._run(scene, history, 'deepseek-v4-flash');
+      }
+      throw e;
+    }
+  },
+
+  async _run(scene, history, model) {
+    const msgs = [{ role: 'system', content: this.buildSystem(scene) }, ...history];
 
     let turns = 0;
     while (turns < 8) {

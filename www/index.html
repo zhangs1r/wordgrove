@@ -85,27 +85,27 @@
     <div class="settings-group">
       <h3>AI 配置</h3>
       <label class="field">
+        <span>API 提供商</span>
+        <select id="setProvider">
+          <option value="deepseek">DeepSeek 官方（国内直连）</option>
+          <option value="opencode">OpenCode Go（备用）</option>
+        </select>
+      </label>
+      <label class="field">
         <span>API Key</span>
-        <input id="setApiKey" type="password" placeholder="opencode.ai 的 key">
+        <input id="setApiKey" type="password" placeholder="platform.deepseek.com 的 key">
       </label>
       <label class="field">
         <span>对话模型</span>
-        <select id="setChatModel">
-          <option value="deepseek-v4-flash">deepseek-v4-flash（快）</option>
-          <option value="mimo-v2.5">mimo-v2.5（聪明）</option>
-          <option value="deepseek-v4-pro">deepseek-v4-pro</option>
-        </select>
+        <select id="setChatModel"></select>
       </label>
       <label class="field">
         <span>建卡模型</span>
-        <select id="setBuildModel">
-          <option value="mimo-v2.5">mimo-v2.5（推荐）</option>
-          <option value="deepseek-v4-flash">deepseek-v4-flash</option>
-        </select>
+        <select id="setBuildModel"></select>
       </label>
       <label class="field">
         <span>API 地址</span>
-        <input id="setApiBase" type="text" value="https://opencode.ai/zen/go/v1/chat/completions">
+        <input id="setApiBase" type="text" value="https://api.deepseek.com/v1/chat/completions">
       </label>
       <div class="field-btns">
         <button id="saveAiBtn" class="btn btn-primary">保存</button>

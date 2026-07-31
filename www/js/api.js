@@ -1,10 +1,11 @@
-/* api.js — OpenCode Go 网关调用（CapacitorHttp 接管 fetch 后自动走原生，无 CORS） */
+/* api.js — LLM 网关调用（DeepSeek 官方 / OpenCode Go，CapacitorHttp 接管 fetch 走原生）
+   DeepSeek 官方：https://api.deepseek.com/v1/chat/completions，deepseek-v4-flash 国内直连 */
 const API = {
-  base: 'https://opencode.ai/zen/go/v1/chat/completions',
+  base: 'https://api.deepseek.com/v1/chat/completions',
   key: '',
 
   loadConfig() {
-    this.base = Settings.get('apiBase', this.base);
+    this.base = Settings.get('apiBase', 'https://api.deepseek.com/v1/chat/completions');
     this.key = Settings.get('apiKey', '');
   },
 
@@ -18,11 +19,14 @@ const API = {
       tools,
       maxTokens = 2000,
       temperature,
+      thinking,
     } = opts;
 
     const body = { model, messages, max_tokens: maxTokens };
     if (tools && tools.length) body.tools = tools;
     if (temperature !== undefined) body.temperature = temperature;
+    // DeepSeek 思考模式开关（对话传 'disabled' 提速；建卡/复盘不传=默认思考）
+    if (thinking) body.thinking = { type: thinking };
 
     const headers = {
       'User-Agent': 'Mozilla/5.0 (Linux; Android 14; 23127PN0CC) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36',

@@ -475,30 +475,54 @@ const UI = {
 
   /* ---------- 设置 ---------- */
   bindSettings() {
-    const bind = (id, key, isSelect) => {
+    // API 提供商预设
+    const PROVIDERS = {
+      deepseek: { base: 'https://api.deepseek.com/v1/chat/completions', models: ['deepseek-v4-flash', 'deepseek-v4-pro'] },
+      opencode: { base: 'https://opencode.ai/zen/go/v1/chat/completions', models: ['deepseek-v4-flash', 'mimo-v2.5', 'deepseek-v4-pro'] },
+    };
+    const fillModels = (provider) => {
+      const chat = this.el('setChatModel');
+      const build = this.el('setBuildModel');
+      const models = PROVIDERS[provider].models;
+      const curChat = Settings.get('chatModel', '');
+      const curBuild = Settings.get('buildModel', '');
+      chat.innerHTML = models.map(m => `<option value="${m}">${m}</option>`).join('');
+      build.innerHTML = models.map(m => `<option value="${m}">${m}</option>`).join('');
+      chat.value = models.includes(curChat) ? curChat : models[0];
+      build.value = models.includes(curBuild) ? curBuild : models[0];
+    };
+    const providerEl = this.el('setProvider');
+    providerEl.value = Settings.get('provider', 'deepseek');
+    fillModels(providerEl.value);
+    providerEl.addEventListener('change', () => {
+      const p = providerEl.value;
+      Settings.set('provider', p);
+      this.el('setApiBase').value = PROVIDERS[p].base;
+      fillModels(p);
+      this.toast(p === 'deepseek' ? '已切换 DeepSeek 官方（国内直连）' : '已切换 OpenCode Go（备用）');
+    });
+
+    const bind = (id, key, def) => {
       const el = this.el(id);
       if (!el) return;
       if (el.type === 'checkbox') {
-        el.checked = Settings.get(key, true);
-        el.addEventListener('change', () => {
-          Settings.set(key, el.checked);
-          if (key === 'autoSpeak') { /* nothing */ }
-        });
+        el.checked = Settings.get(key, def !== undefined ? def : true);
+        el.addEventListener('change', () => Settings.set(key, el.checked));
       } else if (el.type === 'range') {
         el.value = Settings.get(key, 0.95);
         el.addEventListener('change', () => { Settings.set(key, parseFloat(el.value)); TTS.rate = parseFloat(el.value); });
       } else {
-        el.value = Settings.get(key, isSelect ? (key === 'chatModel' ? 'deepseek-v4-flash' : 'mimo-v2.5') : '');
+        el.value = Settings.get(key, def || '');
         el.addEventListener('change', () => Settings.set(key, el.value));
       }
     };
     bind('setApiKey', 'apiKey');
-    bind('setChatModel', 'chatModel', true);
-    bind('setBuildModel', 'buildModel', true);
-    bind('setApiBase', 'apiBase');
+    bind('setApiBase', 'apiBase', 'https://api.deepseek.com/v1/chat/completions');
     bind('setAutoSpeak', 'autoSpeak');
     bind('setReadReply', 'readReply');
     bind('setRate', 'rate');
+    this.el('setChatModel').addEventListener('change', () => Settings.set('chatModel', this.el('setChatModel').value));
+    this.el('setBuildModel').addEventListener('change', () => Settings.set('buildModel', this.el('setBuildModel').value));
 
     const keyInput = this.el('setApiKey');
     keyInput.addEventListener('change', () => { API.key = keyInput.value; });

@@ -173,7 +173,11 @@ const Agent = {
     let turns = 0;
     while (turns < 8) {
       turns++;
-      const resp = await API.chat(msgs, { model, tools: this.toolDefs, maxTokens: 600 });
+      const resp = await API.chat(msgs, {
+        model, tools: this.toolDefs, maxTokens: 600,
+        // DeepSeek 对话关思考模式（快）；OpenCode Go 不传
+        thinking: Settings.get('provider', 'deepseek') === 'deepseek' ? 'disabled' : undefined,
+      });
       const choices = resp.choices || [];
       if (!choices.length || !choices[0].message) {
         throw new Error('模型返回异常(空响应) [' + model + ']');

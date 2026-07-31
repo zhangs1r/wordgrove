@@ -7,6 +7,8 @@ const UI = {
     sceneId: 'cafe',
     chatHistory: [],
     chatBusy: false,
+    reviewing: false,
+    autoTurn: 0,
     building: false,
   },
 
@@ -54,6 +56,7 @@ const UI = {
     if (tab === 'today') this.renderToday();
     if (tab === 'words') this.renderWords();
     if (tab === 'settings') this.renderProfile();
+    if (tab === 'chat') this.loadChatState();
   },
 
   /* ---------- 主题 ---------- */
@@ -189,10 +192,37 @@ const UI = {
 
   resetChat() {
     this.state.chatHistory = [];
-    const area = this.el('chatArea');
-    area.innerHTML = `<div class="chat-placeholder"><div class="empty-emoji">🗣️</div><p>选一个场景，开始 3 分钟对话</p></div>`;
+    this.state.autoTurn = 0;
+    Settings.set('chatState', null);
+    this.renderChatHistory();
     this.el('reviewPanel').classList.add('hidden');
     this.el('reviewPanel').innerHTML = '';
+  },
+
+  /* 对话持久化：切页/重启都能恢复 */
+  saveChatState() {
+    Settings.set('chatState', { sceneId: this.state.sceneId, history: this.state.chatHistory.slice(-30) });
+  },
+  loadChatState() {
+    const s = Settings.get('chatState', null);
+    if (s && s.history && s.history.length) {
+      this.state.sceneId = s.sceneId || this.state.sceneId;
+      this.state.chatHistory = s.history;
+      document.querySelectorAll('.scene-chip').forEach(c => c.classList.toggle('active', c.dataset.scene === this.state.sceneId));
+    }
+    this.renderChatHistory();
+  },
+  renderChatHistory() {
+    const area = this.el('chatArea');
+    area.innerHTML = '';
+    if (!this.state.chatHistory.length) {
+      area.innerHTML = `<div class="chat-placeholder" id="chatPlaceholder"><div class="empty-emoji">🗣️</div><p>选一个场景，开始 3 分钟对话</p></div>`;
+      return;
+    }
+    for (const m of this.state.chatHistory) {
+      this.appendMsg(m.role === 'user' ? 'user' : 'assistant', m.content);
+    }
+    area.scrollTop = area.scrollHeight;
   },
 
   bindChat() {
@@ -253,20 +283,27 @@ const UI = {
       this.state.chatHistory.push({ role: 'assistant', content: reply });
       this.appendMsg('assistant', reply);
       if (Settings.get('readReply', true)) TTS.speak(reply);
+      this.saveChatState();
+      // 自动复盘：每 6 轮对话自动来一次，不打断下次输入
+      this.state.autoTurn++;
+      if (this.state.autoTurn >= 6 && !this.state.reviewing) {
+        this.startReview(true);
+      }
     } catch (e) {
       typing.remove();
       this.appendMsg('assistant', '⚠️ ' + (e.message || '出错了'));
+      this.saveChatState();
     }
     this.state.chatBusy = false;
     this.el('reviewPanel').classList.add('hidden');
   },
 
   /* ---------- 复盘 ---------- */
-  async startReview() {
-    if (this.state.chatHistory.length < 2) { this.toast('先聊几句再复盘'); return; }
-    if (this.state.chatBusy) return;
-    this.state.chatBusy = true;
-    this.toast('AI 正在复盘…');
+  async startReview(auto = false) {
+    if (this.state.chatHistory.length < 2) { if (!auto) this.toast('先聊几句再复盘'); return; }
+    if (this.state.chatBusy || this.state.reviewing) return;
+    this.state.reviewing = true;
+    this.toast(auto ? '聊了 6 轮，AI 自动复盘…' : 'AI 正在复盘…');
     try {
       const review = await Agent.review(this.state.chatHistory);
       const p = Profile.load();
@@ -286,12 +323,15 @@ const UI = {
           word: w.word, phonetic: w.phonetic || '', meaning: w.meaning || '',
           example: w.example || '', exampleCn: w.exampleCn || '', source: 'review',
         })));
-        if (added > 0) this.toast(`复盘已把 ${added} 个词加入生词本 🌱`);
+        if (added > 0) this.toast(`复盘把 ${added} 个词加入了生词本 🌱`);
+      } else if (auto) {
+        this.toast('复盘完成 ✅');
       }
     } catch (e) {
       this.toast('复盘失败：' + (e.message || e));
     }
-    this.state.chatBusy = false;
+    this.state.reviewing = false;
+    this.state.autoTurn = 0;
   },
 
   renderReviewPanel(review) {

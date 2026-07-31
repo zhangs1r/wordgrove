@@ -3,10 +3,23 @@ document.addEventListener('DOMContentLoaded', () => {
   TTS.init();
   API.loadConfig();
   UI.init();
+  initVersion();
 
   // 复盘按钮
   document.getElementById('chatReviewBtn').addEventListener('click', () => UI.startReview());
 });
+
+/* 设置页版本号：从原生 app 信息读取，跟随 build.gradle 自动更新 */
+function initVersion() {
+  try {
+    if (window.Capacitor?.Plugins?.App) {
+      window.Capacitor.Plugins.App.getInfo().then(info => {
+        const label = document.getElementById('versionLabel');
+        if (label && info && info.version) label.textContent = 'v' + info.version;
+      }).catch(() => {});
+    }
+  } catch {}
+}
 
 /* Android 键盘弹起/收起后布局恢复（WebView 视口高度 bug 兜底） */
 function initKeyboardFix() {

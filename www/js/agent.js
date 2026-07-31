@@ -161,7 +161,7 @@ const Agent = {
     let turns = 0;
     while (turns < 8) {
       turns++;
-      const resp = await API.chat(msgs, { model, tools: this.toolDefs });
+      const resp = await API.chat(msgs, { model, tools: this.toolDefs, maxTokens: 600 });
       const msg = resp.choices[0].message;
       msgs.push(msg);
 

@@ -40,11 +40,13 @@ const API = {
           await sleep(2000 * (attempt + 1));
           continue;
         }
-        const data = await res.json();
+        const text = await res.text();
+        let data = {};
+        try { data = JSON.parse(text); } catch {}
         if (!res.ok) {
           const msg = data?.error?.message || ('HTTP ' + res.status);
           if (res.status === 401) throw new Error('API Key 无效，去设置里检查');
-          throw new Error(msg);
+          throw new Error(msg + ' [' + res.status + ']');
         }
         return data;
       } catch (e) {

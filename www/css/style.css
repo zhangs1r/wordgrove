@@ -424,12 +424,13 @@ body {
   display: inline-flex; align-items: center; gap: 6px; box-shadow: var(--shadow); cursor: pointer;
 }
 .sel-btn.hidden { display: none; }
-.msg-selected { outline: 2px solid var(--primary); border-radius: 16px; }
-.msg-menu-btn {
-  position: fixed; z-index: 80; background: var(--primary); color: #fff; border: none;
-  border-radius: 999px; padding: 8px 14px; font-size: 13px; font-weight: 600;
-  display: inline-flex; align-items: center; gap: 6px; box-shadow: var(--shadow); cursor: pointer;
+/* 选词模式：单词可点 + 提示描边 */
+.msg.selecting .tap-word {
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  outline: 1px dashed color-mix(in srgb, var(--primary) 50%, transparent);
+  border-radius: 4px; padding: 0 2px;
 }
+.msg.selecting .msg-chip-btn.on { background: var(--primary); color: #fff; border-color: var(--primary); }
 .sent-head { font-size: 13px; font-weight: 700; color: var(--primary); margin: 18px 4px 8px; }
 .sent-item { display: flex; align-items: center; gap: 8px; padding: 12px 14px; background: var(--card); border-radius: 14px; margin-bottom: 8px; box-shadow: var(--shadow); }
 .si-main { flex: 1; min-width: 0; }

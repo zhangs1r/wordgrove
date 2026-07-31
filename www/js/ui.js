@@ -43,7 +43,6 @@ const UI = {
     rpBusy: false,
     wordSet: new Set(),
     _queryBusy: false,
-    _selBtn: null,
     tagFilter: '',
   },
 
@@ -483,17 +482,23 @@ const UI = {
     } else {
       const cn = opts.cn ? `<div class="msg-cn">${this.esc(opts.cn)}</div>` : '';
       const v = opts.voice || 'n';
-      const actions = role === 'assistant' ? `<div class="msg-actions"><button class="msg-chip-btn" data-say="${this.esc(text)}" data-voice="${v}">${this.sayIcon()} 朗读</button></div>` : '';
+      const readBtn = role === 'assistant' ? `<button class="msg-chip-btn" data-say="${this.esc(text)}" data-voice="${v}">${this.sayIcon()} 朗读</button>` : '';
+      const actions = `<div class="msg-actions">${readBtn}<button class="msg-chip-btn" data-sel="${this.esc(text)}">${Icons.search} 查词</button><button class="msg-chip-btn" data-sent="${this.esc(text)}">${Icons.chat} 查这句</button></div>`;
       div.innerHTML = `<div class="msg-en">${this.renderMsgText(text)}</div>${cn}${actions}`;
       this.bindTapWords(div);
       if (role === 'assistant') {
         const sb = div.querySelector('[data-say]');
         if (sb) this.addSpeakListener(sb, sb.dataset.say, sb.dataset.voice || 'n');
       }
-      // 点卡片空白 → 弹"查这句"菜单
-      div.addEventListener('click', (e) => {
-        if (e.target.closest('.tap-word') || e.target.closest('button') || e.target.closest('.msg-cn')) return;
-        this.showMsgMenu(div, text);
+      const selBtn = div.querySelector('[data-sel]');
+      if (selBtn) selBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.toggleSelectMode(div, text);
+      });
+      const sentBtn = div.querySelector('[data-sent]');
+      if (sentBtn) sentBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.translateSelection(text);
       });
     }
     area.appendChild(div);
@@ -1141,38 +1146,33 @@ const UI = {
   },
   removeSentence(id) { Settings.set('sentences', this.listSentences().filter(x => x.id !== id)); },
 
-  /* 点卡片 → 弹菜单（查这句），替代长按（避免与系统复制冲突） */
+  /* 选词模式：点「查单词」进入，连续点词查，点外部/再点按钮退出 */
+  toggleSelectMode(div, text) {
+    const on = div.classList.toggle('selecting');
+    if (on) {
+      this.exitSelectMode();
+      div.classList.add('selecting');
+      this._selectingDiv = div;
+      div.querySelectorAll('[data-sel]').forEach(b => b.classList.add('on'));
+      const words = (text.match(/[A-Za-z]+(?:['’-][A-Za-z]+)*/g) || []).length;
+      if (!words) { this.toast('这条没有英文单词'); this.exitSelectMode(); return; }
+      this.toast('选词模式：点单词连续查词，点外面退出');
+    } else {
+      this.exitSelectMode();
+    }
+  },
+  exitSelectMode() {
+    if (this._selectingDiv) {
+      this._selectingDiv.classList.remove('selecting');
+      this._selectingDiv.querySelectorAll('[data-sel]').forEach(b => b.classList.remove('on'));
+      this._selectingDiv = null;
+    }
+  },
   bindMsgDismiss() {
     document.addEventListener('click', (e) => {
-      if (this._msgMenuFor && !e.target.closest('.msg') && !e.target.closest('#msgMenuBtn')) this.hideMsgMenu();
+      if (this._selectingDiv && !e.target.closest('.msg')) this.exitSelectMode();
     });
-    document.addEventListener('scroll', () => this.hideMsgMenu(), true);
-  },
-  showMsgMenu(div, text) {
-    if (this._msgMenuFor === div) { this.hideMsgMenu(); return; }
-    this.hideMsgMenu();
-    div.classList.add('msg-selected');
-    const btn = document.createElement('button');
-    btn.id = 'msgMenuBtn';
-    btn.className = 'msg-menu-btn';
-    btn.innerHTML = `${Icons.search} 查这句`;
-    document.body.appendChild(btn);
-    const rect = div.getBoundingClientRect();
-    btn.style.top = Math.max(8, rect.top - 42) + 'px';
-    btn.style.left = Math.min(window.innerWidth - 132, Math.max(8, rect.left + 12)) + 'px';
-    btn.addEventListener('click', () => {
-      const t = btn.dataset.txt || '';
-      this.hideMsgMenu();
-      if (t) this.translateSelection(t);
-    });
-    btn.dataset.txt = text;
-    this._msgMenuFor = div;
-    this._msgMenuBtn = btn;
-  },
-  hideMsgMenu() {
-    if (this._msgMenuFor) this._msgMenuFor.classList.remove('msg-selected');
-    this._msgMenuFor = null;
-    if (this._msgMenuBtn) { this._msgMenuBtn.remove(); this._msgMenuBtn = null; }
+    document.addEventListener('scroll', () => this.exitSelectMode(), true);
   },
 
   /* 选句翻译：点卡片菜单查询 → 入句子本 */
@@ -1549,14 +1549,19 @@ const UI = {
     const div = document.createElement('div');
     div.className = 'msg msg-ai msg-rp-char';
     const mark = voice === 'm' ? '♂ ' : '♀ ';
-    div.innerHTML = `<div class="msg-rp-name">${mark}${this.esc(name)}</div><div class="msg-en">${this.renderMsgText(line)}</div><div class="msg-actions"><button class="msg-chip-btn" data-say="${this.esc(line)}" data-voice="${voice || 'f'}">${this.sayIcon()} 朗读</button></div>`;
+    div.innerHTML = `<div class="msg-rp-name">${mark}${this.esc(name)}</div><div class="msg-en">${this.renderMsgText(line)}</div><div class="msg-actions"><button class="msg-chip-btn" data-say="${this.esc(line)}" data-voice="${voice || 'f'}">${this.sayIcon()} 朗读</button><button class="msg-chip-btn" data-sel="${this.esc(line)}">${Icons.search} 查词</button><button class="msg-chip-btn" data-sent="${this.esc(line)}">${Icons.chat} 查这句</button></div>`;
     this.bindTapWords(div);
     const sb = div.querySelector('[data-say]');
     if (sb) this.addSpeakListener(sb, sb.dataset.say, sb.dataset.voice || 'f');
-    // 点卡片空白 → 弹"查这句"菜单
-    div.addEventListener('click', (e) => {
-      if (e.target.closest('.tap-word') || e.target.closest('button')) return;
-      this.showMsgMenu(div, line);
+    const selBtn = div.querySelector('[data-sel]');
+    if (selBtn) selBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.toggleSelectMode(div, line);
+    });
+    const sentBtn = div.querySelector('[data-sent]');
+    if (sentBtn) sentBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.translateSelection(line);
     });
     area.appendChild(div);
     area.scrollTop = area.scrollHeight;

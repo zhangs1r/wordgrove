@@ -55,7 +55,7 @@ const UI = {
     this.bindAudioCache();
     this.bindConv();
     this.bindTavern();
-    this.bindSelection();
+    this.bindMsgDismiss();
     this.loadWordsSet();
     Agent.refreshForgetWords();
     this.renderScenes();
@@ -321,6 +321,7 @@ const UI = {
     this.closeConvModal();
   },
   switchConv(id) {
+    if (this.state.rpMode) this.exitRp(); // 切会话前退出角色扮演，避免状态错乱
     if (this.state.chatHistory.length) this.saveConversation(this.currentConv());
     const conv = this.listConversations().find(c => c.id === id);
     if (!conv) return;
@@ -406,33 +407,12 @@ const UI = {
 
   /* 对话持久化：按会话保存（localStorage conversations 数组） */
   saveChatState() {
-    if (this.state.rpMode) {
-      Settings.set('rpState', {
-        worldId: this.state.rpWorld ? this.state.rpWorld.id : '',
-        charIds: this.state.rpChars.map(c => c.id),
-        history: this.state.rpHistory.slice(-60),
-      });
-      return;
-    }
+    if (this.state.rpMode) return; // RP 会话不持久化（每次开始都是新局）
     if (this.state.chatHistory.length) this.saveConversation(this.currentConv());
   },
   loadChatState() {
-    const rp = Settings.get('rpState', null);
-    if (rp && rp.history && rp.history.length) {
-      const w = this.listWorlds().find(x => x.id === rp.worldId);
-      if (w) {
-        this.state.rpMode = true;
-        this.state.rpWorld = w;
-        this.state.rpChars = this.listChars().filter(c => (rp.charIds || []).includes(c.id));
-        this.state.rpHistory = rp.history;
-        this.state.convTitle = w.name;
-        this.el('sceneBar').classList.add('hidden');
-        this.el('chatInput').placeholder = 'Say something… 或输入"继续"';
-        this.renderConvTitle();
-        this.renderChatHistory();
-        return;
-      }
-    }
+    // 角色扮演不自动恢复：每次"开始角色扮演"都是全新会话
+    Settings.remove('rpState');
     const list = this.listConversations();
     if (list.length) {
       const conv = [...list].sort((a, b) => (b.updated || 0) - (a.updated || 0))[0];
@@ -458,7 +438,7 @@ const UI = {
       }
       for (const m of this.state.rpHistory) {
         if (m.role === 'user') this.appendMsg('user', m.content);
-        else if (m.name) this.appendRpChar(m.name, m.content, 'f');
+        else if (m.name) this.appendRpChar(m.name, m.content, this.dialogueVoice({ name: m.name }));
         else this.appendMsg('assistant', m.content);
       }
       this.appendRpOptions([]);
@@ -510,6 +490,11 @@ const UI = {
         const sb = div.querySelector('[data-say]');
         if (sb) this.addSpeakListener(sb, sb.dataset.say, sb.dataset.voice || 'n');
       }
+      // 点卡片空白 → 弹"查这句"菜单
+      div.addEventListener('click', (e) => {
+        if (e.target.closest('.tap-word') || e.target.closest('button') || e.target.closest('.msg-cn')) return;
+        this.showMsgMenu(div, text);
+      });
     }
     area.appendChild(div);
     area.scrollTop = area.scrollHeight;
@@ -1080,7 +1065,10 @@ const UI = {
   },
   bindTapWords(container) {
     container.querySelectorAll('.tap-word').forEach(el => {
-      el.addEventListener('click', () => this.showWordQuery(el.dataset.w));
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.showWordQuery(el.dataset.w);
+      });
     });
   },
   /* 查词：AI 详细释义 + 自动入生词本 */
@@ -1153,46 +1141,41 @@ const UI = {
   },
   removeSentence(id) { Settings.set('sentences', this.listSentences().filter(x => x.id !== id)); },
 
-  /* 选句翻译：长按选中消息文本 → 浮动按钮 */
-  bindSelection() {
-    document.addEventListener('selectionchange', () => {
-      const sel = window.getSelection();
-      const txt = sel ? sel.toString().trim() : '';
-      if (!txt || txt.length > 500 || !sel.rangeCount) { this.hideSelBtn(); return; }
-      let node = sel.anchorNode;
-      while (node && node.nodeType !== 1) node = node.parentNode;
-      if (!node || !node.closest || !node.closest('.msg-en, .msg-rp-char')) { this.hideSelBtn(); return; }
-      const rect = sel.getRangeAt(0).getBoundingClientRect();
-      if (!rect || (!rect.width && !rect.height)) { this.hideSelBtn(); return; }
-      this.showSelBtn(rect, txt);
+  /* 点卡片 → 弹菜单（查这句），替代长按（避免与系统复制冲突） */
+  bindMsgDismiss() {
+    document.addEventListener('click', (e) => {
+      if (this._msgMenuFor && !e.target.closest('.msg') && !e.target.closest('#msgMenuBtn')) this.hideMsgMenu();
     });
-    document.addEventListener('scroll', () => this.hideSelBtn(), true);
-    document.addEventListener('touchend', () => setTimeout(() => this.hideSelBtn(), 2500));
+    document.addEventListener('scroll', () => this.hideMsgMenu(), true);
   },
-  showSelBtn(rect, txt) {
-    let btn = this._selBtn;
-    if (!btn) {
-      btn = document.createElement('button');
-      btn.id = 'selTranslateBtn';
-      btn.className = 'sel-btn';
-      document.body.appendChild(btn);
-      btn.addEventListener('click', () => {
-        const t = (btn.dataset.txt || '').trim();
-        this.hideSelBtn();
-        window.getSelection().removeAllRanges();
-        if (t) this.translateSelection(t);
-      });
-      this._selBtn = btn;
-    }
-    btn.dataset.txt = txt;
+  showMsgMenu(div, text) {
+    if (this._msgMenuFor === div) { this.hideMsgMenu(); return; }
+    this.hideMsgMenu();
+    div.classList.add('msg-selected');
+    const btn = document.createElement('button');
+    btn.id = 'msgMenuBtn';
+    btn.className = 'msg-menu-btn';
     btn.innerHTML = `${Icons.search} 查这句`;
-    btn.style.top = Math.max(8, rect.top - 44) + 'px';
-    btn.style.left = Math.min(window.innerWidth - 132, Math.max(8, rect.left)) + 'px';
-    btn.classList.remove('hidden');
+    document.body.appendChild(btn);
+    const rect = div.getBoundingClientRect();
+    btn.style.top = Math.max(8, rect.top - 42) + 'px';
+    btn.style.left = Math.min(window.innerWidth - 132, Math.max(8, rect.left + 12)) + 'px';
+    btn.addEventListener('click', () => {
+      const t = btn.dataset.txt || '';
+      this.hideMsgMenu();
+      if (t) this.translateSelection(t);
+    });
+    btn.dataset.txt = text;
+    this._msgMenuFor = div;
+    this._msgMenuBtn = btn;
   },
-  hideSelBtn() {
-    if (this._selBtn) this._selBtn.classList.add('hidden');
+  hideMsgMenu() {
+    if (this._msgMenuFor) this._msgMenuFor.classList.remove('msg-selected');
+    this._msgMenuFor = null;
+    if (this._msgMenuBtn) { this._msgMenuBtn.remove(); this._msgMenuBtn = null; }
   },
+
+  /* 选句翻译：点卡片菜单查询 → 入句子本 */
   async translateSelection(text) {
     const body = this.el('wordModalBody');
     body.innerHTML = `<div class="wd-ex">${this.esc(text)}</div><div class="wd-result" style="margin-top:10px">翻译中…</div>`;
@@ -1550,8 +1533,7 @@ const UI = {
       this.state.rpHistory = this.state.rpHistory.slice(-60);
       if (beat.narration) this.appendMsg('assistant', beat.narration, { voice: Settings.get('narratorVoice', 'f') });
       for (const d of beat.dialogue || []) {
-        const c = this.state.rpChars.find(x => x.name === d.name);
-        this.appendRpChar(d.name, d.line, this.charVoice(c));
+        this.appendRpChar(d.name, d.line, this.dialogueVoice(d));
       }
       if (beat.options && beat.options.length) this.appendRpOptions(beat.options);
       else this.appendRpOptions([]);
@@ -1566,16 +1548,35 @@ const UI = {
     const ph = this.el('chatPlaceholder'); if (ph) ph.remove();
     const div = document.createElement('div');
     div.className = 'msg msg-ai msg-rp-char';
-    div.innerHTML = `<div class="msg-rp-name">${this.esc(name)}</div><div class="msg-en">${this.renderMsgText(line)}</div><div class="msg-actions"><button class="msg-chip-btn" data-say="${this.esc(line)}" data-voice="${voice || 'f'}">${this.sayIcon()} 朗读</button></div>`;
+    const mark = voice === 'm' ? '♂ ' : '♀ ';
+    div.innerHTML = `<div class="msg-rp-name">${mark}${this.esc(name)}</div><div class="msg-en">${this.renderMsgText(line)}</div><div class="msg-actions"><button class="msg-chip-btn" data-say="${this.esc(line)}" data-voice="${voice || 'f'}">${this.sayIcon()} 朗读</button></div>`;
     this.bindTapWords(div);
     const sb = div.querySelector('[data-say]');
     if (sb) this.addSpeakListener(sb, sb.dataset.say, sb.dataset.voice || 'f');
+    // 点卡片空白 → 弹"查这句"菜单
+    div.addEventListener('click', (e) => {
+      if (e.target.closest('.tap-word') || e.target.closest('button')) return;
+      this.showMsgMenu(div, line);
+    });
     area.appendChild(div);
     area.scrollTop = area.scrollHeight;
     return div;
   },
   /* 角色 → 音色 */
   charVoice(c) { return c && c.gender === 'male' ? 'm' : 'f'; },
+  /* 台词音色：主角按角色卡；配角按性别表（首次出现固定性别） */
+  dialogueVoice(d) {
+    const c = this.state.rpChars.find(x => x.name === d.name);
+    if (c) return this.charVoice(c);
+    const table = Settings.get('rpSupportGenders', {});
+    if (table[d.name]) return table[d.name] === 'male' ? 'm' : 'f';
+    if (d.gender === 'male' || d.gender === 'female') {
+      table[d.name] = d.gender;
+      Settings.set('rpSupportGenders', table);
+      return d.gender === 'male' ? 'm' : 'f';
+    }
+    return 'f';
+  },
 
   appendRpOptions(options) {
     const area = this.el('chatArea');

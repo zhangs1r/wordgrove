@@ -364,7 +364,8 @@ Given the conversation history, the player's latest action, and each character's
 - Each character's spoken line (from their speech; adjust if needed)
 - 3-4 English choices for the player's next move (second-person, actionable, short)
 
-Output ONLY JSON: {"narration":"...","dialogue":[{"name":"CharacterName","line":"..."}],"options":["Choice 1","Choice 2","Choice 3"]}`;
+Output ONLY JSON: {"narration":"...","dialogue":[{"name":"CharacterName","line":"...","gender":"male或female"}],"options":["Choice 1","Choice 2","Choice 3"]}
+For dialogue: characters from the cast keep their identity; NEW side characters may appear (e.g. a waiter, a guard) — for ANY character first appearing in this beat, MUST include "gender" ("male" or "female"). For already-known characters you may omit it.`;
     const charBrief = charResults.map((r, i) => `${chars[i].name}: inner="${r.inner}" action="${r.action}" speech="${r.speech}"`).join('\n');
     const msgs = [
       { role: 'system', content: sys },
@@ -377,7 +378,13 @@ Output ONLY JSON: {"narration":"...","dialogue":[{"name":"CharacterName","line":
       const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
       return { narration: j.narration || '', dialogue: j.dialogue || [], options: (j.options || []).slice(0, 4) };
     } catch {
-      return { narration: content.slice(0, 300), dialogue: [], options: [] };
+      // JSON 解析失败：尝试从文本里抓 dialogue 行
+      const dlg = [];
+      content.split('\n').forEach(l => {
+        const m = l.match(/^\s*([A-Za-z][A-Za-z0-9 _'-]*?):\s*(.+)$/);
+        if (m) dlg.push({ name: m[1].trim(), line: m[2].trim(), gender: '' });
+      });
+      return { narration: content.slice(0, 300), dialogue: dlg, options: [] };
     }
   },
 

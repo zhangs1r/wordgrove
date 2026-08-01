@@ -21,31 +21,9 @@
 
 <main id="main">
 
-  <!-- ======== 今日复习 ======== -->
+  <!-- ======== 今日看板 ======== -->
   <section id="tab-today" class="tab-page active">
     <div id="dashStats" class="dash-stats"></div>
-    <div class="today-ring">
-      <div class="ring-wrap"><svg viewBox="0 0 84 84" class="ring">
-        <circle cx="42" cy="42" r="38" class="ring-bg"></circle>
-        <circle cx="42" cy="42" r="38" class="ring-fg" id="ringFg"></circle>
-      </svg><div class="ring-num" id="ringNum">0/0</div></div>
-      <div class="today-text">
-        <p class="today-big" id="todayDue">今天待复习 <b>0</b> 个词</p>
-        <p class="today-small" id="todayTip">复习完再聊一局，效果更好</p>
-      </div>
-    </div>
-    <div id="cardArea"></div>
-    <div id="cardActions" class="card-actions hidden">
-      <button class="btn btn-ghost" data-grade="0">忘了</button>
-      <button class="btn btn-ghost" data-grade="1">模糊</button>
-      <button class="btn btn-primary" data-grade="2">记得</button>
-    </div>
-    <div id="cardEmpty" class="empty-state hidden">
-      <div class="empty-emoji" id="emptyToday"></div>
-      <p>今天的词都复习完了</p>
-      <p class="empty-sub">去聊一局，把新词带回来</p>
-      <button class="btn btn-primary" id="goChatBtn">去对话</button>
-    </div>
     <div id="dashRanks" class="dash-ranks"></div>
   </section>
 

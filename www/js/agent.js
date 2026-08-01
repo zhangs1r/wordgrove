@@ -472,6 +472,22 @@ For dialogue: characters from the cast keep their identity; NEW side characters 
     if (!Array.isArray(j.roles)) j.roles = [];
     return j;
   },
+  /* 旧世界卡补齐角色：按世界设定生成 3-5 个角色 */
+  async fillWorldRoles(world) {
+    const model = Settings.get('buildModel', 'deepseek-v4-flash');
+    const w = world || {};
+    const resp = await API.chat([
+      { role: 'system', content: `你是世界卡设计师。根据已有的世界卡，为这个世界补充角色表（主角/配角/反派等，3-5 个），返回 JSON 数组：
+[{"name":"角色英文名","gender":"male或female","persona":"身份与性格(英文,1-2句)","role":"主角/配角/反派等(中文)","speakingStyle":"说话风格(英文,1句)"}]
+要求：角色贴合世界观，性别明确。英文输出。只输出 JSON 数组。` },
+      { role: 'user', content: `世界：${w.name || ''} — ${w.setting || w.description || ''}` },
+    ], { model, maxTokens: 900 });
+    const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
+    const a = content.indexOf('['), b = content.lastIndexOf(']');
+    const j = JSON.parse(content.slice(a, b + 1));
+    return Array.isArray(j) ? j : [];
+  },
+
   /* 复盘：语法/表达 + 角色扮演贴合度 */
   async queryWord(word) {
     const model = Settings.get('chatModel', 'deepseek-v4-flash');

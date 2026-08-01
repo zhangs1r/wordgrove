@@ -2,6 +2,7 @@
 const Icons = {
   sprout: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22V12"/><path d="M12 12C12 8 9 5 5 5c0 4 3 7 7 7z"/><path d="M12 12c0-4 3-7 7-7 0 4-3 7-7 7z"/><path d="M9 22h6"/></svg>',
   chat: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>',
+  review: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15l2 2 4-4"/></svg>',
   mug: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 8H7l-1.2-5h12.4L17 8z"/><path d="M17 8c0 2.5-2.2 4.5-5 4.5S7 10.5 7 8"/><path d="M12 12.5V19"/><path d="M8 22h8"/></svg>',
   book: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>',
   gear: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
@@ -10,6 +11,8 @@ const Icons = {
   plus: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>',
   search: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>',
   play: '<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M8 5.5v13l11-6.5-11-6.5z"/></svg>',
+  undo: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>',
+  refresh: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"/><path d="M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>',
   bulb: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.4 1 2.3h6c0-.9.4-1.8 1-2.3A7 7 0 0 0 12 2z"/></svg>',
   earth: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18z"/></svg>',
   user: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>',
@@ -129,7 +132,7 @@ const UI = {
       tavernHeadIcon: Icons.mug, worldHeadIcon: Icons.earth, charHeadIcon: Icons.user,
       emptyToday: Icons.sprout, emptyChat: Icons.chat, emptyWords: Icons.book,
       apiKeyClearBtn: Icons.x,
-      chatReviewBtn: Icons.chat,
+      chatReviewBtn: Icons.review,
     };
     Object.entries(btnMap).forEach(([id, svg]) => {
       const el = document.getElementById(id);
@@ -171,20 +174,8 @@ const UI = {
 
   /* ---------- 今日复习 ---------- */
   async renderToday() {
-    const due = await Words.due();
-    this.state.dueQueue = due;
-    this.state.cardIndex = 0;
-    const done = await this.countDoneToday();
-    const total = done + due.length;
-    this.el('ringNum').textContent = total === 0 ? '✓' : done + '/' + total;
-    const ring = this.el('ringFg');
-    const frac = total === 0 ? 0 : done / total;
-    ring.style.strokeDashoffset = 238.8 * (1 - frac);
-
     const p = Profile.load();
     const streak = p.streak || 0;
-    this.el('todayDue').innerHTML = `今天待复习 <b>${due.length}</b> 个词`;
-    this.el('todayTip').textContent = streak > 0 ? `已连击 ${streak} 天 · 复习完聊一局效果更好` : '复习完聊一局，把新词带回来';
 
     // 数据卡：学词 / 对话局数 / 连击 / API 余额
     const stats = this.el('dashStats');
@@ -222,8 +213,6 @@ const UI = {
       ranks.querySelectorAll('[data-rw]').forEach(b => b.addEventListener('click', () => this.showWordQuery(b.dataset.rw)));
     }
 
-    if (due.length > 0) this.showCard(due[0]);
-    else this.showEmptyCard(done === 0 && (p.wordsLearned || 0) === 0);
   },
 
   /* API 余额（缓存 5 分钟） */
@@ -322,7 +311,8 @@ const UI = {
         }
       });
     });
-    this.el('goChatBtn').addEventListener('click', () => this.switchTab('chat'));
+    const goChat = this.el('goChatBtn');
+    if (goChat) goChat.addEventListener('click', () => this.switchTab('chat'));
   },
 
   /* ---------- 对话 ---------- */
@@ -367,6 +357,26 @@ const UI = {
     if (this.state.chatHistory.length) this.saveConversation(this.currentConv());
     const conv = this.listConversations().find(c => c.id === id);
     if (!conv) return;
+    if (conv.isRp) {
+      // 恢复剧场绘画
+      const w = this.listWorlds().find(x => x.id === conv.worldId) || null;
+      this.state.rpMode = true;
+      this.state.rpWorld = w;
+      this.state.rpChars = (w && w.roles) || [];
+      this.state.rpRoster = {};
+      ((w && w.roles) || []).forEach(r => { this.state.rpRoster[r.name] = r.gender === 'male' ? 'm' : 'f'; });
+      this.state.rpPlayer = null;
+      this.state.rpStep = 'play';
+      this.state.rpActiveChars = ((w && w.roles) || []).map(r => ({ name: r.name, gender: r.gender }));
+      this.state.rpHistory = (conv.history || []).map(m => ({ role: m.role, content: m.content, name: m.name || '' }));
+      this.state.convId = conv.id;
+      this.state.convTitle = conv.title || (w ? w.name : '剧场');
+      this.state.autoTurn = 0;
+      this.renderConvTitle();
+      this.renderChatHistory();
+      this.closeConvModal();
+      return;
+    }
     this.state.convId = conv.id;
     this.state.convTitle = conv.title || '';
     this.state.chatHistory = conv.history || [];
@@ -390,7 +400,7 @@ const UI = {
       <div class="conv-item ${c.id === this.state.convId ? 'active' : ''}" data-id="${c.id}">
         <div class="ci-main">
           <div class="ci-title">${this.esc(c.title || '新会话')}</div>
-          <div class="ci-meta">${(c.history || []).length} 条 · ${this.fmtTime(c.updated)}</div>
+          <div class="ci-meta">${c.isRp ? '剧场 · ' : ''}${(c.history || []).length} 条 · ${this.fmtTime(c.updated)}</div>
         </div>
         <button class="ci-del" data-del="${c.id}">✕</button>
       </div>`;
@@ -446,13 +456,26 @@ const UI = {
 
   /* 对话持久化：按会话保存（localStorage conversations 数组） */
   saveChatState() {
-    if (this.state.rpMode) return; // RP 会话不持久化（每次开始都是新局）
+    if (this.state.rpMode) {
+      // RP 绘画保存进会话历史（可回看/切换；下次"开始角色扮演"仍是新局）
+      if (this.state.rpHistory.length) {
+        this.saveConversation({
+          id: this.state.convId,
+          title: this.state.convTitle || (this.state.rpWorld ? this.state.rpWorld.name : '剧场'),
+          history: this.state.rpHistory.map(m => ({ role: m.role, content: m.content, name: m.name || '' })),
+          isRp: true,
+          worldId: this.state.rpWorld ? this.state.rpWorld.id : '',
+          updated: Date.now(),
+        });
+      }
+      return;
+    }
     if (this.state.chatHistory.length) this.saveConversation(this.currentConv());
   },
   loadChatState() {
     // 角色扮演不自动恢复：每次"开始角色扮演"都是全新会话
     Settings.remove('rpState');
-    const list = this.listConversations();
+    const list = this.listConversations().filter(c => !c.isRp);
     if (list.length) {
       const conv = [...list].sort((a, b) => (b.updated || 0) - (a.updated || 0))[0];
       this.state.convId = conv.id;
@@ -475,7 +498,7 @@ const UI = {
       }
       for (const m of this.state.rpHistory) {
         if (m.role === 'user') this.appendMsg('user', m.content);
-        else if (m.name) this.appendRpChar(m.name, m.content, this.dialogueVoice({ name: m.name }));
+        else if (m.name) this.appendRpChar(m.name, m.content, this.dialogueVoice({ name: m.name }), i);
         else this.appendMsg('assistant', m.content);
       }
       this.appendRpOptions([]);
@@ -483,12 +506,12 @@ const UI = {
       return;
     }
     if (!this.state.chatHistory.length) {
-      area.innerHTML = `<div class="chat-placeholder" id="chatPlaceholder"><div class="empty-emoji">${Icons.chat}</div><p>选一个场景，开始 3 分钟对话</p></div>`;
+      area.innerHTML = `<div class="chat-placeholder" id="chatPlaceholder"><div class="empty-emoji">${Icons.chat}</div><p>开始一段日常对话，或去剧场角色扮演</p></div>`;
       return;
     }
-    for (const m of this.state.chatHistory) {
-      this.appendMsg(m.role === 'user' ? 'user' : 'assistant', m.content);
-    }
+    this.state.chatHistory.forEach((m, i) => {
+      this.appendMsg(m.role === 'user' ? 'user' : 'assistant', m.content, { idx: i });
+    });
     area.scrollTop = area.scrollHeight;
   },
 
@@ -521,7 +544,10 @@ const UI = {
       const cn = opts.cn ? `<div class="msg-cn">${this.esc(opts.cn)}</div>` : '';
       const v = opts.voice || 'n';
       const readBtn = role === 'assistant' ? `<button class="msg-chip-btn" data-say="${this.esc(text)}" data-voice="${v}">${this.sayIcon()} 朗读</button>` : '';
-      const actions = `<div class="msg-actions">${readBtn}<button class="msg-chip-btn" data-sel="${this.esc(text)}">${Icons.search} 查词</button><button class="msg-chip-btn" data-sent="${this.esc(text)}">${Icons.chat} 查这句</button></div>`;
+      const hLen = this.state.rpMode ? this.state.rpHistory.length : this.state.chatHistory.length;
+      const idx = opts.idx !== undefined ? opts.idx : hLen - 1;
+      const isLastAi = role === 'assistant' && idx === hLen - 1;
+      const actions = `<div class="msg-actions">${readBtn}<button class="msg-chip-btn" data-sel="${this.esc(text)}">${Icons.search} 查词</button><button class="msg-chip-btn" data-sent="${this.esc(text)}">${Icons.chat} 查这句</button><button class="msg-chip-btn" data-rb="${idx}" title="回滚到此">${Icons.undo}</button>${isLastAi ? `<button class="msg-chip-btn" data-rg title="重新生成">${Icons.refresh}</button>` : ''}</div>`;
       div.innerHTML = `<div class="msg-en">${this.renderMsgText(text)}</div>${cn}${actions}`;
       this.bindTapWords(div);
       if (role === 'assistant') {
@@ -537,6 +563,16 @@ const UI = {
       if (sentBtn) sentBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         this.translateSelection(text);
+      });
+      const rbBtn = div.querySelector('[data-rb]');
+      if (rbBtn) rbBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.rollbackMsg(parseInt(rbBtn.dataset.rb, 10));
+      });
+      const rgBtn = div.querySelector('[data-rg]');
+      if (rgBtn) rgBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.regenerateMsg();
       });
     }
     area.appendChild(div);
@@ -574,7 +610,7 @@ const UI = {
     this.state.chatBusy = true;
     const typing = this.appendMsg('assistant', '', { typing: true });
     try {
-      const reply = await Agent.run(scene, this.state.chatHistory);
+      const reply = await Agent.run(null, this.state.chatHistory);
       typing.remove();
       this.state.chatHistory.push({ role: 'assistant', content: reply });
       this.appendMsg('assistant', reply);
@@ -592,14 +628,14 @@ const UI = {
     } catch (e) {
       typing.remove();
       const host = API.base.includes('deepseek.com') ? 'deepseek' : API.base.includes('opencode.ai') ? 'opencode' : API.base;
-      const label = '⚠️ [' + scene.name + ' / ' + Settings.get('chatModel', 'deepseek-v4-flash') + ' @' + host + '] ' + (e.message || '出错了');
+      const label = '⚠️ [' + Settings.get('chatModel', 'deepseek-v4-flash') + ' @' + host + '] ' + (e.message || '出错了');
       const div = this.appendMsg('assistant', label);
       const actions = div.querySelector('.msg-actions');
       if (actions) {
         const retryBtn = document.createElement('button');
         retryBtn.className = 'msg-chip-btn';
         retryBtn.textContent = '🔄 重试';
-        retryBtn.onclick = () => this.retryLast(scene);
+        retryBtn.onclick = () => this.retryLast();
         actions.appendChild(retryBtn);
       }
       this.saveChatState();
@@ -609,7 +645,7 @@ const UI = {
   },
 
   /* 重试：清掉最后一条错误消息，用最后一条用户消息再跑一次 */
-  async retryLast(scene) {
+  async retryLast() {
     if (this.state.chatBusy) return;
     const last = this.state.chatHistory[this.state.chatHistory.length - 1];
     if (last && last.role === 'assistant' && typeof last.content === 'string' && last.content.startsWith('⚠️')) {
@@ -792,7 +828,7 @@ const UI = {
       </div>`).join('');
     panel.innerHTML = `
       <div class="review-head">
-        <h3>${Icons.chat} 复盘 <span style="font-weight:400;color:var(--muted);font-size:12px">${this.esc(review.good || '')}</span></h3>
+        <h3>${Icons.review} 复盘 <span style="font-weight:400;color:var(--muted);font-size:12px">${this.esc(review.good || '')}</span></h3>
         <button id="reviewCloseBtn" class="icon-btn-sm">${Icons.x}</button>
       </div>
       ${mistakes ? `<div style="font-size:13px;font-weight:700;margin:6px 0">说错/卡壳的地方</div>${mistakes}` : ''}
@@ -934,10 +970,10 @@ const UI = {
     const sentWrap = this.el('sentList');
     if (!sents.length) { sentWrap.innerHTML = ''; return; }
     sentWrap.innerHTML = `<div class="sent-head">句子本（${sents.length}）</div>` + sents.map(s => `
-      <div class="sent-item" data-id="${s.id}">
-        <div class="si-main">
-          <div class="si-text">${this.renderMsgText(s.text)}</div>
-          <div class="si-cn">${this.esc(s.cn || '')}${s.note ? ` <span class="wi-state">${this.esc(s.note)}</span>` : ''}</div>
+      <div class="word-item sent-item" data-id="${s.id}">
+        <div class="wi-main">
+          <div class="wi-word">${this.renderMsgText(s.text)}</div>
+          <div class="wi-meaning">${this.esc(s.cn || '')}${s.note ? ` <span class="wi-state">${this.esc(s.note)}</span>` : ''}</div>
           ${s.ctx ? `<div class="si-ctx">${this.esc(s.ctx)}</div>` : ''}
         </div>
         <button class="wi-say" data-say="${this.esc(s.text)}">${this.sayIcon()}</button>
@@ -1239,6 +1275,42 @@ const UI = {
     this.toast('已删除');
   },
 
+  /* 回滚到此消息：删除该条及之后所有（普通对话 / 剧场绘画通用） */
+  rollbackMsg(idx) {
+    if (this.state.rpMode) {
+      if (idx < 0 || idx > this.state.rpHistory.length) return;
+      this.state.rpHistory = this.state.rpHistory.slice(0, idx);
+    } else {
+      if (idx < 0 || idx > this.state.chatHistory.length) return;
+      this.state.chatHistory = this.state.chatHistory.slice(0, idx);
+    }
+    this.saveChatState();
+    this.renderChatHistory();
+    this.toast('已回滚');
+  },
+  /* 重新生成：删除最后一条 AI 回复，重新生成 */
+  async regenerateMsg() {
+    if (this.state.chatBusy || this.state.rpBusy) { this.toast('正在生成中…'); return; }
+    if (this.state.rpMode) {
+      const h = this.state.rpHistory;
+      const last = h[h.length - 1];
+      if (!last || last.role !== 'assistant') { this.toast('没有可重新生成的内容'); return; }
+      h.pop();
+      this.renderChatHistory();
+      const lastUser = [...h].reverse().find(m => m.role === 'user');
+      await this.rpRound(lastUser ? lastUser.content : 'continue');
+    } else {
+      const h = this.state.chatHistory;
+      const last = h[h.length - 1];
+      if (!last || last.role !== 'assistant') { this.toast('没有可重新生成的内容'); return; }
+      h.pop();
+      this.renderChatHistory();
+      const lastUser = [...h].reverse().find(m => m.role === 'user');
+      if (lastUser) await this.sendText(lastUser.content, { alreadyInHistory: true, skipSuggest: true });
+      else this.toast('没有可重新生成的内容');
+    }
+  },
+
   /* ---------- 句子本 ---------- */
   listSentences() { return Settings.get('sentences', []); },
   saveSentence(s) {
@@ -1531,8 +1603,21 @@ const UI = {
   async startRp() {
     const w = this.currentWorld();
     if (!w) { this.toast('先选择或生成一个世界卡'); this.switchTab('tavern'); return; }
-    const roles = w.roles || [];
-    if (!roles.length) { this.toast('这个世界还没有角色——用"AI 生成"重做一个（描述里带上角色）'); this.switchTab('tavern'); return; }
+    let roles = w.roles || [];
+    if (!roles.length) {
+      this.toast('这个世界还没有角色，正在自动补齐…');
+      this.switchTab('chat');
+      try {
+        roles = await Agent.fillWorldRoles(w);
+        if (!roles.length) throw new Error('empty');
+        this.saveWorld({ ...w, roles });
+        w.roles = roles;
+      } catch (e) {
+        this.toast('自动补角色失败：' + (e.message || e).slice(0, 60));
+        this.switchTab('tavern');
+        return;
+      }
+    }
     this.state.rpMode = true;
     this.state.rpWorld = w;
     this.state.rpChars = roles;
@@ -1543,7 +1628,8 @@ const UI = {
     this.state.rpStep = 'choose';
     this.state.rpPendingRoles = [];
     this.state.rpHistory = [];
-    this.state.convTitle = w.name;
+    this.state.convId = 'c_' + Date.now() + '_rp';
+    this.state.convTitle = w.name + ' · ' + new Date().toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
     this.renderConvTitle();
     this.el('chatInput').placeholder = '选一个角色，或输入"自定义"描述你想扮演的人';
     this.switchTab('chat');
@@ -1655,13 +1741,14 @@ const UI = {
       this.appendMsg('assistant', '⚠️ RP 出错：' + (e.message || e));
     }
   },
-  appendRpChar(name, line, voice) {
+  appendRpChar(name, line, voice, idxArg) {
     const area = this.el('chatArea');
     const ph = this.el('chatPlaceholder'); if (ph) ph.remove();
     const div = document.createElement('div');
     div.className = 'msg msg-ai msg-rp-char';
     const mark = voice === 'm' ? '♂ ' : '♀ ';
-    div.innerHTML = `<div class="msg-rp-name">${mark}${this.esc(name)}</div><div class="msg-en">${this.renderMsgText(line)}</div><div class="msg-actions"><button class="msg-chip-btn" data-say="${this.esc(line)}" data-voice="${voice || 'f'}">${this.sayIcon()} 朗读</button><button class="msg-chip-btn" data-sel="${this.esc(line)}">${Icons.search} 查词</button><button class="msg-chip-btn" data-sent="${this.esc(line)}">${Icons.chat} 查这句</button></div>`;
+    const idx = idxArg !== undefined ? idxArg : this.state.rpHistory.length;
+    div.innerHTML = `<div class="msg-rp-name">${mark}${this.esc(name)}</div><div class="msg-en">${this.renderMsgText(line)}</div><div class="msg-actions"><button class="msg-chip-btn" data-say="${this.esc(line)}" data-voice="${voice || 'f'}">${this.sayIcon()} 朗读</button><button class="msg-chip-btn" data-sel="${this.esc(line)}">${Icons.search} 查词</button><button class="msg-chip-btn" data-sent="${this.esc(line)}">${Icons.chat} 查这句</button><button class="msg-chip-btn" data-rb="${idx}" title="回滚到此">${Icons.undo}</button></div>`;
     this.bindTapWords(div);
     const sb = div.querySelector('[data-say]');
     if (sb) this.addSpeakListener(sb, sb.dataset.say, sb.dataset.voice || 'f');
@@ -1674,6 +1761,11 @@ const UI = {
     if (sentBtn) sentBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       this.translateSelection(line);
+    });
+    const rbBtn = div.querySelector('[data-rb]');
+    if (rbBtn) rbBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.rollbackMsg(parseInt(rbBtn.dataset.rb, 10));
     });
     area.appendChild(div);
     area.scrollTop = area.scrollHeight;
@@ -1713,6 +1805,7 @@ const UI = {
   },
   /* 退出 RP：回到普通场景对话 */
   exitRp() {
+    this.saveChatState(); // 先保存绘画
     this.state.rpMode = false;
     this.state.rpWorld = null;
     this.state.rpChars = [];

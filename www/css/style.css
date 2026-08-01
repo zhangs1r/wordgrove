@@ -131,6 +131,7 @@ body {
   padding: 16px; box-shadow: var(--shadow); margin-bottom: 16px;
 }
 .progress-ring-wrap { position: relative; width: 88px; height: 88px; flex-shrink: 0; }
+.ring-wrap { position: relative; width: 84px; height: 84px; flex-shrink: 0; }
 .ring-bg { fill: none; stroke: var(--card-2); stroke-width: 8; }
 .ring-fg {
   fill: none; stroke: var(--primary); stroke-width: 8; stroke-linecap: round;

@@ -287,12 +287,14 @@ ${this.forgetLine()}
     const w = world || {};
     const rolesDesc = (w.roles || []).map(r => `${r.name}(${r.gender === 'male' ? '男' : '女'},${r.role || ''},${r.persona || ''})`).join('; ');
     const resp = await API.chat([
-      { role: 'system', content: `You are casting the player in an English roleplay story.\nWorld: ${w.name} — ${w.setting || w.description || ''}\nCast already in this world: ${rolesDesc || 'none'}\n\nOffer 3-4 distinct roles the PLAYER could play in this world. They can be a character from the cast, an outsider, or a fresh arrival. Each must fit the world.\nOutput ONLY JSON: [{"name":"角色英文名","gender":"male或female","desc":"一句话身份介绍(英文)","persona":"性格要点(英文,1句)"}]` },
+      { role: 'system', content: `You are casting the player in an English roleplay story.\nWorld: ${w.name} — ${w.setting || w.description || ''}\nCast already in this world: ${rolesDesc || 'none'}\n\nOffer 3-4 distinct roles the PLAYER could play in this world. They can be a character from the cast, an outsider, or a fresh arrival. Each must fit the world.\nYou MUST reply with ONLY a JSON array, no explanation, no markdown fences, no trailing text:\n[{"name":"角色英文名","gender":"male或female","desc":"一句话身份介绍(英文)","persona":"性格要点(英文,1句)"}]` },
       { role: 'user', content: 'Give me 3-4 role options.' },
-    ], { model, maxTokens: 800, thinking: { type: 'disabled' } });
+    ], { model, maxTokens: 2000 });
     const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
     try {
-      const j = JSON.parse(content.slice(content.indexOf('['), content.lastIndexOf(']') + 1));
+      const a = content.indexOf('['), b = content.lastIndexOf(']');
+      if (a === -1 || b === -1) return [];
+      const j = JSON.parse(content.slice(a, b + 1));
       return Array.isArray(j) ? j : [];
     } catch { return []; }
   },

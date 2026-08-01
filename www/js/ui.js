@@ -1891,34 +1891,44 @@ const UI = {
     this.el('profileView').textContent = lines.join('\n');
   },
 
-  /* 检查 GitHub release 是否有新版本 */
+  /* 检查更新：优先读仓库 version.json（raw CDN 国内可达），失败回退 GitHub API；下载走加速镜像 */
   async checkUpdate() {
     const info = this.el('updateInfo');
     if (!info) return;
     info.classList.remove('hidden');
     info.textContent = '检查中…';
+    const cur = (this.el('versionLabel').textContent || '').replace(/^v/, '');
+    const showNew = (latest, notes, dlUrl) => {
+      info.innerHTML = `发现新版本 <b>v${this.esc(latest)}</b>（当前 v${this.esc(cur)}）<br><span style="opacity:.75;font-size:11px;line-height:1.5">${this.esc(notes || '')}</span><br><button id="dlApkBtn" class="btn btn-primary btn-sm" style="margin-top:8px">下载安装包</button>`;
+      const dl = info.querySelector('#dlApkBtn');
+      if (dl) dl.addEventListener('click', () => {
+        if (!dlUrl) { this.toast('暂无下载链接，请到 GitHub release 页'); return; }
+        try { location.href = 'https://ghproxy.net/' + dlUrl; }
+        catch (e) { try { location.href = dlUrl; } catch (e2) { this.toast('请在浏览器打开链接下载'); } }
+      });
+    };
     try {
-      const resp = await fetch('https://api.github.com/repos/zhangs1r/wordgrove/releases/latest', { headers: { Accept: 'application/vnd.github+json' } });
-      if (!resp.ok) throw new Error('github ' + resp.status);
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 8000);
+      const resp = await fetch('https://raw.githubusercontent.com/zhangs1r/wordgrove/main/version.json', { signal: ctrl.signal, headers: { Accept: 'application/json' } });
+      clearTimeout(timer);
+      if (!resp.ok) throw new Error('http ' + resp.status);
       const j = await resp.json();
-      const latest = (j.tag_name || '').replace(/^v/, '');
-      const cur = (this.el('versionLabel').textContent || '').replace(/^v/, '');
-      const apk = (j.assets || []).find(a => a.name.endsWith('.apk'));
-      if (latest && latest !== cur) {
-        info.innerHTML = `发现新版本 <b>v${this.esc(latest)}</b>（当前 v${this.esc(cur)}）<br><span style="opacity:.75;font-size:11px;line-height:1.5">${this.esc((j.body || '').replace(/^##\s*.*\n?/, '').slice(0, 220))}</span><br><button id="dlApkBtn" class="btn btn-primary btn-sm" style="margin-top:8px">下载安装包</button>`;
-        const dl = info.querySelector('#dlApkBtn');
-        if (dl) dl.addEventListener('click', () => {
-          if (apk && apk.browser_download_url) {
-            try { location.href = apk.browser_download_url; } catch (e) { this.toast('请在浏览器打开 GitHub release 下载'); }
-          } else {
-            try { location.href = j.html_url; } catch (e) {}
-          }
-        });
-      } else {
-        info.innerHTML = `已是最新版（v${this.esc(cur)}）`;
-      }
+      const latest = String(j.version || '').replace(/^v/, '');
+      if (latest && latest !== cur) showNew(latest, j.notes || '', j.url || '');
+      else info.innerHTML = `已是最新版（v${this.esc(cur)}）`;
     } catch (e) {
-      info.textContent = '检查失败：' + (e.message || e).slice(0, 60);
+      try {
+        const resp = await fetch('https://api.github.com/repos/zhangs1r/wordgrove/releases/latest', { headers: { Accept: 'application/vnd.github+json' } });
+        if (!resp.ok) throw new Error('github ' + resp.status);
+        const j = await resp.json();
+        const latest = (j.tag_name || '').replace(/^v/, '');
+        const apk = (j.assets || []).find(a => a.name.endsWith('.apk'));
+        if (latest && latest !== cur) showNew(latest, (j.body || '').replace(/^##\s*.*\n?/, '').slice(0, 220), apk ? apk.browser_download_url : '');
+        else info.innerHTML = `已是最新版（v${this.esc(cur)}）`;
+      } catch (e2) {
+        info.textContent = '检查失败：网络无法访问更新源';
+      }
     }
   },
 

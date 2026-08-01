@@ -34,7 +34,7 @@ const API = {
 
   async chat(messages, opts = {}) {
     const {
-      model = 'deepseek-chat',
+      model = 'deepseek-v4-flash',
       tools,
       maxTokens = 2000,
       temperature,
@@ -112,7 +112,7 @@ const API = {
         'Authorization': 'Bearer ' + this.key,
       },
       body: JSON.stringify({
-        model: 'deepseek-chat',
+        model: 'deepseek-v4-flash',
         messages: [{ role: 'user', content: 'ping' }],
         max_tokens: 8,
       }),

@@ -147,13 +147,13 @@ ${this.forgetLine()}
 
   /* ---------- 核心 agent loop ---------- */
   async run(scene, history) {
-    const model = Settings.get('chatModel', 'deepseek-chat');
+    const model = Settings.get('chatModel', 'deepseek-v4-flash');
     try {
       return await this._run(scene, history, model);
     } catch (e) {
       // mimo 对话网络不稳时自动换 deepseek 重试一次
       if (model === 'mimo-v2.5') {
-        return await this._run(scene, history, 'deepseek-chat');
+        return await this._run(scene, history, 'deepseek-v4-flash');
       }
       throw e;
     }
@@ -245,7 +245,7 @@ ${this.forgetLine()}
 
   /* ---------- 表达建议：检查用户最后一条英文，给更地道的说法 ---------- */
   async suggestBetter(history) {
-    const model = Settings.get('chatModel', 'deepseek-chat');
+    const model = Settings.get('chatModel', 'deepseek-v4-flash');
     const lastUser = [...history].reverse().find(m => m.role === 'user');
     if (!lastUser || !/[a-zA-Z]/.test(lastUser.content || '')) return null;
     const ctx = history.slice(-6).map(m => `${m.role}: ${(m.content || '').slice(0, 200)}`).join('\n');
@@ -268,7 +268,7 @@ ${this.forgetLine()}
 
   /* ---------- 中文求助：用户用中文描述想表达的意思，生成地道英文 ---------- */
   async suggestFromChinese(history, chinese) {
-    const model = Settings.get('chatModel', 'deepseek-chat');
+    const model = Settings.get('chatModel', 'deepseek-v4-flash');
     const ctx = history.slice(-6).map(m => `${m.role}: ${(m.content || '').slice(0, 200)}`).join('\n');
     const resp = await API.chat([
       { role: 'system', content: `你是英语口语教练。用户用中文描述想表达的意思，请结合对话上下文，给出地道自然的英文表达。
@@ -283,7 +283,7 @@ ${this.forgetLine()}
 
   /* 选角：根据世界卡给出 3-4 个可扮演身份 */
   async rpOfferRoles(world) {
-    const model = Settings.get('chatModel', 'deepseek-chat');
+    const model = Settings.get('chatModel', 'deepseek-v4-flash');
     const w = world || {};
     const rolesDesc = (w.roles || []).map(r => `${r.name}(${r.gender === 'male' ? '男' : '女'},${r.role || ''},${r.persona || ''})`).join('; ');
     const resp = await API.chat([
@@ -303,7 +303,7 @@ Output ONLY JSON: [{"name":"角色英文名","gender":"male或female","desc":"�
 
   /* 塑造玩家角色：根据用户选择/描述生成角色卡 */
   async rpPlayerCard(desc, world) {
-    const model = Settings.get('chatModel', 'deepseek-chat');
+    const model = Settings.get('chatModel', 'deepseek-v4-flash');
     const w = world || {};
     const resp = await API.chat([
       { role: 'system', content: `You shape the PLAYER character in an English roleplay story.
@@ -322,7 +322,7 @@ Output ONLY JSON: {"name":"角色英文名","gender":"male或female","persona":"
 
   /* 开场前言：世界 + 你的处境 + 第一个行动选择 */
   async rpOpenIntro(world, player, roster) {
-    const model = Settings.get('chatModel', 'deepseek-chat');
+    const model = Settings.get('chatModel', 'deepseek-v4-flash');
     const w = world || {};
     const p = player || {};
     const castLine = (w.roles || []).map(r => `${r.name}(${r.gender === 'male' ? 'M' : 'F'})`).join(', ');
@@ -385,7 +385,7 @@ NARRATION TONE: ${w.tone || 'atmospheric'}`;
 
   /* 角色子 Agent：推理一个角色的内心活动 → 行动 → 台词（每轮每个角色单独调用） */
   async rpInferChar(char, world, history, userInput) {
-    const model = Settings.get('chatModel', 'deepseek-chat');
+    const model = Settings.get('chatModel', 'deepseek-v4-flash');
     const sys = this.rpSystem(world) + `
 
 You are playing: ${char.name}
@@ -414,7 +414,7 @@ Output ONLY JSON: {"inner":"their inner thoughts in English","action":"what they
 
   /* 导演 Agent：汇总所有角色的推理，推进情节 + 给选项 */
   async rpDirect(world, chars, history, userInput, charResults) {
-    const model = Settings.get('chatModel', 'deepseek-chat');
+    const model = Settings.get('chatModel', 'deepseek-v4-flash');
     const sys = this.rpSystem(world) + `
 
 You are the GAME MASTER / narrator of this story. Characters present: ${chars.map(c => c.name).join(', ')}.
@@ -450,7 +450,7 @@ For dialogue: characters from the cast keep their identity; NEW side characters 
 
   /* 中文 → 英文翻译（用户 RP 输入含中文时先翻译） */
   async translateToEnglish(text) {
-    const model = Settings.get('chatModel', 'deepseek-chat');
+    const model = Settings.get('chatModel', 'deepseek-v4-flash');
     const resp = await API.chat([
       { role: 'system', content: 'Translate the user input to natural, spoken English. Output ONLY the translation, nothing else.' },
       { role: 'user', content: text },
@@ -460,7 +460,7 @@ For dialogue: characters from the cast keep their identity; NEW side characters 
 
   /* ---------- 酒馆卡生成 ---------- */
   async generateWorldCard(desc) {
-    const model = Settings.get('buildModel', 'deepseek-chat');
+    const model = Settings.get('buildModel', 'deepseek-v4-flash');
     const resp = await API.chat([
       { role: 'system', content: `你是世界卡设计师。根据用户描述生成一个角色扮演世界的世界卡，世界卡内嵌这个世界里已有的角色表（主角/配角/反派等，3-5 个），返回 JSON：
 {"name":"世界名(英文)","title":"中文标题","description":"一句话简介(英文)","setting":"详细世界设定(英文,3-5句)","rules":"世界规则(英文,2-3条,换行分隔)","tone":"叙述风格(英文,如 atmospheric、humorous)","roles":[{"name":"角色英文名","gender":"male或female","persona":"身份与性格(英文,1-2句)","role":"主角/配角/反派等(中文)","speakingStyle":"说话风格(英文,1句)"}]}
@@ -474,7 +474,7 @@ For dialogue: characters from the cast keep their identity; NEW side characters 
   },
   /* 复盘：语法/表达 + 角色扮演贴合度 */
   async queryWord(word) {
-    const model = Settings.get('chatModel', 'deepseek-chat');
+    const model = Settings.get('chatModel', 'deepseek-v4-flash');
     const resp = await API.chat([
       { role: 'system', content: `你是英语词典。为单词 "${word}" 输出详细解释，返回 JSON（不要输出其他内容）：
 {
@@ -503,7 +503,7 @@ For dialogue: characters from the cast keep their identity; NEW side characters 
 
   /* 句子/词组翻译解释（查询后入句子本） */
   async queryText(text) {
-    const model = Settings.get('chatModel', 'deepseek-chat');
+    const model = Settings.get('chatModel', 'deepseek-v4-flash');
     const resp = await API.chat([
       { role: 'system', content: `你是英语翻译。翻译下面这句英文（或词组），返回 JSON（不要输出其他内容）：
 {"cn":"自然的中文翻译","note":"关键表达/语法点的一句话中文说明（如有）"}` },
@@ -520,7 +520,7 @@ For dialogue: characters from the cast keep their identity; NEW side characters 
 
   /* ---------- 会话命名：根据对话内容生成中文标题 ---------- */
   async titleForConversation(history) {
-    const model = Settings.get('buildModel', 'deepseek-chat');
+    const model = Settings.get('buildModel', 'deepseek-v4-flash');
     const brief = history.slice(-6).map(m => `${m.role}: ${(m.content || '').slice(0, 120)}`).join('\n');
     try {
       const resp = await API.chat([

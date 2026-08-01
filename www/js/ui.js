@@ -592,7 +592,7 @@ const UI = {
     } catch (e) {
       typing.remove();
       const host = API.base.includes('deepseek.com') ? 'deepseek' : API.base.includes('opencode.ai') ? 'opencode' : API.base;
-      const label = '⚠️ [' + scene.name + ' / ' + Settings.get('chatModel', 'deepseek-chat') + ' @' + host + '] ' + (e.message || '出错了');
+      const label = '⚠️ [' + scene.name + ' / ' + Settings.get('chatModel', 'deepseek-v4-flash') + ' @' + host + '] ' + (e.message || '出错了');
       const div = this.appendMsg('assistant', label);
       const actions = div.querySelector('.msg-actions');
       if (actions) {
@@ -1302,7 +1302,7 @@ const UI = {
   bindSettings() {
     // API 提供商预设（只用 DeepSeek 官方，国内直连）
     const PROVIDERS = {
-      deepseek: { base: 'https://api.deepseek.com/v1/chat/completions', models: ['deepseek-chat', 'deepseek-v4-pro'] },
+      deepseek: { base: 'https://api.deepseek.com/v1/chat/completions', models: ['deepseek-v4-flash', 'deepseek-v4-pro'] },
     };
     const fillModels = (provider) => {
       const chat = this.el('setChatModel');

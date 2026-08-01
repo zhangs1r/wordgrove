@@ -544,17 +544,36 @@ const UI = {
     } else {
       const cn = opts.cn ? `<div class="msg-cn">${this.esc(opts.cn)}</div>` : '';
       const v = opts.voice || 'n';
-      const readBtn = role === 'assistant' ? `<button class="msg-chip-btn" data-say="${this.esc(text)}" data-voice="${v}">${this.sayIcon()} 朗读</button>` : '';
+      const readBtn = role === 'assistant' ? `<button class="msg-chip-btn" data-say="${this.esc(text)}" data-voice="${v}" title="朗读">${this.sayIcon()}</button>` : '';
       const hLen = this.state.rpMode ? this.state.rpHistory.length : this.state.chatHistory.length;
       const idx = opts.idx !== undefined ? opts.idx : hLen - 1;
       const isLastAi = role === 'assistant' && idx === hLen - 1;
-      const actions = `<div class="msg-actions"><button class="msg-chip-btn" data-more title="操作">${Icons.more}</button></div>`;
+      const actions = `<div class="msg-actions">${readBtn}<button class="msg-chip-btn" data-sel="${this.esc(text)}" title="查单词">${Icons.search}</button><button class="msg-chip-btn" data-sent="${this.esc(text)}" title="查这句">${Icons.chat}</button><button class="msg-chip-btn" data-rb="${idx}" title="回滚到此">${Icons.undo}</button>${isLastAi ? `<button class="msg-chip-btn" data-rg title="重新生成">${Icons.refresh}</button>` : ''}</div>`;
       div.innerHTML = `<div class="msg-en">${this.renderMsgText(text)}</div>${cn}${actions}`;
       this.bindTapWords(div);
-      const moreBtn = div.querySelector('[data-more]');
-      if (moreBtn) moreBtn.addEventListener('click', (e) => {
+      if (role === 'assistant') {
+        const sb = div.querySelector('[data-say]');
+        if (sb) this.addSpeakListener(sb, sb.dataset.say, sb.dataset.voice || 'n');
+      }
+      const selBtn = div.querySelector('[data-sel]');
+      if (selBtn) selBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        this.showMsgMenu(div, text, { role, idx, isLastAi, voice: v });
+        this.toggleSelectMode(div, text);
+      });
+      const sentBtn = div.querySelector('[data-sent]');
+      if (sentBtn) sentBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.translateSelection(text);
+      });
+      const rbBtn = div.querySelector('[data-rb]');
+      if (rbBtn) rbBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.rollbackMsg(parseInt(rbBtn.dataset.rb, 10));
+      });
+      const rgBtn = div.querySelector('[data-rg]');
+      if (rgBtn) rgBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.regenerateMsg();
       });
     }
     area.appendChild(div);
@@ -1639,6 +1658,9 @@ const UI = {
     this.state.rpActiveChars = roles.map(r => ({ name: r.name, gender: r.gender === 'male' ? 'male' : 'female' }));
     this.state.rpRoster = {};
     roles.forEach(r => { this.state.rpRoster[r.name] = r.gender === 'male' ? 'm' : 'f'; });
+    // 保存并清空普通会话，避免残留内容污染 RP 绘画/切换时产生多余会话
+    if (this.state.chatHistory.length) this.saveConversation(this.currentConv());
+    this.state.chatHistory = [];
     this.state.rpPlayer = null;
     this.state.rpStep = 'choose';
     this.state.rpPendingRoles = [];
@@ -1657,7 +1679,10 @@ const UI = {
       labels.push('自定义：我想扮演……');
       this.appendRpOptions(labels);
     } catch {
-      this.appendRpOptions(['自定义：我想扮演……']);
+      // API 失败时用世界卡已有角色兜底，保证有推荐选项
+      const opts = (w.roles || []).map(r => ({ name: r.name, gender: r.gender, desc: r.persona || r.role || '', persona: r.persona || '' }));
+      this.state.rpPendingRoles = opts;
+      this.appendRpOptions(opts.map(o => `扮演 ${o.name}：${o.desc}`).concat(['自定义：我想扮演……']));
     }
   },
   async sendRpText(text) {
@@ -1693,6 +1718,7 @@ const UI = {
           this.state.rpHistory.push({ role: 'assistant', name: '', content: intro.narration });
         }
         this.appendRpOptions(intro.options.length ? intro.options : ['继续']);
+        this.saveChatState();
         this.state.rpStep = 'play';
       } catch (e) {
         this.toast('开场失败：' + (e.message || e).slice(0, 60));
@@ -1727,6 +1753,7 @@ const UI = {
     const chars = this.state.rpActiveChars && this.state.rpActiveChars.length ? this.state.rpActiveChars : this.state.rpChars;
     const isContinue = !userMsg || /^(continue|继续|自己来|你来|你自己来|go on|let it continue|\.\.\.?|…)$/i.test(userMsg.trim());
     if (userMsg) this.state.rpHistory.push({ role: 'user', content: userMsg });
+        this.saveChatState();
     const typing = this.appendMsg('assistant', '', { typing: true });
     try {
       const results = [];
@@ -1763,12 +1790,24 @@ const UI = {
     div.className = 'msg msg-ai msg-rp-char';
     const mark = voice === 'm' ? '♂ ' : '♀ ';
     const idx = idxArg !== undefined ? idxArg : this.state.rpHistory.length;
-    div.innerHTML = `<div class="msg-rp-name">${mark}${this.esc(name)}</div><div class="msg-en">${this.renderMsgText(line)}</div><div class="msg-actions"><button class="msg-chip-btn" data-more title="操作">${Icons.more}</button></div>`;
+    div.innerHTML = `<div class="msg-rp-name">${mark}${this.esc(name)}</div><div class="msg-en">${this.renderMsgText(line)}</div><div class="msg-actions"><button class="msg-chip-btn" data-say="${this.esc(line)}" data-voice="${voice || 'f'}" title="朗读">${this.sayIcon()}</button><button class="msg-chip-btn" data-sel="${this.esc(line)}" title="查单词">${Icons.search}</button><button class="msg-chip-btn" data-sent="${this.esc(line)}" title="查这句">${Icons.chat}</button><button class="msg-chip-btn" data-rb="${idx}" title="回滚到此">${Icons.undo}</button></div>`;
     this.bindTapWords(div);
-    const moreBtn = div.querySelector('[data-more]');
-    if (moreBtn) moreBtn.addEventListener('click', (e) => {
+    const sb = div.querySelector('[data-say]');
+    if (sb) this.addSpeakListener(sb, sb.dataset.say, sb.dataset.voice || 'f');
+    const selBtn = div.querySelector('[data-sel]');
+    if (selBtn) selBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      this.showMsgMenu(div, line, { role: 'assistant', idx, isLastAi: idx === this.state.rpHistory.length - 1, voice: voice || 'f' });
+      this.toggleSelectMode(div, line);
+    });
+    const sentBtn = div.querySelector('[data-sent]');
+    if (sentBtn) sentBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.translateSelection(line);
+    });
+    const rbBtn = div.querySelector('[data-rb]');
+    if (rbBtn) rbBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.rollbackMsg(parseInt(rbBtn.dataset.rb, 10));
     });
     area.appendChild(div);
     area.scrollTop = area.scrollHeight;
@@ -1809,6 +1848,7 @@ const UI = {
   /* 退出 RP：回到普通场景对话 */
   exitRp() {
     this.saveChatState(); // 先保存绘画
+    this.state.chatHistory = []; // 清空普通残留，避免切会话时把旧内容存进 RP 会话
     this.state.rpMode = false;
     this.state.rpWorld = null;
     this.state.rpChars = [];

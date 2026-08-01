@@ -47,6 +47,9 @@ const Settings = {
   set(key, val) {
     localStorage.setItem('ea_' + key, JSON.stringify(val));
   },
+  remove(key) {
+    localStorage.removeItem('ea_' + key);
+  },
 };
 
 /* ---------- 用户画像（localStorage） ---------- */

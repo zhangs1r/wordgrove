@@ -12,6 +12,7 @@ const Icons = {
   search: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>',
   play: '<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M8 5.5v13l11-6.5-11-6.5z"/></svg>',
   undo: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>',
+  more: '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>',
   refresh: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"/><path d="M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>',
   bulb: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.4 1 2.3h6c0-.9.4-1.8 1-2.3A7 7 0 0 0 12 2z"/></svg>',
   earth: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18z"/></svg>',
@@ -72,6 +73,7 @@ const UI = {
     this.bindWords();
     this.bindCardActions();
     this.loadTtsVoices();
+    this.loadChatState(); // 启动时加载最近会话（仅此一次；之后会话状态由 newConv/switchConv/startRp 管理）
 
     if (!API.configured()) {
       setTimeout(() => {
@@ -156,7 +158,6 @@ const UI = {
     if (tab === 'words') this.renderWords();
     if (tab === 'tavern') this.renderTavern();
     if (tab === 'settings') this.renderProfile();
-    if (tab === 'chat') this.loadChatState();
   },
 
   /* ---------- 主题 ---------- */
@@ -547,32 +548,13 @@ const UI = {
       const hLen = this.state.rpMode ? this.state.rpHistory.length : this.state.chatHistory.length;
       const idx = opts.idx !== undefined ? opts.idx : hLen - 1;
       const isLastAi = role === 'assistant' && idx === hLen - 1;
-      const actions = `<div class="msg-actions">${readBtn}<button class="msg-chip-btn" data-sel="${this.esc(text)}">${Icons.search} 查词</button><button class="msg-chip-btn" data-sent="${this.esc(text)}">${Icons.chat} 查这句</button><button class="msg-chip-btn" data-rb="${idx}" title="回滚到此">${Icons.undo}</button>${isLastAi ? `<button class="msg-chip-btn" data-rg title="重新生成">${Icons.refresh}</button>` : ''}</div>`;
+      const actions = `<div class="msg-actions"><button class="msg-chip-btn" data-more title="操作">${Icons.more}</button></div>`;
       div.innerHTML = `<div class="msg-en">${this.renderMsgText(text)}</div>${cn}${actions}`;
       this.bindTapWords(div);
-      if (role === 'assistant') {
-        const sb = div.querySelector('[data-say]');
-        if (sb) this.addSpeakListener(sb, sb.dataset.say, sb.dataset.voice || 'n');
-      }
-      const selBtn = div.querySelector('[data-sel]');
-      if (selBtn) selBtn.addEventListener('click', (e) => {
+      const moreBtn = div.querySelector('[data-more]');
+      if (moreBtn) moreBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        this.toggleSelectMode(div, text);
-      });
-      const sentBtn = div.querySelector('[data-sent]');
-      if (sentBtn) sentBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this.translateSelection(text);
-      });
-      const rbBtn = div.querySelector('[data-rb]');
-      if (rbBtn) rbBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this.rollbackMsg(parseInt(rbBtn.dataset.rb, 10));
-      });
-      const rgBtn = div.querySelector('[data-rg]');
-      if (rgBtn) rgBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this.regenerateMsg();
+        this.showMsgMenu(div, text, { role, idx, isLastAi, voice: v });
       });
     }
     area.appendChild(div);
@@ -1320,6 +1302,36 @@ const UI = {
   },
   removeSentence(id) { Settings.set('sentences', this.listSentences().filter(x => x.id !== id)); },
 
+  /* 消息操作菜单：点 ⋯ 弹出（朗读/查词/查这句/回滚/重新生成） */
+  showMsgMenu(div, text, info = {}) {
+    this.hideMsgMenu();
+    const menu = document.createElement('div');
+    menu.className = 'msg-menu';
+    const items = [];
+    if (info.role === 'assistant' && text) items.push(['朗读', () => { TTS.speak(text, info.voice || 'f'); }]);
+    items.push(['查单词', () => this.toggleSelectMode(div, text)]);
+    items.push(['查这句', () => this.translateSelection(text)]);
+    items.push(['回滚到此', () => this.rollbackMsg(info.idx)]);
+    if (info.isLastAi) items.push(['重新生成', () => this.regenerateMsg()]);
+    menu.innerHTML = items.map(([label]) => `<button class="msg-menu-item">${this.esc(label)}</button>`).join('');
+    document.body.appendChild(menu);
+    const rect = div.getBoundingClientRect();
+    menu.style.bottom = Math.max(8, window.innerHeight - rect.top + 6) + 'px';
+    menu.style.right = Math.max(8, window.innerWidth - rect.right + 4) + 'px';
+    const btns = menu.querySelectorAll('.msg-menu-item');
+    btns.forEach((b, i) => b.addEventListener('click', () => {
+      const fn = items[i][1];
+      this.hideMsgMenu();
+      fn();
+    }));
+    this._menuEl = menu;
+    this._menuDiv = div;
+  },
+  hideMsgMenu() {
+    if (this._menuEl) { this._menuEl.remove(); this._menuEl = null; }
+    this._menuDiv = null;
+  },
+
   /* 选词模式：点「查单词」进入，连续点词查，点外部/再点按钮退出 */
   toggleSelectMode(div, text) {
     const on = div.classList.toggle('selecting');
@@ -1345,6 +1357,7 @@ const UI = {
   bindMsgDismiss() {
     document.addEventListener('click', (e) => {
       if (this._selectingDiv && !e.target.closest('.msg')) this.exitSelectMode();
+      if (this._menuEl && !e.target.closest('#msgMenu') && !e.target.closest('[data-more]')) this.hideMsgMenu();
     });
     document.addEventListener('scroll', () => this.exitSelectMode(), true);
   },
@@ -1495,6 +1508,8 @@ const UI = {
 
     this.el('exportBtn').addEventListener('click', () => this.exportData());
     this.el('importBtn').addEventListener('click', () => this.el('importFile').click());
+    const updBtn = this.el('checkUpdateBtn');
+    if (updBtn) updBtn.addEventListener('click', () => this.checkUpdate());
   },
 
   /* ============ 酒馆（世界卡/角色卡） ============ */
@@ -1748,24 +1763,12 @@ const UI = {
     div.className = 'msg msg-ai msg-rp-char';
     const mark = voice === 'm' ? '♂ ' : '♀ ';
     const idx = idxArg !== undefined ? idxArg : this.state.rpHistory.length;
-    div.innerHTML = `<div class="msg-rp-name">${mark}${this.esc(name)}</div><div class="msg-en">${this.renderMsgText(line)}</div><div class="msg-actions"><button class="msg-chip-btn" data-say="${this.esc(line)}" data-voice="${voice || 'f'}">${this.sayIcon()} 朗读</button><button class="msg-chip-btn" data-sel="${this.esc(line)}">${Icons.search} 查词</button><button class="msg-chip-btn" data-sent="${this.esc(line)}">${Icons.chat} 查这句</button><button class="msg-chip-btn" data-rb="${idx}" title="回滚到此">${Icons.undo}</button></div>`;
+    div.innerHTML = `<div class="msg-rp-name">${mark}${this.esc(name)}</div><div class="msg-en">${this.renderMsgText(line)}</div><div class="msg-actions"><button class="msg-chip-btn" data-more title="操作">${Icons.more}</button></div>`;
     this.bindTapWords(div);
-    const sb = div.querySelector('[data-say]');
-    if (sb) this.addSpeakListener(sb, sb.dataset.say, sb.dataset.voice || 'f');
-    const selBtn = div.querySelector('[data-sel]');
-    if (selBtn) selBtn.addEventListener('click', (e) => {
+    const moreBtn = div.querySelector('[data-more]');
+    if (moreBtn) moreBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      this.toggleSelectMode(div, line);
-    });
-    const sentBtn = div.querySelector('[data-sent]');
-    if (sentBtn) sentBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.translateSelection(line);
-    });
-    const rbBtn = div.querySelector('[data-rb]');
-    if (rbBtn) rbBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.rollbackMsg(parseInt(rbBtn.dataset.rb, 10));
+      this.showMsgMenu(div, line, { role: 'assistant', idx, isLastAi: idx === this.state.rpHistory.length - 1, voice: voice || 'f' });
     });
     area.appendChild(div);
     area.scrollTop = area.scrollHeight;
@@ -1846,6 +1849,37 @@ const UI = {
       lines.push('常犯：' + p.mistakes.slice(0, 3).map(m => m.pat).join(' / '));
     }
     this.el('profileView').textContent = lines.join('\n');
+  },
+
+  /* 检查 GitHub release 是否有新版本 */
+  async checkUpdate() {
+    const info = this.el('updateInfo');
+    if (!info) return;
+    info.classList.remove('hidden');
+    info.textContent = '检查中…';
+    try {
+      const resp = await fetch('https://api.github.com/repos/zhangs1r/wordgrove/releases/latest', { headers: { Accept: 'application/vnd.github+json' } });
+      if (!resp.ok) throw new Error('github ' + resp.status);
+      const j = await resp.json();
+      const latest = (j.tag_name || '').replace(/^v/, '');
+      const cur = (this.el('versionLabel').textContent || '').replace(/^v/, '');
+      const apk = (j.assets || []).find(a => a.name.endsWith('.apk'));
+      if (latest && latest !== cur) {
+        info.innerHTML = `发现新版本 <b>v${this.esc(latest)}</b>（当前 v${this.esc(cur)}）<br><span style="opacity:.75;font-size:11px;line-height:1.5">${this.esc((j.body || '').replace(/^##\s*.*\n?/, '').slice(0, 220))}</span><br><button id="dlApkBtn" class="btn btn-primary btn-sm" style="margin-top:8px">下载安装包</button>`;
+        const dl = info.querySelector('#dlApkBtn');
+        if (dl) dl.addEventListener('click', () => {
+          if (apk && apk.browser_download_url) {
+            try { location.href = apk.browser_download_url; } catch (e) { this.toast('请在浏览器打开 GitHub release 下载'); }
+          } else {
+            try { location.href = j.html_url; } catch (e) {}
+          }
+        });
+      } else {
+        info.innerHTML = `已是最新版（v${this.esc(cur)}）`;
+      }
+    } catch (e) {
+      info.textContent = '检查失败：' + (e.message || e).slice(0, 60);
+    }
   },
 
   exportData() {

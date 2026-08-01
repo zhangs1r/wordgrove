@@ -88,6 +88,7 @@ const Words = {
       ctx: w.ctx || '',
       forgot: w.forgot || 0,
       tags: w.tags || [],
+      root: w.root || '', collocations: w.collocations || '', synonyms: w.synonyms || '', antonyms: w.antonyms || '', note: w.note || '',
       srs: { due: now, interval: 0, reps: 0, lapses: 0, ease: 2.5 },
     };
     await tx('words', 'readwrite', s => s.add(word));

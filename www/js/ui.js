@@ -718,7 +718,12 @@ const UI = {
           word: w.word, phonetic: w.phonetic || '', meaning: w.meaning || '',
           example: w.example || '', exampleCn: w.exampleCn || '', source: 'review', tags: ['复盘'],
         })));
-        if (added > 0) this.toast(`复盘把 ${added} 个词加入了生词本`);
+        if (added > 0) {
+          this.toast(`复盘把 ${added} 个词加入了生词本`);
+          this.refreshWordsSet();
+          Agent.refreshForgetWords();
+          if (this.state.rpHistory.length) this.renderChatHistory();
+        }
       } else if (auto) {
         this.toast('复盘完成');
       }
@@ -807,6 +812,8 @@ const UI = {
                   example: w.example || '', exampleCn: w.exampleCn || '', source: 'build',
                 })));
                 this.toast(`加入 ${added} 个词`);
+                this.refreshWordsSet();
+                Agent.refreshForgetWords();
                 res.innerHTML = '';
                 this.el('buildText').value = '';
                 this.renderWords();
@@ -866,8 +873,7 @@ const UI = {
       </div>`).join('');
     wrap.querySelectorAll('.wi-say').forEach(b => this.addSpeakListener(b, b.dataset.say));
     wrap.querySelectorAll('.wi-del').forEach(b => b.addEventListener('click', async e => {
-      await Words.remove(e.target.dataset.del);
-      this.renderWords(this.el('wordSearch').value.trim());
+      this.removeWord(e.target.dataset.del);
     }));
     // 点击单词 → 详情
     wrap.querySelectorAll('.word-item').forEach(item => item.addEventListener('click', async e => {
@@ -950,16 +956,20 @@ const UI = {
     const body = this.el('wordModalBody');
     const srcMap = { agent: 'AI 对话', review: '复盘收藏', build: '一键建卡', manual: '手动添加' };
     const src = w.sourceScene || srcMap[w.source] || w.source || '未知';
+    const row = (k, v) => v ? `<div class="wd-row"><span class="wd-key">${k}</span> ${this.esc(v)}</div>` : '';
+    const rows = row('词根', w.root) + row('搭配', w.collocations) + row('同义', w.synonyms) + row('反义', w.antonyms)
+      + (w.note ? `<div class="wd-note">${this.esc(w.note)}</div>` : '');
     body.innerHTML = `
       <div class="wd-word">${this.esc(w.word)}${w.phonetic ? ` <span class="wi-phon">${this.esc(w.phonetic)}</span>` : ''}</div>
       ${w.pos ? `<div class="wd-pos">${this.esc(w.pos)}</div>` : ''}
       <div class="wd-meaning">${this.esc(w.meaning || '（暂无释义）')}</div>
       ${w.example ? `<div class="wd-ex">${this.esc(w.example)}</div>` : ''}
       ${w.exampleCn ? `<div class="wd-excn">${this.esc(w.exampleCn)}</div>` : ''}
+      ${rows}
       <div class="wd-meta">来源：${this.esc(src)} · ${this.fmtDate(w.created)}${(w.forgot || 0) > 0 ? ` · 忘了 ${w.forgot} 次` : ''}</div>
       ${w.ctx ? `<div class="si-ctx">收藏场景：${this.esc(w.ctx)}</div>` : ''}
       ${this.tagEditorHtml(w.tags)}
-      ${(!w.phonetic || !w.example || !w.pos) ? `<button class="btn btn-ghost btn-sm btn-block" id="wdEnrich" style="margin-top:10px">${Icons.search} 补全详情（音标/词性/例句）</button>` : ''}
+      <button class="btn btn-ghost btn-sm btn-block" id="wdEnrich" style="margin-top:10px">${Icons.search} 补全/刷新详情</button>
       <div id="wdEnrichResult" class="wd-result"></div>`;
     this.el('wordModal').classList.remove('hidden');
     this.bindTagEditor(body, w.tags || [], async (next) => {
@@ -974,12 +984,19 @@ const UI = {
         btn.textContent = '查询中…';
         try {
           const d = await Agent.queryWord(w.word);
-          await Words.update(w.id, { ...w, phonetic: d.phonetic || w.phonetic, pos: d.pos || w.pos, meaning: d.meaning || w.meaning, example: d.example || w.example, exampleCn: d.exampleCn || w.exampleCn });
+          const upd = {
+            phonetic: d.phonetic || w.phonetic, pos: d.pos || w.pos, meaning: d.meaning || w.meaning,
+            example: (d.examples && d.examples[0] ? d.examples[0].en : '') || w.example,
+            exampleCn: (d.examples && d.examples[0] ? d.examples[0].cn : '') || w.exampleCn,
+            root: d.root || w.root || '', collocations: d.collocations || w.collocations || '',
+            synonyms: d.synonyms || w.synonyms || '', antonyms: d.antonyms || w.antonyms || '', note: d.note || w.note || '',
+          };
+          await Words.update(w.id, upd);
           const updated = await Words.get(w.id);
           this.el('wordModal').classList.add('hidden');
-          this.showWordDetail(updated || { ...w, ...d });
+          this.showWordDetail(updated || { ...w, ...upd });
           this.renderWords(this.el('wordSearch').value.trim());
-          this.toast('详情已补全 🌿');
+          this.toast('详情已补全');
         } catch (e) {
           const r = document.getElementById('wdEnrichResult');
           if (r) r.textContent = '查询失败：' + (e.message || e);
@@ -987,6 +1004,26 @@ const UI = {
           btn.innerHTML = Icons.search + ' 补全详情';
         }
       });
+    }
+    // 自动补全：库里旧卡没有详细字段时，打开详情自动查一次并保存
+    if (!w.root && !w.collocations && !w.antonyms) {
+      const hint = document.createElement('div');
+      hint.className = 'wd-result';
+      hint.textContent = '正在补全详细释义…';
+      body.appendChild(hint);
+      try {
+        const d = await Agent.queryWord(w.word);
+        const upd = {
+          phonetic: d.phonetic || w.phonetic, pos: d.pos || w.pos, meaning: d.meaning || w.meaning,
+          example: (d.examples && d.examples[0] ? d.examples[0].en : '') || w.example,
+          exampleCn: (d.examples && d.examples[0] ? d.examples[0].cn : '') || w.exampleCn,
+          root: d.root || '', collocations: d.collocations || '', synonyms: d.synonyms || '', antonyms: d.antonyms || '', note: d.note || '',
+        };
+        await Words.update(w.id, upd);
+        this.showWordDetail({ ...w, ...upd });
+      } catch (e) {
+        hint.textContent = '详情补全失败（网络/额度），可点上方按钮重试';
+      }
     }
   },
   fmtDate(ts) {
@@ -1105,6 +1142,7 @@ const UI = {
           example: (d.examples && d.examples[0] ? d.examples[0].en : '') || '',
           exampleCn: (d.examples && d.examples[0] ? d.examples[0].cn : '') || '',
           source: 'query', ctx: this.currentCtx(), tags: ['查词'],
+          root: d.root || '', collocations: d.collocations || '', synonyms: d.synonyms || '', antonyms: d.antonyms || '', note: d.note || '',
         });
         this.refreshWordsSet();
       }
@@ -1141,6 +1179,16 @@ const UI = {
       ${exs}
       ${d.note ? `<div class="wd-note">${this.esc(d.note)}</div>` : ''}
     `;
+  },
+
+  /* 删词：同步刷新高亮（对话/句子/忘词榜） */
+  async removeWord(id) {
+    await Words.remove(id);
+    await this.loadWordsSet();
+    await Agent.refreshForgetWords();
+    this.renderWords(this.el('wordSearch').value.trim());
+    if (this.state.chatHistory.length || this.state.rpHistory.length) this.renderChatHistory();
+    this.toast('已删除');
   },
 
   /* ---------- 句子本 ---------- */
@@ -1679,6 +1727,8 @@ const UI = {
         }
         if (data.profile) Profile.save(data.profile);
         this.toast(`导入 ${n} 个词`);
+        this.refreshWordsSet();
+        Agent.refreshForgetWords();
         this.renderWords();
       }
     } catch (e) {

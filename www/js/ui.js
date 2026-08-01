@@ -497,11 +497,11 @@ const UI = {
         area.innerHTML = `<div class="chat-placeholder" id="chatPlaceholder"><div class="empty-emoji">${Icons.mug}</div><p>选择世界和角色，开始你的故事</p></div>`;
         return;
       }
-      for (const m of this.state.rpHistory) {
+      this.state.rpHistory.forEach((m, i) => {
         if (m.role === 'user') this.appendMsg('user', m.content);
         else if (m.name) this.appendRpChar(m.name, m.content, this.dialogueVoice({ name: m.name }), i);
         else this.appendMsg('assistant', m.content);
-      }
+      });
       this.appendRpOptions([]);
       area.scrollTop = area.scrollHeight;
       return;
@@ -1289,26 +1289,40 @@ const UI = {
     this.renderChatHistory();
     this.toast('已回滚');
   },
-  /* 重新生成：删除最后一条 AI 回复，重新生成 */
+  /* 重新生成：删除最后一条 AI 回复（RP 删整个最后一轮），重新生成（失败恢复，不丢记录） */
   async regenerateMsg() {
     if (this.state.chatBusy || this.state.rpBusy) { this.toast('正在生成中…'); return; }
-    if (this.state.rpMode) {
-      const h = this.state.rpHistory;
-      const last = h[h.length - 1];
-      if (!last || last.role !== 'assistant') { this.toast('没有可重新生成的内容'); return; }
-      h.pop();
-      this.renderChatHistory();
-      const lastUser = [...h].reverse().find(m => m.role === 'user');
-      await this.rpRound(lastUser ? lastUser.content : 'continue');
+    const isRp = this.state.rpMode;
+    const h = isRp ? this.state.rpHistory : this.state.chatHistory;
+    const last = h[h.length - 1];
+    if (!last || last.role !== 'assistant') { this.toast('没有可重新生成的内容'); return; }
+    let removed;
+    if (isRp) {
+      // 删除最后一轮（最后一条 user 之后的所有 AI 输出），保留 user，避免重放时 user 重复
+      const lastUserIdx = h.map(m => (m.role === 'user' ? 1 : 0)).lastIndexOf(1);
+      const keepTo = lastUserIdx >= 0 ? lastUserIdx + 1 : 0;
+      removed = h.slice(keepTo);
+      this.state.rpHistory = h.slice(0, keepTo);
     } else {
-      const h = this.state.chatHistory;
-      const last = h[h.length - 1];
-      if (!last || last.role !== 'assistant') { this.toast('没有可重新生成的内容'); return; }
-      h.pop();
+      removed = [h[h.length - 1]];
+      this.state.chatHistory = h.slice(0, -1);
+    }
+    this.renderChatHistory();
+    try {
+      if (isRp) {
+        const lastUser = this.state.rpHistory[this.state.rpHistory.length - 1];
+        await this.rpRound(lastUser && lastUser.role === 'user' ? lastUser.content : 'continue', { regen: true });
+      } else {
+        const lastUser = [...this.state.chatHistory].reverse().find(m => m.role === 'user');
+        if (lastUser) await this.sendText(lastUser.content, { alreadyInHistory: true, skipSuggest: true });
+        else { this.state.chatHistory = this.state.chatHistory.concat(removed); this.renderChatHistory(); this.toast('没有可重新生成的内容'); }
+      }
+    } catch (e) {
+      // 生成失败：把删掉的整轮放回来，避免"点一下少一条、多点几下全没了"
+      if (isRp) this.state.rpHistory = this.state.rpHistory.concat(removed);
+      else this.state.chatHistory = this.state.chatHistory.concat(removed);
       this.renderChatHistory();
-      const lastUser = [...h].reverse().find(m => m.role === 'user');
-      if (lastUser) await this.sendText(lastUser.content, { alreadyInHistory: true, skipSuggest: true });
-      else this.toast('没有可重新生成的内容');
+      this.toast('重新生成失败：' + (e.message || e).slice(0, 60));
     }
   },
 
@@ -1748,12 +1762,12 @@ const UI = {
     this.state.rpBusy = false;
   },
   /* 一轮 RP：子 Agent 逐角色推理 → 导演汇总 → 渲染 */
-  async rpRound(userMsg) {
+  async rpRound(userMsg, opts = {}) {
     const w = this.state.rpWorld;
     const chars = this.state.rpActiveChars && this.state.rpActiveChars.length ? this.state.rpActiveChars : this.state.rpChars;
     const isContinue = !userMsg || /^(continue|继续|自己来|你来|你自己来|go on|let it continue|\.\.\.?|…)$/i.test(userMsg.trim());
-    if (userMsg) this.state.rpHistory.push({ role: 'user', content: userMsg });
-        this.saveChatState();
+    if (userMsg && !opts.regen) this.state.rpHistory.push({ role: 'user', content: userMsg });
+    this.saveChatState();
     const typing = this.appendMsg('assistant', '', { typing: true });
     try {
       const results = [];

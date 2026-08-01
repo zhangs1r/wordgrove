@@ -333,14 +333,15 @@ body {
 
 /* ============ 表达建议 ============ */
 .suggest-box {
-  margin-top: 8px; background: var(--bg); border: 1px dashed var(--primary);
-  border-radius: 12px; padding: 10px 12px; max-width: 92%;
+  margin-top: 8px; background: var(--card); border: 1px dashed var(--primary);
+  border-radius: 12px; padding: 10px 12px; max-width: 92%; color: var(--text);
 }
 .sg-head { font-size: 12px; color: var(--primary); font-weight: 700; margin-bottom: 4px; }
-.sg-better { font-size: 14px; font-weight: 600; line-height: 1.5; }
+.sg-better { font-size: 14px; font-weight: 600; line-height: 1.5; color: var(--text); }
 .sg-reason { font-size: 12px; color: var(--muted); margin-top: 3px; line-height: 1.5; }
 .sg-actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
 .sg-done { font-size: 13px; color: var(--primary); font-weight: 600; }
+.sg-ok, .sg-no { color: var(--text); }
 
 /* ============ 酒馆 ============ */
 .tavern-card { background: var(--card); border-radius: 14px; padding: 12px 14px; box-shadow: var(--shadow); }

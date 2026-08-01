@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>言木小院 · 月历花园 Demo</title>
+<style>
+  :root {
+    --grass-dark: #2d5a27;
+    --grass: #4a7c3f;
+    --panel: #F1ECE0;
+    --panel-edge: #262B24;
+    --green: #117C0D;
+    --yellow: #FAC75E;
+    --text: #262B24;
+    --muted: #6b6b5e;
+    --pixel: 4px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    background:
+      repeating-linear-gradient(45deg, rgba(255,255,255,0.03) 0 4px, transparent 4px 8px),
+      linear-gradient(160deg, #2d5a27 0%, #1e3d1a 60%, #17301a 100%);
+    color: var(--panel);
+    font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+    overflow-x: hidden;
+  }
+  /* 像素边框工具 */
+  .px-box {
+    background: var(--panel);
+    color: var(--text);
+    border: 3px solid var(--panel-edge);
+    box-shadow: 0 6px 0 rgba(0,0,0,0.35);
+    border-radius: 0;
+  }
+  .px-btn {
+    background: var(--green);
+    color: #fff;
+    border: 3px solid var(--panel-edge);
+    box-shadow: 0 5px 0 #0a4d08;
+    padding: 10px 18px;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    letter-spacing: 1px;
+    user-select: none;
+  }
+  .px-btn:active { transform: translateY(4px); box-shadow: 0 1px 0 #0a4d08; }
+  .px-btn.ghost { background: var(--panel); color: var(--text); box-shadow: 0 5px 0 #c9c2b0; }
+  .px-btn.ghost:active { box-shadow: 0 1px 0 #c9c2b0; }
+  .px-btn.small { padding: 7px 12px; font-size: 13px; }
+
+  /* 布局 */
+  #app { max-width: 480px; margin: 0 auto; min-height: 100%; padding: 14px 12px 26px; display: flex; flex-direction: column; gap: 12px; }
+  .top-bar { display: flex; align-items: center; justify-content: space-between; }
+  .brand { font-size: 20px; font-weight: 900; color: var(--yellow); text-shadow: 3px 3px 0 rgba(0,0,0,0.4); letter-spacing: 2px; }
+  .brand small { font-size: 12px; color: #cfe8c0; display: block; text-shadow: 2px 2px 0 rgba(0,0,0,0.4); }
+  .points-pill {
+    background: var(--panel); color: var(--green); border: 3px solid var(--panel-edge);
+    box-shadow: 0 5px 0 rgba(0,0,0,0.35);
+    padding: 8px 14px; font-size: 15px; font-weight: 800;
+  }
+  .month-head { display: flex; align-items: center; justify-content: space-between; }
+  .month-title { font-size: 18px; font-weight: 900; text-shadow: 3px 3px 0 rgba(0,0,0,0.4); }
+  .month-title span { color: var(--yellow); }
+  .month-sub { font-size: 12px; color: #cfe8c0; margin-top: 3px; text-shadow: 2px 2px 0 rgba(0,0,0,0.4); }
+  .month-actions { display: flex; gap: 8px; }
+
+  .cta-strip {
+    background: rgba(0,0,0,0.35);
+    border: 3px solid var(--panel-edge);
+    padding: 10px 12px;
+    font-size: 13px;
+    color: var(--yellow);
+    text-shadow: 2px 2px 0 rgba(0,0,0,0.5);
+    line-height: 1.6;
+  }
+  .cta-strip b { color: #fff; }
+
+  .garden-frame {
+    background: var(--panel);
+    border: 4px solid var(--panel-edge);
+    box-shadow: 0 8px 0 rgba(0,0,0,0.4), inset 0 0 0 3px #fff8e8;
+    padding: 10px;
+  }
+  .week-row { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; font-size: 11px; font-weight: 800; color: var(--muted); padding: 2px 0 6px; }
+  .week-row .sun { color: #c0392b; }
+  .week-row .sat { color: #2471a3; }
+  #farmCanvas { width: 100%; height: auto; display: block; image-rendering: pixelated; }
+
+  .bar-row { display: flex; gap: 10px; }
+  .bar-row .px-btn { flex: 1; }
+
+  /* 抽屉 */
+  .drawer {
+    background: var(--panel);
+    border: 4px solid var(--panel-edge);
+    box-shadow: 0 8px 0 rgba(0,0,0,0.4);
+    padding: 14px;
+    display: none;
+    color: var(--text);
+  }
+  .drawer.open { display: block; }
+  .drawer-head { display: flex; justify-content: space-between; align-items: center; font-weight: 900; font-size: 16px; margin-bottom: 10px; border-bottom: 3px solid var(--panel-edge); padding-bottom: 8px; }
+  .sec-label { font-size: 12px; font-weight: 800; color: var(--green); margin: 10px 0 4px; letter-spacing: 1px; }
+  .shop-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 2px; border-bottom: 2px dashed #d5cdb8; }
+  .shop-item:last-child { border-bottom: none; }
+  .shop-name { font-size: 14px; font-weight: 700; }
+  .shop-price { font-size: 12px; color: var(--muted); margin-left: 6px; }
+  .hist-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 2px; border-bottom: 2px dashed #d5cdb8; }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 70px; transform: translateX(-50%);
+    background: var(--panel-edge); color: #fff; border: 3px solid var(--panel);
+    box-shadow: 0 5px 0 rgba(0,0,0,0.5);
+    padding: 10px 18px; font-size: 14px; font-weight: 700;
+    display: none; z-index: 99; max-width: 85%; text-align: center;
+  }
+  .toast.show { display: block; animation: toastIn 0.25s; }
+  @keyframes toastIn { from { transform: translateX(-50%) translateY(10px); opacity: 0; } to { transform: translateX(-50%) translateY(0); opacity: 1; } }
+
+  .foot { text-align: center; font-size: 11px; color: #9cc28c; text-shadow: 1px 1px 0 rgba(0,0,0,0.5); padding-top: 6px; }
+  .foot b { color: var(--yellow); }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="top-bar">
+    <div class="brand">言木小院<small>WORDGROVE · 月历花园 DEMO</small></div>
+    <div class="points-pill">🍎 <span id="points">0</span> 积分</div>
+  </div>
+
+  <div class="month-head">
+    <div>
+      <div class="month-title">8 月 · <span id="seasonLabel">夏</span></div>
+      <div class="month-sub">作物等级 <b id="stageLabel">Lv1</b> · 每 40 积分升级</div>
+    </div>
+    <div class="month-actions">
+      <button class="px-btn ghost small" id="histBtn">历史</button>
+      <button class="px-btn small" id="shopBtn">商店</button>
+    </div>
+  </div>
+
+  <div class="cta-strip" id="cta"></div>
+
+  <div class="garden-frame">
+    <div class="week-row"><span class="sun">日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span class="sat">六</span></div>
+    <canvas id="farmCanvas" width="336" height="288"></canvas>
+  </div>
+
+  <div class="bar-row">
+    <button class="px-btn ghost" id="backBtn">← 回当前月</button>
+    <button class="px-btn" id="demoBtn">演示：学一天</button>
+  </div>
+
+  <div class="drawer" id="drawer"></div>
+
+  <div class="foot">demo 数据在本地 · 月底封存成历史院子 · <b>学得越多，院子越美</b></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="assets/farm.js"></script>
+<script>
+/* ===== demo 预置数据（不依赖 IndexedDB，刷新恢复） ===== */
+const DEMO_STATE = () => ({
+  id: 'garden', year: 2026, month: 8,
+  points: 120, totalEarned: 120, dayPoints: 0, day: 'demo',
+  planted: {
+    1: 'corn', 2: 'strawberry', 3: 'tomato', 4: 'pumpkin', 5: 'grape',
+    6: 'melon', 7: 'pepper', 8: 'bean', 9: 'potato', 10: 'banana',
+    11: 'pineapple', 12: 'starfruit', 13: 'cranberry', 14: 'hop', 15: 'corn',
+  },
+  stage: 2,
+  decor: [{ type: 'bench', day: 2 }, { type: 'star_lamp', day: 8 }, { type: 'lantern', day: 15 }],
+  sealed: false,
+  history: [
+    { year: 2026, month: 7, planted: { 1: 'melon', 2: 'corn', 3: 'strawberry', 4: 'pumpkin', 5: 'grape', 6: 'tomato', 7: 'melon', 8: 'corn', 9: 'bean', 10: 'potato' }, decor: [{ type: 'kite', day: 3 }, { type: 'firefly_jar', day: 9 }], stage: 2, totalEarned: 110, sealedAt: 0 },
+    { year: 2026, month: 6, planted: { 1: 'pumpkin', 2: 'melon', 3: 'corn', 4: 'strawberry', 5: 'grape', 6: 'tomato', 7: 'pepper' }, decor: [{ type: 'flower_wreath', day: 5 }], stage: 1, totalEarned: 65, sealedAt: 0 },
+  ],
+});
+
+let state = DEMO_STATE();
+let view = null;          // 历史查看
+let mode = null;          // 放置模式
+let toastTimer = null;
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 1800);
+}
+
+function render() {
+  const st = view || state;
+  document.getElementById('points').textContent = state.points;
+  document.getElementById('stageLabel').textContent = 'Lv' + (st.stage + 1);
+  const season = ['冬','冬','春','春','春','夏','夏','夏','秋','秋','秋','冬'][st.month - 1];
+  document.getElementById('seasonLabel').textContent = season + (view ? '（' + st.year + '年' + st.month + '月 · 已封存）' : '');
+  document.getElementById('cta').innerHTML = view
+    ? '这是一个已经封存的院子。它记录着 ' + st.year + ' 年 ' + st.month + ' 月你认真学习的日子。'
+    : state.planted[new Date().getDate()]
+      ? '今天已种下 <b>' + (FARM.CROP_DEFS[state.planted[new Date().getDate()]] || {}).name + '</b> · 再攒 <b>' + Math.max(0, 40 * (state.stage + 1) - state.totalEarned) + '</b> 积分全院升级'
+      : '今天还没学习——学一点，' + new Date().getDate() + ' 号格会种下 <b>' + (FARM.CROP_DEFS[FARM.monthCrop(state.month, new Date().getDate())] || {}).name + '</b>';
+  const cv = document.getElementById('farmCanvas');
+  const ctx = cv.getContext('2d');
+  Farm.ensureImgs().then(() => {
+    Farm.paintCalendar(ctx, st, view ? { year: view.year, month: view.month, planted: view.planted, decor: view.decor, stage: view.stage, readonly: true } : {});
+  });
+}
+
+/* 商店 */
+function openShop() {
+  const d = document.getElementById('drawer');
+  const common = Object.keys(FARM.DECOR).map(k => {
+    const dc = FARM.DECOR[k];
+    return `<div class="shop-item"><span class="shop-name">${dc.name}<span class="shop-price">${dc.price} 积分</span></span><button class="px-btn small" data-buy="${k}">买</button></div>`;
+  }).join('');
+  const monthDefs = FARM.MONTH_DECOR[state.month] || {};
+  const month = Object.keys(monthDefs).map(k => {
+    const dc = monthDefs[k];
+    return `<div class="shop-item"><span class="shop-name">${dc.name}<span class="shop-price">当月限定</span></span><button class="px-btn small" data-buy="${k}">买</button></div>`;
+  }).join('');
+  d.innerHTML = `<div class="drawer-head">商店 <button class="px-btn ghost small" data-close>✕</button></div>
+    <div class="sec-label">通用装饰</div>${common}
+    <div class="sec-label">${state.month} 月限定 · 下月下架</div>${month || '<div class="shop-item"><span class="shop-name">本月限定已售罄</span></div>'}`;
+  d.classList.add('open');
+}
+function openHistory() {
+  const d = document.getElementById('drawer');
+  const rows = state.history.map((h, i) =>
+    `<div class="hist-item"><span class="shop-name">${h.year} 年 ${h.month} 月 · ${Object.keys(h.planted).length} 天有学习</span><button class="px-btn small" data-view="${i}">查看</button></div>`).join('');
+  d.innerHTML = `<div class="drawer-head">历史院子 <button class="px-btn ghost small" data-close>✕</button></div>${rows || '<div class="shop-item"><span class="shop-name">还没有封存的院子</span></div>'}`;
+  d.classList.add('open');
+}
+
+document.getElementById('farmCanvas').addEventListener('click', (e) => {
+  if (view) { showToast('历史院子只读'); return; }
+  const day = Farm.hitDay(document.getElementById('farmCanvas'), e, state.year, state.month);
+  if (day == null) return;
+  if (mode) {
+    if (state.decor.some(x => x.day === day)) { showToast('这天已有装饰'); return; }
+    state.decor.push({ type: mode, day });
+    state.points -= (FARM.DECOR[mode] ? FARM.DECOR[mode].price : 0);
+    mode = null;
+    showToast('已摆放在 ' + day + ' 号');
+    render();
+    return;
+  }
+  const crop = state.planted[day];
+  const ds = state.decor.filter(x => x.day === day);
+  const names = ds.map(x => FARM.DECOR[x.type] ? FARM.DECOR[x.type].name : (FARM.MONTH_DECOR[state.month] && FARM.MONTH_DECOR[state.month][x.type] ? FARM.MONTH_DECOR[state.month][x.type].name : x.type)).join('、');
+  showToast((crop ? (FARM.CROP_DEFS[crop] || {}).name + ' · 成熟' : '这天还没学') + (names ? '｜装饰：' + names : ''));
+});
+
+document.getElementById('shopBtn').addEventListener('click', openShop);
+document.getElementById('histBtn').addEventListener('click', openHistory);
+document.getElementById('backBtn').addEventListener('click', () => { view = null; document.getElementById('drawer').classList.remove('open'); render(); });
+document.getElementById('demoBtn').addEventListener('click', () => {
+  const today = new Date().getDate();
+  if (!state.planted[today]) state.planted[today] = FARM.monthCrop(state.month, today);
+  state.points += 8; state.totalEarned += 8;
+  state.stage = Math.min(2, Math.floor(state.totalEarned / 40));
+  showToast('+8 积分 · ' + today + ' 号种下 ' + (FARM.CROP_DEFS[state.planted[today]] || {}).name);
+  render();
+});
+document.getElementById('drawer').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-close],[data-buy],[data-view]');
+  if (!btn) return;
+  if (btn.dataset.close) { document.getElementById('drawer').classList.remove('open'); return; }
+  if (btn.dataset.buy) {
+    const type = btn.dataset.buy;
+    const price = FARM.DECOR[type] ? FARM.DECOR[type].price : 40; // 月度限定统一 40 积分
+    if (state.points < price) { showToast('积分不够'); return; }
+    mode = type;
+    document.getElementById('drawer').classList.remove('open');
+    showToast('已选择，点日历上的某天摆放');
+    return;
+  }
+  if (btn.dataset.view) {
+    view = state.history[parseInt(btn.dataset.view, 10)];
+    document.getElementById('drawer').classList.remove('open');
+    render();
+  }
+});
+
+/* 预加载素材 + 首次渲染 */
+window.addEventListener('load', () => {
+  Farm.ensureImgs().then(() => render());
+});
+</script>
+</body>
+</html>

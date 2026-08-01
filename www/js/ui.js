@@ -21,7 +21,7 @@ const UI = {
     tab: 'today',
     dueQueue: [],
     cardIndex: 0,
-    sceneId: 'cafe',
+
     busy: false,
     dark: false,
     chatBusy: false,
@@ -44,6 +44,11 @@ const UI = {
     wordSet: new Set(),
     _queryBusy: false,
     tagFilter: '',
+    rpPlayer: null,
+    rpRoster: {},
+    rpStep: '',
+    rpPendingRoles: [],
+    rpActiveChars: [],
   },
 
   init() {
@@ -57,7 +62,6 @@ const UI = {
     this.bindMsgDismiss();
     this.loadWordsSet();
     Agent.refreshForgetWords();
-    this.renderScenes();
     this.renderToday();
     this.renderWords();
     this.renderProfile();
@@ -125,6 +129,7 @@ const UI = {
       tavernHeadIcon: Icons.mug, worldHeadIcon: Icons.earth, charHeadIcon: Icons.user,
       emptyToday: Icons.sprout, emptyChat: Icons.chat, emptyWords: Icons.book,
       apiKeyClearBtn: Icons.x,
+      chatReviewBtn: Icons.chat,
     };
     Object.entries(btnMap).forEach(([id, svg]) => {
       const el = document.getElementById(id);
@@ -179,10 +184,61 @@ const UI = {
     const p = Profile.load();
     const streak = p.streak || 0;
     this.el('todayDue').innerHTML = `今天待复习 <b>${due.length}</b> 个词`;
-    this.el('todayTip').textContent = streak > 0 ? `已连击 ${streak} 天 🌿 复习完聊一局效果更好` : '复习完聊一局，把新词带回来';
+    this.el('todayTip').textContent = streak > 0 ? `已连击 ${streak} 天 · 复习完聊一局效果更好` : '复习完聊一局，把新词带回来';
+
+    // 数据卡：学词 / 对话局数 / 连击 / API 余额
+    const stats = this.el('dashStats');
+    if (stats) {
+      stats.innerHTML = `
+        <div class="stat-card"><div class="stat-num">${p.wordsLearned || 0}</div><div class="stat-label">累计学词</div></div>
+        <div class="stat-card"><div class="stat-num">${p.sessions || 0}</div><div class="stat-label">对话局数</div></div>
+        <div class="stat-card"><div class="stat-num">${streak}</div><div class="stat-label">连击天数</div></div>
+        <div class="stat-card"><div class="stat-num" id="dashBalance">…</div><div class="stat-label">API 余额</div></div>`;
+      this.loadBalance();
+    }
+
+    // 排行榜：忘词 / 表达 / 常犯错
+    const words = await Words.list();
+    const forgotTop = words.filter(w => (w.forgot || 0) > 0).sort((a, b) => (b.forgot || 0) - (a.forgot || 0)).slice(0, 5);
+    const exps = Settings.get('expressions', []);
+    const expTop = exps.slice(0, 5);
+    const mistakes = (p.mistakes || []).slice(0, 5);
+    const ranks = this.el('dashRanks');
+    if (ranks) {
+      const chips = (arr, fn) => arr.length ? `<div class="rank-chips">${arr.map(fn).join('')}</div>` : '<p class="rank-empty">暂无数据</p>';
+      ranks.innerHTML = `
+        <div class="rank-block">
+          <div class="rank-title">${Icons.sprout} 最常忘的词</div>
+          ${chips(forgotTop, w => `<button class="tag-chip rank" data-rw="${this.esc(w.word)}">${this.esc(w.word)} · 忘${w.forgot}</button>`)}
+        </div>
+        <div class="rank-block">
+          <div class="rank-title">${Icons.bulb} 最近积累的表达</div>
+          ${chips(expTop, e => `<span class="tag-chip">${this.esc(typeof e === 'string' ? e : (e.en || e.better || ''))}</span>`)}
+        </div>
+        <div class="rank-block">
+          <div class="rank-title">${Icons.chat} 常犯的口语错误</div>
+          ${chips(mistakes, m => `<span class="tag-chip">${this.esc(m.pat)}${m.count > 1 ? ' · ' + m.count : ''}</span>`)}
+        </div>`;
+      ranks.querySelectorAll('[data-rw]').forEach(b => b.addEventListener('click', () => this.showWordQuery(b.dataset.rw)));
+    }
 
     if (due.length > 0) this.showCard(due[0]);
     else this.showEmptyCard(done === 0 && (p.wordsLearned || 0) === 0);
+  },
+
+  /* API 余额（缓存 5 分钟） */
+  async loadBalance() {
+    const el = this.el('dashBalance');
+    if (!el) return;
+    const cached = Settings.get('balanceCache', null);
+    if (cached && Date.now() - cached.at < 5 * 60 * 1000) { el.textContent = cached.text; return; }
+    if (!API.configured()) { el.textContent = '未配置'; return; }
+    try {
+      const b = await API.getBalance();
+      const text = b && b.total ? b.total : '—';
+      el.textContent = text;
+      Settings.set('balanceCache', { at: Date.now(), text });
+    } catch { el.textContent = '—'; }
   },
 
   async countDoneToday() {
@@ -236,7 +292,7 @@ const UI = {
       p1.textContent = '还没有生词';
       sub.textContent = '去聊一局，或者粘贴一段英文建卡';
     } else {
-      emoji.textContent = '🌿';
+      emoji.innerHTML = Icons.sprout;
       p1.textContent = '今天的词都复习完了';
       sub.textContent = '去聊一局，把新词带回来';
     }
@@ -259,7 +315,7 @@ const UI = {
         else {
           await this.renderToday();
           if (this.state.dueQueue.length === 0) {
-            this.toast('今天任务完成 🌿');
+            this.toast('今天任务完成');
             Profile.touchStreak();
             this.el('todayGoal').textContent = '复习完了，去聊一局吧';
           }
@@ -270,19 +326,7 @@ const UI = {
   },
 
   /* ---------- 对话 ---------- */
-  renderScenes() {
-    const wrap = this.el('sceneChips');
-    wrap.innerHTML = SCENES.map(s =>
-      `<button class="scene-chip ${s.id === this.state.sceneId ? 'active' : ''}" data-scene="${s.id}">${s.name}</button>`
-    ).join('');
-    wrap.querySelectorAll('.scene-chip').forEach(chip => {
-      chip.addEventListener('click', () => {
-        this.state.sceneId = chip.dataset.scene;
-        this.newConv();
-        wrap.querySelectorAll('.scene-chip').forEach(c => c.classList.toggle('active', c === chip));
-      });
-    });
-  },
+  /* （场景系统已移除，对话直接进日常模式） */
 
   /* ================= 会话管理 ================= */
   listConversations() {
@@ -300,7 +344,6 @@ const UI = {
     return {
       id: this.state.convId || ('c_' + Date.now()),
       title: this.state.convTitle || '',
-      sceneId: this.state.sceneId,
       history: this.state.chatHistory,
       updated: Date.now(),
     };
@@ -326,10 +369,8 @@ const UI = {
     if (!conv) return;
     this.state.convId = conv.id;
     this.state.convTitle = conv.title || '';
-    this.state.sceneId = conv.sceneId || this.state.sceneId;
     this.state.chatHistory = conv.history || [];
     this.state.autoTurn = 0;
-    document.querySelectorAll('.scene-chip').forEach(c => c.classList.toggle('active', c.dataset.scene === this.state.sceneId));
     this.renderConvTitle();
     this.renderChatHistory();
     this.closeConvModal();
@@ -345,12 +386,11 @@ const UI = {
       return;
     }
     wrap.innerHTML = list.map(c => {
-      const scene = SCENES.find(s => s.id === c.sceneId);
       return `
       <div class="conv-item ${c.id === this.state.convId ? 'active' : ''}" data-id="${c.id}">
         <div class="ci-main">
           <div class="ci-title">${this.esc(c.title || '新会话')}</div>
-          <div class="ci-meta">${this.esc(scene ? scene.name : (c.sceneId || ''))} · ${(c.history || []).length} 条 · ${this.fmtTime(c.updated)}</div>
+          <div class="ci-meta">${(c.history || []).length} 条 · ${this.fmtTime(c.updated)}</div>
         </div>
         <button class="ci-del" data-del="${c.id}">✕</button>
       </div>`;
@@ -417,9 +457,7 @@ const UI = {
       const conv = [...list].sort((a, b) => (b.updated || 0) - (a.updated || 0))[0];
       this.state.convId = conv.id;
       this.state.convTitle = conv.title || '';
-      this.state.sceneId = conv.sceneId || this.state.sceneId;
-      this.state.chatHistory = conv.history || [];
-      document.querySelectorAll('.scene-chip').forEach(c => c.classList.toggle('active', c.dataset.scene === this.state.sceneId));
+        this.state.chatHistory = conv.history || [];
     } else {
       this.state.convId = 'c_' + Date.now();
       this.state.chatHistory = [];
@@ -523,7 +561,6 @@ const UI = {
   },
 
   async sendText(text, opts = {}) {
-    const scene = SCENES.find(s => s.id === this.state.sceneId);
     let userDiv = null;
     if (!opts.alreadyInHistory) {
       this.state.chatHistory.push({ role: 'user', content: text });
@@ -661,7 +698,6 @@ const UI = {
   },
   /* 中文求助：不进入对话主线，直接在建议框给地道说法 */
   async sendChineseHint(chinese) {
-    const scene = SCENES.find(s => s.id === this.state.sceneId);
     this.state.chatBusy = true;
     const typing = this.appendMsg('assistant', '', { typing: true });
     try {
@@ -727,6 +763,9 @@ const UI = {
       } else if (auto) {
         this.toast('复盘完成');
       }
+      const rpIssues = (review.roleplay || []).filter(r => r && r.issue).length;
+      if (rpIssues > 0) this.toast(`复盘发现 ${rpIssues} 处台词不符合角色，看看「角色感」`);
+
     } catch (e) {
       this.toast('复盘失败：' + (e.message || e));
     }
@@ -746,14 +785,20 @@ const UI = {
         <div class="ri-word">${this.esc(w.word)}</div>
         <div class="ri-note">${this.esc(w.meaning)}</div>
       </div>`).join('');
+    const rp = (review.roleplay || []).filter(r => r && r.issue).map(r => `
+      <div class="review-item">
+        <div class="ri-word">${this.esc(r.line)}</div>
+        <div class="ri-note">${this.esc(r.issue)}<br><span style="opacity:.75">→ ${this.esc(r.better || '')}</span></div>
+      </div>`).join('');
     panel.innerHTML = `
       <div class="review-head">
         <h3>${Icons.chat} 复盘 <span style="font-weight:400;color:var(--muted);font-size:12px">${this.esc(review.good || '')}</span></h3>
         <button id="reviewCloseBtn" class="icon-btn-sm">${Icons.x}</button>
       </div>
       ${mistakes ? `<div style="font-size:13px;font-weight:700;margin:6px 0">说错/卡壳的地方</div>${mistakes}` : ''}
+      ${rp ? `<div style="font-size:13px;font-weight:700;margin:10px 0 6px;color:var(--primary)">角色感（你的台词贴不贴合角色）</div>${rp}` : ''}
       ${words ? `<div style="font-size:13px;font-weight:700;margin:10px 0 6px">已加入生词本</div>${words}` : ''}
-      ${!mistakes && !words ? '<p style="color:var(--muted);font-size:13px">这次没发现明显问题，继续保持</p>' : ''}
+      ${!mistakes && !rp && !words ? '<p style="color:var(--muted);font-size:13px">这次没发现明显问题，继续保持</p>' : ''}
     `;
     const closeBtn = panel.querySelector('#reviewCloseBtn');
     if (closeBtn) closeBtn.addEventListener('click', () => panel.classList.add('hidden'));
@@ -1051,6 +1096,11 @@ const UI = {
       nv.value = Settings.get('narratorVoice', 'f');
       nv.addEventListener('change', () => Settings.set('narratorVoice', nv.value));
     }
+    const fc = this.el('setForgetCount');
+    if (fc) {
+      fc.value = String(Settings.get('forgetCount', 5));
+      fc.addEventListener('change', () => { Settings.set('forgetCount', fc.value); Agent.refreshForgetWords(); });
+    }
     const btn = this.el('audioCacheClearBtn');
     if (btn) btn.addEventListener('click', async () => {
       await AudioCache.clear();
@@ -1070,10 +1120,7 @@ const UI = {
   currentCtx() {
     let where = '';
     if (this.state.rpMode) where = '剧场 · ' + (this.state.rpWorld ? this.state.rpWorld.name : '');
-    else {
-      const scene = SCENES.find(s => s.id === this.state.sceneId);
-      where = scene ? scene.name : (this.state.convTitle || '对话');
-    }
+    else where = this.state.convTitle || '对话';
     const h = this.state.rpMode ? this.state.rpHistory : this.state.chatHistory;
     for (let i = h.length - 1; i >= 0; i--) {
       if (h[i].role === 'assistant' && typeof h[i].content === 'string' && h[i].content.length > 3) {
@@ -1346,7 +1393,7 @@ const UI = {
       Settings.set('chatModel', this.el('setChatModel').value);
       Settings.set('buildModel', this.el('setBuildModel').value);
       API.loadConfig();
-      this.toast('已保存 ✅');
+      this.toast('已保存');
     });
 
     // 测试连接
@@ -1362,7 +1409,7 @@ const UI = {
       try {
         const reply = await API.test();
         res.className = 'test-result ok';
-        res.textContent = '✅ 连接成功：' + reply;
+        res.textContent = '连接成功：' + reply;
         Settings.set('apiKey', key);
         Settings.set('apiBase', base);
         API.loadConfig();
@@ -1381,41 +1428,34 @@ const UI = {
   listWorlds() { return Settings.get('worldCards', []); },
   saveWorld(w) { const l = this.listWorlds().filter(x => x.id !== w.id); l.push(w); Settings.set('worldCards', l); },
   deleteWorld(id) { Settings.set('worldCards', this.listWorlds().filter(x => x.id !== id)); },
-  listChars() { return Settings.get('characterCards', []); },
-  saveChar(c) { const l = this.listChars().filter(x => x.id !== c.id); l.push(c); Settings.set('characterCards', l); },
-  deleteChar(id) { Settings.set('characterCards', this.listChars().filter(x => x.id !== id)); },
   currentWorldId() { return Settings.get('currentWorldId', ''); },
   setCurrentWorld(id) { Settings.set('currentWorldId', id); },
   currentWorld() { return this.listWorlds().find(w => w.id === this.currentWorldId()) || null; },
-  activeChars() { return this.listChars().filter(c => c.active); },
+  activeChars() { const w = this.currentWorld(); return w ? (w.roles || []) : []; },
 
   renderTavern() {
     const w = this.currentWorld();
     this.el('tavernWorldName').textContent = w ? w.name : '未选择世界';
-    this.el('tavernWorldDesc').textContent = w ? (w.description || w.setting || '') : '先选择一个世界，或点"AI 生成"创建';
-    const chars = w ? this.listChars().filter(c => !c.worldId || c.worldId === w.id) : this.listChars().filter(c => !c.worldId);
-    this.el('tavernCharHint').textContent = w ? '' : '（先选世界）';
-    const wrap = this.el('tavernCharList');
-    if (!chars.length) { wrap.innerHTML = '<p class="empty-sub" style="text-align:center;padding:14px 0">还没有角色卡</p>'; return; }
-    wrap.innerHTML = chars.map(c => `
-      <div class="tavern-char ${c.active ? 'active' : ''}" data-id="${c.id}">
+    this.el('tavernWorldDesc').textContent = w ? (w.setting || w.description || '') : '先选择一个世界，或点"AI 生成"创建';
+    const roles = w ? (w.roles || []) : [];
+    const wrap = this.el('worldRolesList');
+    if (!wrap) return;
+    if (!roles.length) {
+      wrap.innerHTML = '<p class="empty-sub" style="text-align:center;padding:14px 0">这个世界还没有角色——用"AI 生成"重做一个（描述里带上角色）</p>';
+      return;
+    }
+    wrap.innerHTML = roles.map(r => `
+      <div class="tavern-char">
         <div class="tavern-char-main">
-          <div class="tavern-char-name">${c.gender === 'male' ? '♂' : '♀'} ${this.esc(c.name)}</div>
-          <div class="tavern-char-meta">${this.esc((c.persona || '').slice(0, 40))}</div>
+          <div class="tavern-char-name">${r.gender === 'male' ? '♂' : '♀'} ${this.esc(r.name)} <span class="tavern-char-role">${this.esc(r.role || '')}</span></div>
+          <div class="tavern-char-meta">${this.esc((r.persona || '').slice(0, 60))}</div>
         </div>
       </div>`).join('');
-    wrap.querySelectorAll('.tavern-char').forEach(el => el.addEventListener('click', () => {
-      const id = el.dataset.id;
-      Settings.set('characterCards', this.listChars().map(c => ({ ...c, active: c.id === id })));
-      this.renderTavern();
-    }));
   },
 
   bindTavern() {
     this.el('tavernWorldListBtn').addEventListener('click', () => this.openTavernModal('world'));
-    this.el('tavernCharListBtn').addEventListener('click', () => this.openTavernModal('char'));
     this.el('tavernWorldGenBtn').addEventListener('click', () => this.openGenModal('world'));
-    this.el('tavernCharGenBtn').addEventListener('click', () => this.openGenModal('char'));
     this.el('tavernStartBtn').addEventListener('click', () => this.startRp());
     this.el('tavernClose').addEventListener('click', () => this.el('tavernModal').classList.add('hidden'));
     this.el('tavernMask').addEventListener('click', () => this.el('tavernModal').classList.add('hidden'));
@@ -1424,12 +1464,11 @@ const UI = {
     this.el('genSubmitBtn').addEventListener('click', () => this.submitGen());
   },
 
-  openTavernModal(type) {
-    this.el('tavernModalTitle').textContent = type === 'world' ? '世界卡库' : '角色卡库';
+  openTavernModal() {
+    this.el('tavernModalTitle').textContent = '世界卡库';
     const body = this.el('tavernModalBody');
-    if (type === 'world') {
-      const worlds = this.listWorlds();
-      body.innerHTML = (worlds.length ? worlds.map(w => `
+    const worlds = this.listWorlds();
+    body.innerHTML = (worlds.length ? worlds.map(w => `
         <div class="conv-item ${w.id === this.currentWorldId() ? 'active' : ''}" data-id="${w.id}">
           <div class="ci-main">
             <div class="ci-title">${this.esc(w.name)}</div>
@@ -1438,59 +1477,30 @@ const UI = {
           <button class="ci-del" data-del="${w.id}">✕</button>
         </div>`).join('') : '<p class="empty-sub" style="text-align:center;padding:24px 0">还没有世界卡</p>') +
         `<button class="btn btn-ghost btn-sm btn-block" style="margin-top:10px" id="tavernAddWorld">＋ 新建世界卡</button>`;
-      body.querySelectorAll('.conv-item').forEach(item => item.addEventListener('click', e => {
-        if (e.target.dataset.del) return;
-        this.setCurrentWorld(item.dataset.id);
-        this.el('tavernModal').classList.add('hidden');
-        this.renderTavern();
-      }));
-      body.querySelectorAll('.ci-del').forEach(b => b.addEventListener('click', e => {
-        e.stopPropagation();
-        this.deleteWorld(e.target.dataset.del);
-        if (e.target.dataset.del === this.currentWorldId()) this.setCurrentWorld('');
-        this.openTavernModal('world');
-        this.renderTavern();
-      }));
-      const addBtn = body.querySelector('#tavernAddWorld');
-      if (addBtn) addBtn.addEventListener('click', () => { this.el('tavernModal').classList.add('hidden'); this.openGenModal('world'); });
-    } else {
-      const worlds = this.listWorlds();
-      const chars = this.listChars();
-      body.innerHTML = (chars.length ? chars.map(c => {
-        const w = worlds.find(x => x.id === c.worldId);
-        return `
-        <div class="conv-item ${c.active ? 'active' : ''}" data-id="${c.id}">
-          <div class="ci-main">
-            <div class="ci-title">${c.gender === 'male' ? '♂' : '♀'} ${this.esc(c.name)}</div>
-            <div class="ci-meta">${this.esc((w ? w.name : '未绑定世界') + ' · ' + (c.persona || '').slice(0, 30))}</div>
-          </div>
-          <button class="ci-del" data-del="${c.id}">✕</button>
-        </div>`;
-      }).join('') : '<p class="empty-sub" style="text-align:center;padding:24px 0">还没有角色卡</p>') +
-        `<button class="btn btn-ghost btn-sm btn-block" style="margin-top:10px" id="tavernAddChar">＋ 新建角色卡</button>`;
-      body.querySelectorAll('.conv-item').forEach(item => item.addEventListener('click', e => {
-        if (e.target.dataset.del) return;
-        const id = item.dataset.id;
-        const cur = this.currentWorldId();
-        this.saveChar({ ...this.listChars().find(c => c.id === id), worldId: cur || undefined, active: true });
-        this.el('tavernModal').classList.add('hidden');
-        this.renderTavern();
-      }));
-      body.querySelectorAll('.ci-del').forEach(b => b.addEventListener('click', e => {
-        e.stopPropagation();
-        this.deleteChar(e.target.dataset.del);
-        this.openTavernModal('char');
-        this.renderTavern();
-      }));
-      const addBtn = body.querySelector('#tavernAddChar');
-      if (addBtn) addBtn.addEventListener('click', () => { this.el('tavernModal').classList.add('hidden'); this.openGenModal('char'); });
-    }
+    body.querySelectorAll('.conv-item').forEach(item => item.addEventListener('click', e => {
+      if (e.target.dataset.del) return;
+      this.setCurrentWorld(item.dataset.id);
+      this.el('tavernModal').classList.add('hidden');
+      this.renderTavern();
+    }));
+    body.querySelectorAll('.ci-del').forEach(b => b.addEventListener('click', e => {
+      e.stopPropagation();
+      this.deleteWorld(e.target.dataset.del);
+      if (e.target.dataset.del === this.currentWorldId()) this.setCurrentWorld('');
+      this.openTavernModal();
+      this.renderTavern();
+    }));
+    const addBtn = body.querySelector('#tavernAddWorld');
+    if (addBtn) addBtn.addEventListener('click', () => { this.el('tavernModal').classList.add('hidden'); this.openGenModal('world'); });
     this.el('tavernModal').classList.remove('hidden');
+  },
+
+  openGenModal(type) {    this.el('tavernModal').classList.remove('hidden');
   },
 
   openGenModal(type) {
     this.state.genType = type;
-    this.el('genModalTitle').textContent = type === 'world' ? 'AI 生成世界卡' : 'AI 生成角色卡';
+    this.el('genModalTitle').textContent = 'AI 生成世界卡';
     this.el('genInput').value = '';
     this.el('genModal').classList.remove('hidden');
     this.el('genInput').focus();
@@ -1503,15 +1513,9 @@ const UI = {
     this.el('genSubmitBtn').disabled = true;
     this.el('genSubmitBtn').textContent = '生成中…';
     try {
-      if (this.state.genType === 'world') {
-        const j = await Agent.generateWorldCard(desc);
-        this.saveWorld({ id: 'w_' + Date.now(), name: j.name || 'World', description: j.description || '', setting: j.setting || '', rules: j.rules || '', tone: j.tone || '', at: Date.now() });
-        this.setCurrentWorld(this.listWorlds()[this.listWorlds().length - 1].id);
-      } else {
-        const w = this.currentWorld();
-        const j = await Agent.generateCharacterCard(desc, w);
-        this.saveChar({ id: 'ch_' + Date.now(), worldId: w ? w.id : '', name: j.name || 'Character', gender: (j.gender === 'male' ? 'male' : 'female'), persona: j.persona || '', appearance: j.appearance || '', background: j.background || '', speakingStyle: j.speakingStyle || '', exampleDialogue: j.exampleDialogue || '', active: true, at: Date.now() });
-      }
+      const j = await Agent.generateWorldCard(desc);
+      this.saveWorld({ id: 'w_' + Date.now(), name: j.name || 'World', title: j.title || '', description: j.description || '', setting: j.setting || '', rules: j.rules || '', tone: j.tone || '', roles: j.roles || [], at: Date.now() });
+      this.setCurrentWorld(this.listWorlds()[this.listWorlds().length - 1].id);
       this.el('genModal').classList.add('hidden');
       this.renderTavern();
       this.toast('生成成功');
@@ -1523,29 +1527,78 @@ const UI = {
   },
 
   /* ============ 角色扮演对话（RP） ============ */
-  startRp() {
+  async startRp() {
     const w = this.currentWorld();
-    const chars = this.activeChars();
     if (!w) { this.toast('先选择或生成一个世界卡'); this.switchTab('tavern'); return; }
-    const inWorld = chars.filter(c => !c.worldId || c.worldId === w.id);
-    if (!inWorld.length) { this.toast('先选择一个参与角色（剧场里点亮绿边）'); this.switchTab('tavern'); return; }
+    const roles = w.roles || [];
+    if (!roles.length) { this.toast('这个世界还没有角色——用"AI 生成"重做一个（描述里带上角色）'); this.switchTab('tavern'); return; }
     this.state.rpMode = true;
     this.state.rpWorld = w;
-    this.state.rpChars = inWorld;
+    this.state.rpChars = roles;
+    this.state.rpActiveChars = roles.map(r => ({ name: r.name, gender: r.gender === 'male' ? 'male' : 'female' }));
+    this.state.rpRoster = {};
+    roles.forEach(r => { this.state.rpRoster[r.name] = r.gender === 'male' ? 'm' : 'f'; });
+    this.state.rpPlayer = null;
+    this.state.rpStep = 'choose';
+    this.state.rpPendingRoles = [];
     this.state.rpHistory = [];
     this.state.convTitle = w.name;
     this.renderConvTitle();
-    this.el('sceneBar').classList.add('hidden');
-    this.el('chatInput').placeholder = 'Say something… 或输入"继续"';
+    this.el('chatInput').placeholder = '选一个角色，或输入"自定义"描述你想扮演的人';
     this.switchTab('chat');
     this.renderChatHistory();
-    this.appendMsg('assistant', '世界「' + w.name + '」已加载。你在场角色：' + inWorld.map(c => c.name).join('、') + '。故事开始了——');
-    this.rpRound('');
+    this.appendMsg('assistant', '世界「' + w.name + '」已加载。你想扮演谁？', { voice: Settings.get('narratorVoice', 'f') });
+    try {
+      const opts = await Agent.rpOfferRoles(w);
+      this.state.rpPendingRoles = opts;
+      const labels = opts.map(o => `扮演 ${o.name}：${o.desc}`);
+      labels.push('自定义：我想扮演……');
+      this.appendRpOptions(labels);
+    } catch {
+      this.appendRpOptions(['自定义：我想扮演……']);
+    }
   },
   async sendRpText(text) {
     const w = this.state.rpWorld;
     const chars = this.state.rpChars;
     if (!w || !chars.length || this.state.rpBusy) return;
+    // ---- 选角阶段 ----
+    if (this.state.rpStep === 'choose' || this.state.rpStep === 'custom') {
+      if (this.state.rpStep === 'choose' && /自定义/.test(text)) {
+        this.appendMsg('user', text);
+        this.state.rpStep = 'custom';
+        this.el('chatInput').placeholder = '描述你想扮演的角色（身份/性格，中文英文都行）';
+        this.appendMsg('assistant', '好，描述一下你想扮演的角色（身份、性格，中英文都行）：', { voice: Settings.get('narratorVoice', 'f') });
+        return;
+      }
+      this.appendMsg('user', text);
+      this.state.rpBusy = true;
+      try {
+        let desc = text;
+        if (this.state.rpStep === 'choose') {
+          const pending = this.state.rpPendingRoles || [];
+          const hit = pending.find(o => text.includes(o.name));
+          if (hit) desc = `I want to play ${hit.name} (${hit.desc}). ${hit.persona || ''}`;
+        }
+        const player = await Agent.rpPlayerCard(desc, w);
+        this.state.rpPlayer = player;
+        this.state.rpRoster[player.name] = player.gender === 'male' ? 'm' : 'f';
+        this.state.rpStep = 'intro';
+        this.el('chatInput').placeholder = 'Say something… 或输入"继续"';
+        const intro = await Agent.rpOpenIntro(w, player, this.state.rpRoster);
+        if (intro.narration) {
+          this.appendMsg('assistant', intro.narration, { voice: Settings.get('narratorVoice', 'f') });
+          this.state.rpHistory.push({ role: 'assistant', name: '', content: intro.narration });
+        }
+        this.appendRpOptions(intro.options.length ? intro.options : ['继续']);
+        this.state.rpStep = 'play';
+      } catch (e) {
+        this.toast('开场失败：' + (e.message || e).slice(0, 60));
+        this.state.rpStep = 'play';
+      }
+      this.state.rpBusy = false;
+      return;
+    }
     this.state.rpBusy = true;
     let userMsg = text;
     // 中文 → 翻译（全英语规则）
@@ -1569,7 +1622,7 @@ const UI = {
   /* 一轮 RP：子 Agent 逐角色推理 → 导演汇总 → 渲染 */
   async rpRound(userMsg) {
     const w = this.state.rpWorld;
-    const chars = this.state.rpChars;
+    const chars = this.state.rpActiveChars && this.state.rpActiveChars.length ? this.state.rpActiveChars : this.state.rpChars;
     const isContinue = !userMsg || /^(continue|继续|自己来|你来|你自己来|go on|let it continue|\.\.\.?|…)$/i.test(userMsg.trim());
     if (userMsg) this.state.rpHistory.push({ role: 'user', content: userMsg });
     const typing = this.appendMsg('assistant', '', { typing: true });
@@ -1587,6 +1640,10 @@ const UI = {
       this.state.rpHistory = this.state.rpHistory.slice(-60);
       if (beat.narration) this.appendMsg('assistant', beat.narration, { voice: Settings.get('narratorVoice', 'f') });
       for (const d of beat.dialogue || []) {
+        // 新角色加入绘画名册（之后也有子智能体内心活动 + 固定配音）
+        if (!this.state.rpChars.find(c => c.name === d.name) && !(this.state.rpActiveChars || []).find(c => c.name === d.name)) {
+          this.state.rpActiveChars = [...(this.state.rpActiveChars || []), { name: d.name, gender: d.gender === 'male' ? 'male' : 'female' }];
+        }
         this.appendRpChar(d.name, d.line, this.dialogueVoice(d));
       }
       if (beat.options && beat.options.length) this.appendRpOptions(beat.options);
@@ -1623,16 +1680,16 @@ const UI = {
   },
   /* 角色 → 音色 */
   charVoice(c) { return c && c.gender === 'male' ? 'm' : 'f'; },
-  /* 台词音色：主角按角色卡；配角按性别表（首次出现固定性别） */
+  /* 台词音色：固定角色按世界卡 gender；新角色按绘画名册（首次出现固定性别） */
   dialogueVoice(d) {
     const c = this.state.rpChars.find(x => x.name === d.name);
     if (c) return this.charVoice(c);
-    const table = Settings.get('rpSupportGenders', {});
-    if (table[d.name]) return table[d.name] === 'male' ? 'm' : 'f';
+    const roster = this.state.rpRoster || {};
+    if (roster[d.name]) return roster[d.name];
     if (d.gender === 'male' || d.gender === 'female') {
-      table[d.name] = d.gender;
-      Settings.set('rpSupportGenders', table);
-      return d.gender === 'male' ? 'm' : 'f';
+      roster[d.name] = d.gender === 'male' ? 'm' : 'f';
+      this.state.rpRoster = roster;
+      return roster[d.name];
     }
     return 'f';
   },
@@ -1659,7 +1716,6 @@ const UI = {
     this.state.rpWorld = null;
     this.state.rpChars = [];
     this.state.rpHistory = [];
-    this.el('sceneBar').classList.remove('hidden');
     this.el('chatInput').placeholder = '输入英文…';
     this.state.convTitle = '';
     this.renderConvTitle();

@@ -23,10 +23,11 @@
 
   <!-- ======== 今日复习 ======== -->
   <section id="tab-today" class="tab-page active">
-    <div id="todaySummary" class="today-summary">
-      <div class="progress-ring-wrap"><svg id="progressRing" width="88" height="88" viewBox="0 0 88 88">
-        <circle cx="44" cy="44" r="38" class="ring-bg"/>
-        <circle cx="44" cy="44" r="38" class="ring-fg" id="ringFg"/>
+    <div id="dashStats" class="dash-stats"></div>
+    <div class="today-ring">
+      <div class="ring-wrap"><svg viewBox="0 0 84 84" class="ring">
+        <circle cx="42" cy="42" r="38" class="ring-bg"></circle>
+        <circle cx="42" cy="42" r="38" class="ring-fg" id="ringFg"></circle>
       </svg><div class="ring-num" id="ringNum">0/0</div></div>
       <div class="today-text">
         <p class="today-big" id="todayDue">今天待复习 <b>0</b> 个词</p>
@@ -35,9 +36,9 @@
     </div>
     <div id="cardArea"></div>
     <div id="cardActions" class="card-actions hidden">
-      <button class="btn btn-ghost" data-grade="0">😣 忘了</button>
-      <button class="btn btn-ghost" data-grade="1">🤔 模糊</button>
-      <button class="btn btn-primary" data-grade="2">😎 记得</button>
+      <button class="btn btn-ghost" data-grade="0">忘了</button>
+      <button class="btn btn-ghost" data-grade="1">模糊</button>
+      <button class="btn btn-primary" data-grade="2">记得</button>
     </div>
     <div id="cardEmpty" class="empty-state hidden">
       <div class="empty-emoji" id="emptyToday"></div>
@@ -45,6 +46,7 @@
       <p class="empty-sub">去聊一局，把新词带回来</p>
       <button class="btn btn-primary" id="goChatBtn">去对话</button>
     </div>
+    <div id="dashRanks" class="dash-ranks"></div>
   </section>
 
   <!-- ======== 对话 ======== -->
@@ -54,9 +56,6 @@
       <span id="convTitle" class="conv-title">新会话</span>
       <button id="convNewBtn" class="icon-btn-sm" title="新会话">＋</button>
     </div>
-    <div id="sceneBar" class="scene-bar">
-      <div class="scene-chips" id="sceneChips"></div>
-    </div>
     <div id="chatArea" class="chat-area">
       <div id="chatPlaceholder" class="chat-placeholder">
         <div class="empty-emoji" id="emptyChat"></div>
@@ -64,7 +63,7 @@
       </div>
     </div>
     <div id="chatInputBar" class="chat-input-bar">
-      <button id="chatReviewBtn" class="btn btn-ghost btn-round" title="复盘这一局">📋</button>
+      <button id="chatReviewBtn" class="btn btn-ghost btn-round" title="复盘这一局"></button>
       <textarea id="chatInput" rows="1" placeholder="输入英文…" enterkeyhint="send"></textarea>
       <button id="chatSendBtn" class="btn btn-primary btn-round">➤</button>
     </div>
@@ -107,16 +106,13 @@
     </div>
 
     <div class="settings-group">
-      <h3><span id="charHeadIcon" class="h-icon"></span>角色卡 <span class="tavern-hint" id="tavernCharHint"></span></h3>
-      <div id="tavernCharList" class="tavern-chars"></div>
-      <div class="tavern-card-actions">
-        <button class="btn btn-ghost btn-sm" id="tavernCharListBtn">角色卡库</button>
-        <button class="btn btn-ghost btn-sm" id="tavernCharGenBtn">AI 生成</button>
-      </div>
+      <h3><span id="worldHeadIcon" class="h-icon"></span>世界角色（这个世界里的固定角色）</h3>
+      <div id="worldRolesList" class="tavern-chars"></div>
     </div>
 
     <div class="settings-group">
       <button class="btn btn-primary btn-block" id="tavernStartBtn">开始角色扮演</button>
+      <p class="footnote">开始后会先选"你扮演谁"，然后旁白开场</p>
     </div>
   </section>
 
@@ -187,13 +183,22 @@
       <div id="audioCacheInfo" class="tts-status">计算中…</div>
       <button id="audioCacheClearBtn" class="btn btn-ghost">清空音频缓存</button>
       <label class="field">
-        <span>旁白音色（剧场）</span>
+        <span>对话携带易忘词（对话/剧场会自然带入这些词帮你巩固）</span>
+        <select id="setForgetCount">
+          <option value="0">不带（0）</option>
+          <option value="3">3 个</option>
+          <option value="5">5 个（默认）</option>
+          <option value="8">8 个</option>
+          <option value="10">10 个</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>旁白音色（角色按性别自动配音，这里只影响旁白）</span>
         <select id="setNarratorVoice">
           <option value="f">女声</option>
           <option value="m">男声</option>
         </select>
       </label>
-      <div class="tts-status">角色台词按性别自动配音（男角色男声 / 女角色女声）</div>
     </div>
     <div class="settings-group">
       <h3>学习画像</h3>
@@ -222,7 +227,7 @@
   </div>
 </div>
 
-<!-- 酒馆 AI 生成 modal -->
+<!-- 剧场 AI 生成 modal -->
 <div id="genModal" class="modal hidden">
   <div class="modal-mask" id="genMask"></div>
   <div class="modal-panel">
@@ -230,7 +235,7 @@
       <span id="genModalTitle">AI 生成</span>
       <button id="genClose" class="icon-btn-sm">✕</button>
     </div>
-    <textarea id="genInput" class="gen-input" rows="4" placeholder="描述你想要的世界/角色…（可以中文）"></textarea>
+    <textarea id="genInput" class="gen-input" rows="4" placeholder="描述你想要的世界…（可以中文，AI 会自动带出这个世界里的角色）"></textarea>
     <button id="genSubmitBtn" class="btn btn-primary btn-block">生成</button>
   </div>
 </div>
@@ -260,11 +265,11 @@
 </div>
 
 <nav class="tab-bar">
-  <button class="tab-btn active" data-tab="today"><span class="tab-icon">🌱</span><span>今日</span></button>
-  <button class="tab-btn" data-tab="chat"><span class="tab-icon">🗣️</span><span>对话</span></button>
-  <button class="tab-btn" data-tab="tavern"><span class="tab-icon">🎭</span><span>剧场</span></button>
-  <button class="tab-btn" data-tab="words"><span class="tab-icon">📚</span><span>笔记本</span></button>
-  <button class="tab-btn" data-tab="settings"><span class="tab-icon">⚙️</span><span>设置</span></button>
+  <button class="tab-btn active" data-tab="today"><span class="tab-icon"></span><span>今日</span></button>
+  <button class="tab-btn" data-tab="chat"><span class="tab-icon"></span><span>对话</span></button>
+  <button class="tab-btn" data-tab="tavern"><span class="tab-icon"></span><span>剧场</span></button>
+  <button class="tab-btn" data-tab="words"><span class="tab-icon"></span><span>笔记本</span></button>
+  <button class="tab-btn" data-tab="settings"><span class="tab-icon"></span><span>设置</span></button>
 </nav>
 
 <div id="toast" class="toast hidden"></div>

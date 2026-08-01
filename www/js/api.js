@@ -20,6 +20,18 @@ const API = {
     return !!this.key;
   },
 
+  /* DeepSeek 账户余额查询 */
+  async getBalance() {
+    if (!this.configured()) return null;
+    const resp = await fetch('https://api.deepseek.com/user/balance', {
+      headers: { Authorization: 'Bearer ' + Settings.get('apiKey', '') },
+    });
+    if (!resp.ok) throw new Error('balance ' + resp.status);
+    const j = await resp.json();
+    const infos = j.balance_infos || [];
+    return { total: infos[0] ? infos[0].total_balance : '' };
+  },
+
   async chat(messages, opts = {}) {
     const {
       model = 'deepseek-v4-flash',

@@ -1,20 +1,9 @@
 /* agent.js — 简化 agent loop + 本地工具 + 场景 + 复盘 + 摘要压缩
    参考 Pi agent-harness 的核心设计（工具批次执行 / token截断保护 / 上下文压缩） */
 
-const SCENES = [
-  { id: 'cafe', name: '☕ 咖啡店', level: 'B1',
-    system: `You are Alex, a friendly barista at a small coffee shop. The user is a customer practicing English.
-Keep replies to 1-2 short sentences. Use simple words (B1 level). If the user makes a mistake or hesitates, naturally model the correct way to say it in your reply, do not give lectures. Ask about their order, preferences, small things about their day.` },
-  { id: 'advisor', name: '🎓 组会导师', level: 'B1+',
-    system: `You are Professor Chen, a research advisor. The user is your graduate student giving a short progress update in English.
-Keep replies to 1-2 short sentences. Use simple but professional words. Ask about progress, problems, next steps. If the user struggles, gently offer simpler ways to phrase things.` },
-  { id: 'interview', name: '💼 面试官', level: 'B1+',
-    system: `You are an interviewer for a tech company. The user is applying for a junior engineering role and practicing English.
-Keep replies to 1-2 short sentences. Ask one question at a time: self-introduction, projects, why this role. Be warm, not intimidating. If the user is stuck, give them a moment then offer a hint.` },
-  { id: 'smalltalk', name: '🌤️ 日常闲聊', level: 'B1',
-    system: `You are a chatty friend. The user is practicing casual English.
-Keep replies to 1-2 short sentences. Talk about everyday things: weather, food, hobbies, weekend plans. Use very natural, simple spoken English. If the user hesitates, just continue naturally so the conversation flows.` },
-];
+const DEFAULT_SCENE = { id: 'default', name: '日常对话', level: 'B1',
+  system: `You are a friendly English conversation partner. The user is practicing spoken English.
+Keep replies to 1-2 short sentences. Use simple, natural spoken English. If the user makes a mistake or hesitates, naturally model the correct way to say it in your reply, do not give lectures. Ask one natural follow-up question to keep the conversation going.` };
 
 const Agent = {
   /* ---------- 工具定义（OpenAI function calling） ---------- */
@@ -135,10 +124,11 @@ const Agent = {
 
   /* ---------- system prompt 组装（场景 + 用户档案） ---------- */
   buildSystem(scene) {
+    const sc = scene || DEFAULT_SCENE;
     const p = Profile.load();
     const mistakes = (p.mistakes || []).slice(0, 5).map(m => m.pat).join('; ') || '无';
     const mastered = (p.mastered || []).slice(-8).join(', ') || '无';
-    return `${scene.system}
+    return `${sc.system}
 
 【学习者档案】
 - 水平：${p.level}（中国研究生，约四级词汇量，能读但口语输出卡顿）
@@ -207,16 +197,18 @@ ${this.forgetLine()}
     const model = Settings.get('buildModel', 'mimo-v2.5');
     const brief = messages.slice(-14).map(m => `${m.role}: ${typeof m.content === 'string' ? m.content.slice(0, 300) : ''}`).join('\n');
     const resp = await API.chat([
-      { role: 'system', content: `你是英语老师。下面是学习者刚结束的一段英语对话（可能含 AI 角色和工具消息，只看 user 和 assistant 的内容）。
+      { role: 'system', content: `你是英语老师 + 表演教练。下面是学习者刚结束的一段英语对话（可能含 AI 角色和工具消息，只看 user 和 assistant 的内容）。
 请分析学习者的表现，输出 JSON（不要输出其他内容）：
 {
   "good": "一句鼓励的话（中文）",
-  "mistakes": [{"pattern":"学习者说错/卡壳的表达（英文原文）","fix":"正确的说法","note":"简短中文说明"}],
-  "newWords": [{"word":"值得记住的词","phonetic":"","meaning":"中文释义","example":"英文例句","exampleCn":"中文翻译"}]
+  "mistakes": [{"pattern":"学习者说错/卡壳的表达（英文原文）","fix":"正确/更地道的说法（英文）","note":"简短中文说明（可选）"}],
+  "newWords": [{"word":"学习者明显不会或不熟的单词","meaning":"中文释义","example":"简单例句","exampleCn":"例句翻译"}],
+  "roleplay": [{"line":"学习者某句台词（英文原文）","issue":"不符合其扮演角色人设/身份/语气的地方（中文，若无则空字符串）","better":"更符合角色的说法（英文）"}]
 }
-要求：
-- newWords 最多 3 个，必须是对话里真正出现且有学习价值的；**如果学习者问过某个单词/表达的意思（比如 "what does X mean"、"X 什么意思"），那个词一定要放进 newWords**
-- mistakes 最多 3 条，没有就留空数组` },
+注意：
+- newWords：重点收集学习者在对话中**主动问过意思**的单词（如 what does X mean），以及明显卡壳的词
+- roleplay：仅当这段对话是角色扮演时检查（学习者有扮演身份），检查他的台词是否符合角色身份/语气；普通对话时 roleplay 返回空数组
+- 如果学习者中文提问了某个词的意思，那个词一定要放进 newWords` },
       { role: 'user', content: brief },
     ], { model, maxTokens: 1500 });
     const content = resp.choices[0].message.content || '';
@@ -289,10 +281,66 @@ ${this.forgetLine()}
     return { better: j.better || '', reason: j.reason || '' };
   },
 
+  /* 选角：根据世界卡给出 3-4 个可扮演身份 */
+  async rpOfferRoles(world) {
+    const model = Settings.get('chatModel', 'deepseek-v4-flash');
+    const w = world || {};
+    const rolesDesc = (w.roles || []).map(r => `${r.name}(${r.gender === 'male' ? '男' : '女'},${r.role || ''},${r.persona || ''})`).join('; ');
+    const resp = await API.chat([
+      { role: 'system', content: `You are casting the player in an English roleplay story.
+World: ${w.name} — ${w.setting || w.description || ''}
+Cast already in this world: ${rolesDesc || 'none'}
+
+Offer 3-4 distinct roles the PLAYER could play in this world. They can be a character from the cast, an outsider, or a fresh arrival. Each must fit the world.
+Output ONLY JSON: [{"name":"角色英文名","gender":"male或female","desc":"一句话身份介绍(英文)","persona":"性格要点(英文,1句)"}]` },
+      { role: 'user', content: 'Give me 3-4 role options.' },
+    ], { model, maxTokens: 500 });
+    const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
+    try {
+      return JSON.parse(content.slice(content.indexOf('['), content.lastIndexOf(']') + 1));
+    } catch { return []; }
+  },
+
+  /* 塑造玩家角色：根据用户选择/描述生成角色卡 */
+  async rpPlayerCard(desc, world) {
+    const model = Settings.get('chatModel', 'deepseek-v4-flash');
+    const w = world || {};
+    const resp = await API.chat([
+      { role: 'system', content: `You shape the PLAYER character in an English roleplay story.
+World: ${w.name} — ${w.setting || w.description || ''}
+Cast: ${(w.roles || []).map(r => r.name).join(', ') || 'none'}
+
+The player will roleplay as a character. Given their choice/description, produce a compact character card.
+Output ONLY JSON: {"name":"角色英文名","gender":"male或female","persona":"身份与性格(英文,2句)","background":"与世界的关联(英文,1-2句)"}` },
+      { role: 'user', content: 'My character: ' + desc },
+    ], { model, maxTokens: 500 });
+    const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
+    try {
+      return JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
+    } catch { return { name: 'You', gender: 'female', persona: '', background: '' }; }
+  },
+
+  /* 开场前言：世界 + 你的处境 + 第一个行动选择 */
+  async rpOpenIntro(world, player, roster) {
+    const model = Settings.get('chatModel', 'deepseek-v4-flash');
+    const w = world || {};
+    const p = player || {};
+    const castLine = (w.roles || []).map(r => `${r.name}(${r.gender === 'male' ? 'M' : 'F'})`).join(', ');
+    const sys = this.rpSystem(w) + `\nYou are the GAME MASTER / narrator.\n\nWrite the OPENING scene: the player ${p.name || 'the stranger'} arrives in ${w.name}. Set the scene vividly in 3-4 sentences of narration (English), introduce who is around (cast: ${castLine}), and end by presenting 3-4 English choices for the player's first move (second-person, actionable, short).\n\nOutput ONLY JSON: {"narration":"...","options":["Choice 1","Choice 2","Choice 3"]}`;
+    const msgs = [{ role: 'system', content: sys }, { role: 'user', content: 'Open the story.' }];
+    const resp = await API.chat(msgs, { model, maxTokens: 700 });
+    const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
+    try {
+      const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
+      return { narration: j.narration || '', options: (j.options || []).slice(0, 4) };
+    } catch { return { narration: content.slice(0, 300), options: [] }; }
+  },
+
   /* ================= 角色扮演（酒馆 RP）引擎 ================= */
   // 最常忘词缓存（对话/剧场生成时自然带入，巩固记忆）
   _forgetWords: [],
-  async refreshForgetWords(n = 5) {
+  async refreshForgetWords() {
+    const n = parseInt(Settings.get('forgetCount', 5), 10) || 5;
     try {
       const list = await Words.list();
       this._forgetWords = list
@@ -402,30 +450,17 @@ For dialogue: characters from the cast keep their identity; NEW side characters 
   async generateWorldCard(desc) {
     const model = Settings.get('buildModel', 'deepseek-v4-flash');
     const resp = await API.chat([
-      { role: 'system', content: `你是世界卡设计师。根据用户描述生成角色扮演世界的世界卡，返回 JSON：
-{"name":"世界名(英文)","description":"一句话简介(英文)","setting":"详细世界设定(英文,3-5句)","rules":"世界规则(英文,2-3条,换行分隔)","tone":"叙述风格(英文,如 atmospheric、humorous)"}
-要求：英文输出，适合英语学习。只输出 JSON。` },
+      { role: 'system', content: `你是世界卡设计师。根据用户描述生成一个角色扮演世界的世界卡，世界卡内嵌这个世界里已有的角色表（主角/配角/反派等，3-5 个），返回 JSON：
+{"name":"世界名(英文)","title":"中文标题","description":"一句话简介(英文)","setting":"详细世界设定(英文,3-5句)","rules":"世界规则(英文,2-3条,换行分隔)","tone":"叙述风格(英文,如 atmospheric、humorous)","roles":[{"name":"角色英文名","gender":"male或female","persona":"身份与性格(英文,1-2句)","role":"主角/配角/反派等(中文)","speakingStyle":"说话风格(英文,1句)"}]}
+要求：角色要和世界观贴合，性别明确。英文输出，适合英语学习。只输出 JSON。` },
       { role: 'user', content: '我的世界设想：' + desc },
-    ], { model, maxTokens: 800 });
+    ], { model, maxTokens: 1200 });
     const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
     const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
+    if (!Array.isArray(j.roles)) j.roles = [];
     return j;
   },
-  async generateCharacterCard(desc, world) {
-    const model = Settings.get('buildModel', 'deepseek-v4-flash');
-    const worldCtx = world ? world.name + ' - ' + (world.setting || world.description || '') : '无';
-    const resp = await API.chat([
-      { role: 'system', content: `你是角色卡设计师。根据用户描述（和可选的世界设定）生成角色扮演角色卡，返回 JSON：
-{"name":"角色名(英文)","gender":"male 或 female(男/女)","persona":"身份与性格(英文,2-3句)","appearance":"外貌(英文,1-2句)","background":"背景故事(英文,2-3句)","speakingStyle":"说话风格(英文,1-2句)","exampleDialogue":"一句示例台词(英文)"}
-要求：英文输出，适合英语学习。只输出 JSON。` },
-      { role: 'user', content: '世界设定：' + worldCtx + '\n我的角色设想：' + desc },
-    ], { model, maxTokens: 800 });
-    const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
-    const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
-    return j;
-  },
-
-  /* 单词详情补全/查询：详细释义（音标/词性/词根/搭配/同反义/例句） */
+  /* 复盘：语法/表达 + 角色扮演贴合度 */
   async queryWord(word) {
     const model = Settings.get('chatModel', 'deepseek-v4-flash');
     const resp = await API.chat([

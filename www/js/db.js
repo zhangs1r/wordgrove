@@ -1,6 +1,6 @@
 /* db.js — IndexedDB 封装 + 设置/画像 localStorage */
 const DB_NAME = 'englishapp';
-const DB_VER = 1;
+const DB_VER = 2;
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -14,6 +14,10 @@ function openDB() {
       }
       if (!db.objectStoreNames.contains('sessions')) {
         db.createObjectStore('sessions', { keyPath: 'id' });
+      }
+      // v2: 言木小院（farmState id='state' / 奖励事件 id='ev_*' / 设置 id='settings'）
+      if (!db.objectStoreNames.contains('farm')) {
+        db.createObjectStore('farm', { keyPath: 'id' });
       }
     };
     req.onsuccess = () => resolve(req.result);

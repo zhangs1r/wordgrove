@@ -478,6 +478,34 @@ body {
 }
 .msg-menu-item:active { background: var(--card-2); }
 
+/* ============ 言木小院（v0.32） ============ */
+.farm-head { display: flex; align-items: center; justify-content: space-between; margin: 2px 0 8px; }
+.farm-title { font-family: var(--font-serif); font-size: 17px; font-weight: 800; color: var(--text); }
+.farm-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.farm-h-right { display: flex; align-items: center; gap: 8px; }
+.farm-acorn { background: var(--card); border: 1px solid var(--card-2); border-radius: 999px; padding: 5px 12px; font-size: 13px; font-weight: 700; color: var(--primary); }
+.farm-cta { background: var(--card); border-radius: 12px; padding: 9px 12px; font-size: 12.5px; color: var(--muted); margin-bottom: 8px; line-height: 1.5; }
+.farm-cta b { color: var(--primary); }
+.farm-canvas-wrap {
+  background: var(--card); border-radius: 16px; padding: 10px; margin-bottom: 8px;
+  box-shadow: var(--shadow);
+}
+#farmCanvas { width: 100%; height: auto; display: block; border-radius: 10px; image-rendering: pixelated; touch-action: manipulation; }
+.farm-drawer {
+  background: var(--card); border-radius: 16px; padding: 12px 14px; margin-bottom: 10px;
+  box-shadow: var(--shadow);
+}
+.fd-head { display: flex; align-items: center; justify-content: space-between; font-weight: 700; font-size: 14px; margin-bottom: 8px; }
+.fd-scroll { max-height: 220px; overflow-y: auto; }
+.fd-sec { font-size: 12px; color: var(--primary); font-weight: 700; margin: 8px 0 4px; }
+.fd-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--card-2); }
+.fd-item:last-child { border-bottom: none; }
+.fd-name { font-size: 13.5px; }
+.fd-list { display: flex; flex-direction: column; gap: 8px; }
+.farm-harvests { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.hv-chip { background: var(--card); border-radius: 999px; padding: 4px 10px; font-size: 12px; color: var(--primary); font-weight: 600; }
+.farm-harvests.hidden { display: none; }
+
 /* ============ 通用 ============ */
 .empty-state { text-align: center; padding: 48px 0 32px; color: var(--muted); }
 .empty-emoji { font-size: 44px; margin-bottom: 12px; }

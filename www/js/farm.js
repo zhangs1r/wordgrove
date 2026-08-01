@@ -1,93 +1,109 @@
-/* farm.js — 言木小院：奖励服务（木果/成长值）+ 农场状态 + Canvas 像素渲染
- * 原则：学习驱动家园，家园不反过来索取时间。
- *  - 木果只由有效学习行为获得，农场本身不产出木果
- *  - 奖励统一走 Farm.grant()：幂等键 + 每日上限 + 单事务写入（防重复给钱）
- *  - 不新增 AI 请求；全部本地离线
+/* farm.js — 言木小院 v0.33：月历花园
+ * 核心：一个月的小院 = 一个月的日历。每天学习 → 当天格子种下作物；月积分买当月装饰；月底封存成历史。
+ * 原则不变：学习驱动家园，家园不反过来索取时间；月积分只由学习产出，月末清空。
  */
 
 const FARM = {
-  ACORN_DAY_LIMIT: 80,        // 木果每日上限
-  TIME_DAY_LIMIT: 36,         // 有效学习时长每日成长值上限（每3分钟+1）
+  POINT_DAY_LIMIT: 40,   // 月积分每日上限（≈1200/月，接近 1000 概念）
+  GROW_PER_STAGE: 40,    // 当月累计积分每 40 分，全月作物升一阶段（0/1/2）
 
-  // 作物：价格 / 阶段数 / 需成长值成熟 / 果实颜色
-  CROPS: {
-    radish:    { name: '萝卜',   price: 8,  stages: 3, growth: 12, fruit: '#E57373', leaf: '#7CB342' },
-    blueberry: { name: '蓝莓',   price: 14, stages: 4, growth: 22, fruit: '#5C6BC0', leaf: '#558B2F' },
-    pumpkin:   { name: '南瓜',   price: 20, stages: 5, growth: 36, fruit: '#F9A825', leaf: '#689F38' },
+  MONTH_SEASON: ['winter','winter','spring','spring','spring','summer','summer','summer','autumn','autumn','autumn','winter'],
+  // 每季作物池（当月按日期轮换；对应 crops.png 中的 3 帧组索引 0-16）
+  SEASON_CROPS: {
+    spring: ['strawberry','tomato','bean','melon','potato'],
+    summer: ['corn','pepper','grape','melon','tomato'],
+    autumn: ['pumpkin','cranberry','grape','corn','bean'],
+    winter: ['potato','starfruit','banana','pineapple','cranberry'],
   },
-  // 树：价格 / 阶段数 / 需成长值成树
-  TREES: {
-    sapling: { name: '小树', price: 40, stages: 4, growth: 70, leaf: '#7CB342' },
-    bigtree: { name: '大树', price: 75, stages: 6, growth: 140, leaf: '#43A047' },
+  // crops.png 每 96px 一种作物：{ x: 帧组索引, 名称中文 }
+  CROP_DEFS: {
+    potato:     { x: 0,  name: '土豆' },
+    starfruit:  { x: 1,  name: '杨桃' },
+    tomato:     { x: 2,  name: '番茄' },
+    corn:       { x: 3,  name: '玉米' },
+    pumpkin:    { x: 4,  name: '南瓜' },
+    melon:      { x: 5,  name: '甜瓜' },
+    bean:       { x: 6,  name: '四季豆' },
+    bean2:      { x: 7,  name: '架豆' },
+    pepper:     { x: 8,  name: '辣椒' },
+    tomato2:    { x: 9,  name: '小番茄' },
+    grape:      { x: 10, name: '葡萄' },
+    banana:     { x: 11, name: '香蕉' },
+    strawberry: { x: 12, name: '草莓' },
+    pineapple:  { x: 13, name: '菠萝' },
+    hop:        { x: 14, name: '啤酒花' },
+    cranberry:  { x: 15, name: '蔓越莓' },
+    pineapple2: { x: 16, name: '凤梨' },
   },
-  // 装饰：价格 / 解锁等级（level 0 = 初始可用）
+  // 通用装饰（月积分价格；x/y 为程序化绘制用——后续换 AI sprite）
   DECOR: {
-    path:      { name: '小径',   price: 6,  level: 0 },
-    fence:     { name: '围栏',   price: 10, level: 0 },
-    stone:     { name: '石头',   price: 5,  level: 0 },
-    flowerpot: { name: '花盆',   price: 18, level: 2 },
-    bench:     { name: '长椅',   price: 30, level: 3 },
-    lamp:      { name: '路灯',   price: 45, level: 4 },
-    sign:      { name: '纪念牌', price: 0,  level: 0, special: true },
+    bench:  { name: '长椅',   price: 30 },
+    lamp:   { name: '路灯',   price: 45 },
+    pot:    { name: '花盆',   price: 20 },
+    fence:  { name: '围栏',   price: 12 },
+    stone:  { name: '石头',   price: 8 },
+    windmill: { name: '风车', price: 60 },
   },
-  // 家园等级门槛（成长值累计）
-  LEVELS: [0, 40, 100, 200, 350, 550, 800, 1200],
-
-  MAP_W: 20, MAP_H: 14,
-  // 房屋区域（格子坐标，左上角起 4x4）
-  HOUSE: { x: 1, y: 1, w: 4, h: 4 },
-  // 池塘区域 3x3
-  POND: { x: 16, y: 9, w: 3, h: 3 },
-  // 耕地位置（初始 4 块 + 扩展 6 块）
-  PLOTS: [
-    { x: 8, y: 5 }, { x: 9, y: 5 }, { x: 8, y: 6 }, { x: 9, y: 6 },
-    { x: 7, y: 5 }, { x: 10, y: 5 }, { x: 7, y: 6 }, { x: 10, y: 6 }, { x: 8, y: 7 }, { x: 9, y: 7 },
-  ],
+  // 月度限定装饰（AI 生成 sprite）
+  MONTH_DECOR: {
+    1:  { lantern:     { name: '灯笼' } },
+    2:  { flower_lamp: { name: '花灯' } },
+    3:  { kite:        { name: '风筝' } },
+    4:  { sakura_umbrella: { name: '樱花伞' } },
+    5:  { flower_wreath:   { name: '花环' } },
+    6:  { firefly_jar:     { name: '萤火虫罐' } },
+    7:  { seashell:        { name: '贝壳' } },
+    8:  { star_lamp:       { name: '星星灯' } },
+    9:  { scarecrow:       { name: '稻草人' } },
+    10: { pumpkin_lantern: { name: '南瓜灯' } },
+    11: { campfire:        { name: '篝火' } },
+    12: { santa_sock:      { name: '圣诞袜' } },
+  },
 
   dayKey(d) { return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); },
-  levelFor(growth) {
-    let lv = 1;
-    for (let i = 0; i < FARM.LEVELS.length; i++) if (growth >= FARM.LEVELS[i]) lv = i + 1;
-    return lv;
+  seasonOf(month) { return this.MONTH_SEASON[month - 1]; },
+  monthCrop(month, day) {
+    const pool = this.SEASON_CROPS[this.seasonOf(month)];
+    return pool[(day - 1) % pool.length];
   },
-  weatherFor(dayKey) {
-    const list = ['sun', 'sun', 'sun', 'cloud', 'rain', 'breeze'];
-    let h = 0;
-    for (let i = 0; i < dayKey.length; i++) h = (h * 31 + dayKey.charCodeAt(i)) % 997;
-    return list[h % list.length];
-  },
+  daysInMonth(year, month) { return new Date(year, month, 0).getDate(); },
+  firstWeekday(year, month) { return new Date(year, month - 1, 1).getDay(); }, // 0=周日
 };
 
 const Farm = {
   _state: null,
+  _imgs: {},  // 素材缓存
 
   defaultState() {
+    const now = new Date();
     return {
-      id: 'state', schemaVersion: 1,
-      acorns: 32, growth: 0, level: 1,
-      day: FARM.dayKey(new Date()), dayAcorns: 0, dayCounts: {},
-      dayGrowthTime: 0,
-      plots: FARM.PLOTS.slice(0, 4).map(p => ({ x: p.x, y: p.y })),
-      crops: [], trees: [], decor: [],
-      unlocked: {}, harvests: {},
-      firstTime: true,
+      id: 'garden', year: now.getFullYear(), month: now.getMonth() + 1,
+      points: 0, totalEarned: 0, dayPoints: 0, day: FARM.dayKey(now),
+      planted: {}, stage: 0, decor: [],
+      sealed: false, history: [],
     };
   },
 
   async load() {
-    if (this._state) return this._state;
-    const s = await this.txGet('state');
-    this._state = s || this.defaultState();
-    if (this._state.firstTime) {
-      this._state.firstTime = false;
-      this._state.decor.push({ type: 'sign', x: 6, y: 3 });
+    const now = new Date();
+    if (!this._state) {
+      const s = await this.txGet('garden');
+      this._state = s || this.defaultState();
+    }
+    // 跨月封存
+    const st = this._state;
+    if (!st.sealed && (st.year !== now.getFullYear() || st.month !== now.getMonth() + 1)) {
+      st.sealed = true;
+      st.history = st.history || [];
+      st.history.unshift({ year: st.year, month: st.month, planted: st.planted, decor: st.decor, stage: st.stage, totalEarned: st.totalEarned, sealedAt: Date.now() });
+      const fresh = this.defaultState();
+      fresh.history = st.history.slice(0, 36); // 保留 3 年
+      this._state = fresh;
       await this.save();
     }
     return this._state;
   },
-  async save() {
-    await this.txPut('state', this._state);
-  },
+  async save() { await this.txPut('garden', this._state); },
   async txGet(id) {
     const d = await db();
     return new Promise((resolve, reject) => {
@@ -105,23 +121,12 @@ const Farm = {
       t.onerror = () => reject(t.error);
     });
   },
-  async txDelete(id) {
-    const d = await db();
-    return new Promise((resolve, reject) => {
-      const t = d.transaction('farm', 'readwrite');
-      t.objectStore('farm').delete(id);
-      t.oncomplete = () => resolve();
-      t.onerror = () => reject(t.error);
-    });
-  },
 
-  /* ============ 奖励服务 ============
-   * grant(source, { key, acorns, growth, maxDay })
-   *  - key: 幂等键（如 词ID+日期 / 会话ID+档位 / 表达文本）
-   *  - maxDay: 该来源每日次数上限（可选）
-   *  - 单事务：幂等检查 + 状态更新 + 事件记录 原子完成，中断不会重复发奖
+  /* ============ 月积分奖励 ============
+   * addPoints(source, { key, pts, maxDay })
+   * 幂等键 + 每日上限 + 单事务原子写入；积分只由学习产出
    */
-  async grant(source, opts) {
+  async addPoints(source, opts) {
     const key = (opts.key == null ? '' : String(opts.key));
     const evId = 'ev_' + source + '_' + key;
     const d = await db();
@@ -130,28 +135,42 @@ const Farm = {
       const store = t.objectStore('farm');
       const reqEv = store.get(evId);
       reqEv.onsuccess = () => {
-        if (reqEv.result) { resolve(null); return; } // 已发过（幂等）
-        const reqS = store.get('state');
+        if (reqEv.result) { resolve(null); return; }
+        const reqS = store.get('garden');
         reqS.onsuccess = () => {
-          const state = reqS.result || Farm.defaultState();
-          const today = FARM.dayKey(new Date());
-          if (state.day !== today) { state.day = today; state.dayAcorns = 0; state.dayCounts = {}; state.dayGrowthTime = 0; }
-          // 来源日次数上限
-          if (opts.maxDay && (state.dayCounts[source] || 0) >= opts.maxDay) { resolve(null); return; }
-          // 木果日上限截断
-          let a = opts.acorns || 0;
-          if (state.dayAcorns + a > FARM.ACORN_DAY_LIMIT) a = Math.max(0, FARM.ACORN_DAY_LIMIT - state.dayAcorns);
-          const g = opts.growth || 0;
-          if (a === 0 && g === 0) { resolve(null); return; }
-          state.acorns += a;
-          state.growth += g;
-          state.dayAcorns += a;
-          state.dayCounts[source] = (state.dayCounts[source] || 0) + 1;
-          state.level = FARM.levelFor(state.growth);
-          store.put(state);
-          Farm._state = state; // 同步内存缓存，避免 load() 旧值覆盖
-          store.put({ id: evId, source, key, acorns: a, growth: g, at: Date.now() });
-          resolve({ acorns: a, growth: g });
+          let st = reqS.result;
+          const now = new Date();
+          const today = FARM.dayKey(now);
+          // 跨月重置（封存旧月）
+          if (st && !st.sealed && (st.year !== now.getFullYear() || st.month !== now.getMonth() + 1)) {
+            st.sealed = true;
+            st.history = st.history || [];
+            st.history.unshift({ year: st.year, month: st.month, planted: st.planted, decor: st.decor, stage: st.stage, totalEarned: st.totalEarned, sealedAt: Date.now() });
+            const fresh = this.defaultState();
+            fresh.history = st.history.slice(0, 36);
+            st = fresh;
+          }
+          if (!st) st = this.defaultState();
+          if (st.day !== today) { st.day = today; st.dayPoints = 0; }
+          if (opts.maxDay && st.dayPoints >= opts.maxDay) { resolve(null); return; }
+          let p = opts.pts || 0;
+          if (st.dayPoints + p > FARM.POINT_DAY_LIMIT) p = Math.max(0, FARM.POINT_DAY_LIMIT - st.dayPoints);
+          if (p === 0) { resolve(null); return; }
+          st.points += p;
+          st.totalEarned += p;
+          st.dayPoints += p;
+          // 每日首学：当天格子种下当月作物
+          const dayNum = now.getDate();
+          if (!st.planted[dayNum]) {
+            st.planted[dayNum] = FARM.monthCrop(st.month, dayNum);
+          }
+          // 阶段升级
+          const newStage = Math.min(2, Math.floor(st.totalEarned / FARM.GROW_PER_STAGE));
+          if (newStage !== st.stage) st.stage = newStage;
+          store.put(st);
+          Farm._state = st; // 同步内存缓存
+          store.put({ id: evId, source, key, pts: p, at: Date.now() });
+          resolve({ pts: p, stage: st.stage, planted: st.planted[dayNum] || null });
         };
         reqS.onerror = () => reject(reqS.error);
       };
@@ -160,358 +179,202 @@ const Farm = {
     });
   },
 
-  /* 有效学习时长：每满 3 分钟 +1 成长值（不发木果），日上限 36 */
-  async tickTime(seconds) {
-    const state = await this.load();
-    const today = FARM.dayKey(new Date());
-    if (state.day !== today) { state.day = today; state.dayAcorns = 0; state.dayCounts = {}; state.dayGrowthTime = 0; }
-    const before = Math.floor(state.dayGrowthTime / 180);
-    state.dayGrowthTime += seconds;
-    const after = Math.floor(state.dayGrowthTime / 180);
-    const gain = Math.min(after - before, FARM.TIME_DAY_LIMIT - before);
-    if (gain > 0) {
-      state.growth += gain;
-      state.level = FARM.levelFor(state.growth);
-      await this.save();
-      return gain;
-    }
+  /* ============ 装饰 ============ */
+  async buyDecor(type) {
+    const st = await this.load();
+    const def = FARM.DECOR[type] || null;
+    const monthDef = FARM.MONTH_DECOR[st.month] || {};
+    const mdef = monthDef[type] || null;
+    const d = def || mdef;
+    if (!d) return { ok: false, msg: '装饰不存在' };
+    if (st.points < d.price) return { ok: false, msg: '积分不够（需 ' + d.price + '）' };
+    st.points -= d.price;
     await this.save();
-    return 0;
+    return { ok: true, type };
   },
-
-  /* ============ 农场操作 ============ */
-  async buy(type, kind) {
-    const state = await this.load();
-    const def = type === 'crop' ? FARM.CROPS[kind] : type === 'tree' ? FARM.TREES[kind] : FARM.DECOR[kind];
-    if (!def) return { ok: false, msg: '物品不存在' };
-    if (def.special) return { ok: false, msg: '特殊物品不可购买' };
-    if ((def.level || 0) > state.level) return { ok: false, msg: '家园 ' + def.level + ' 级解锁' };
-    if (state.acorns < def.price) return { ok: false, msg: '木果不够' };
-    state.acorns -= def.price;
-    await this.save();
-    return { ok: true, kind };
-  },
-  async plant(type, kind, x, y) {
-    const state = await this.load();
-    const plot = state.plots.find(p => p.x === x && p.y === y);
-    if (!plot) return { ok: false, msg: '这里不是耕地' };
-    if (state.crops.some(c => c.x === x && c.y === y) || state.trees.some(t => t.x === x && t.y === y)) {
-      return { ok: false, msg: '这里已经有东西了' };
-    }
-    const item = { type, kind, x, y, planted: state.growth, stage: 0 };
-    if (type === 'crop') state.crops.push(item);
-    else state.trees.push(item);
+  async placeDecor(type, day) {
+    const st = await this.load();
+    if (st.decor.some(x => x.day === day && x.type === type)) return { ok: false, msg: '这里已经放了这个' };
+    st.decor.push({ type, day });
     await this.save();
     return { ok: true };
   },
-  /* 成长结算：按累计成长值推进所有作物/树阶段 */
-  async growAll() {
-    const state = await this.load();
-    let changed = false;
-    for (const c of state.crops) {
-      const def = FARM.CROPS[c.kind];
-      const st = Math.min(def.stages - 1, Math.floor((state.growth - c.planted) / (def.growth / (def.stages - 1))));
-      if (st !== c.stage) { c.stage = st; changed = true; }
-    }
-    for (const t of state.trees) {
-      const def = FARM.TREES[t.kind];
-      const st = Math.min(def.stages - 1, Math.floor((state.growth - t.planted) / (def.growth / (def.stages - 1))));
-      if (st !== t.stage) { t.stage = st; changed = true; }
-    }
-    if (changed) await this.save();
-    return changed;
-  },
-  async harvest(x, y) {
-    const state = await this.load();
-    const i = state.crops.findIndex(c => c.x === x && c.y === y);
-    if (i === -1) return { ok: false, msg: '这里没有作物' };
-    const c = state.crops[i];
-    const def = FARM.CROPS[c.kind];
-    if (c.stage < def.stages - 1) return { ok: false, msg: '还没成熟' };
-    state.crops.splice(i, 1);
-    state.harvests[c.kind] = (state.harvests[c.kind] || 0) + 1;
-    // 收获给图鉴/景观进度，不给木果（避免种田刷钱）
-    await this.save();
-    return { ok: true, harvest: c.kind };
-  },
-  async removeAt(x, y) {
-    const state = await this.load();
-    const ci = state.crops.findIndex(c => c.x === x && c.y === y);
-    if (ci !== -1) { state.crops.splice(ci, 1); await this.save(); return { ok: true, what: 'crop' }; }
-    const ti = state.trees.findIndex(t => t.x === x && t.y === y);
-    if (ti !== -1) { state.trees.splice(ti, 1); await this.save(); return { ok: true, what: 'tree' }; }
-    const di = state.decor.findIndex(d => d.x === x && d.y === y);
-    if (di !== -1) { state.decor.splice(di, 1); await this.save(); return { ok: true, what: 'decor' }; }
-    return { ok: false, msg: '这里没有东西' };
-  },
-  async placeDecor(type, x, y) {
-    const state = await this.load();
-    if (state.decor.some(d => d.x === x && d.y === y)) return { ok: false, msg: '这里已经有东西' };
-    state.decor.push({ type, x, y });
+  async removeDecor(day, type) {
+    const st = await this.load();
+    st.decor = st.decor.filter(x => !(x.day === day && x.type === type));
     await this.save();
     return { ok: true };
   },
-  async expandPlot() {
-    const state = await this.load();
-    const max = FARM.PLOTS.length;
-    if (state.plots.length >= max) return { ok: false, msg: '地块已开满' };
-    const next = FARM.PLOTS[state.plots.length];
-    const price = [30, 50, 75, 75, 75, 75][state.plots.length - 4];
-    if (state.acorns < price) return { ok: false, msg: '木果不够（需 ' + price + '）' };
-    state.acorns -= price;
-    state.plots.push({ x: next.x, y: next.y });
-    await this.save();
-    return { ok: true, price };
-  },
-  async resetFarm() {
-    const state = this.defaultState();
-    state.firstTime = false;
-    this._state = state;
-    await this.save();
-    await this.txDelete('ev_'); // 不存在的键，仅保证干净
-    return true;
+
+  /* ============ 素材加载 ============ */
+  async ensureImgs() {
+    const names = ['crops', 'grass_spring', 'grass_summer', 'grass_autumn', 'grass_winter'];
+    for (const n of names) {
+      if (this._imgs[n]) continue;
+      await new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => { this._imgs[n] = img; resolve(); };
+        img.onerror = () => resolve();
+        img.src = 'assets/' + n + '.png';
+      });
+    }
+    // 月度装饰 sprite（懒加载，失败静默用程序化兜底）
+    const st = this._state;
+    if (st) {
+      const monthDefs = FARM.MONTH_DECOR[st.month] || {};
+      for (const k of Object.keys(monthDefs)) {
+        if (this._imgs['decor_' + k]) continue;
+        await new Promise((resolve) => {
+          const img = new Image();
+          img.onload = () => { this._imgs['decor_' + k] = img; resolve(); };
+          img.onerror = () => resolve();
+          img.src = 'assets/decor/' + k + '.png';
+        });
+      }
+    }
   },
 
-  /* ============ Canvas 像素渲染 ============ */
-  tile: 16,
-  _cache: null,
+  /* ============ Canvas 月历渲染 ============ */
+  CELL: 48,
+  paintCalendar(ctx, state, opts = {}) {
+    const now = new Date();
+    const year = opts.year != null ? opts.year : state.year;
+    const month = opts.month != null ? opts.month : state.month;
+    const planted = opts.planted || state.planted;
+    const decor = opts.decor || state.decor;
+    const stage = opts.stage != null ? opts.stage : state.stage;
+    const season = FARM.seasonOf(month);
+    const grass = this._imgs['grass_' + season] || null;
 
-  paint(ctx, state, weather, t) {
-    const T = this.tile;
-    // 地形层（离屏缓存）
-    if (!this._cache) this._cache = this.paintTerrain();
+    const C = this.CELL;
+    const days = FARM.daysInMonth(year, month);
+    const wd = FARM.firstWeekday(year, month);
+    ctx.clearRect(0, 0, 7 * C, 6 * C);
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(this._cache, 0, 0);
 
-    // 耕地
-    for (const p of state.plots) {
-      const x = p.x * T, y = p.y * T;
-      ctx.fillStyle = '#A1887F';
-      ctx.fillRect(x + 1, y + 1, T - 2, T - 2);
-      ctx.fillStyle = '#8D6E63';
-      ctx.fillRect(x + 1, y + 1, T - 2, 2);
-      ctx.fillRect(x + 1, y + 1, 2, T - 2);
-      ctx.fillStyle = '#BCAAA4';
-      ctx.fillRect(x + 3, y + 3, T - 6, 1);
-    }
-
-    // 树（先画，被装饰遮挡关系简单处理：树在作物下）
-    for (const tr of state.trees) this.paintTree(ctx, tr, FARM.TREES[tr.kind]);
-
-    // 作物
-    for (const c of state.crops) this.paintCrop(ctx, c, FARM.CROPS[c.kind]);
-
-    // 装饰
-    for (const d of state.decor) this.paintDecor(ctx, d);
-
-    // 天气
-    if (weather === 'rain') this.paintRain(ctx, t);
-    else if (weather === 'cloud') {
-      ctx.fillStyle = 'rgba(120,140,160,0.18)';
-      ctx.fillRect(0, 0, FARM.MAP_W * T, FARM.MAP_H * T);
-    } else if (weather === 'sun') {
-      ctx.fillStyle = '#FAC75E';
-      ctx.beginPath();
-      ctx.arc(FARM.MAP_W * T - 14, 10, 5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillRect(FARM.MAP_W * T - 14, 2, 2, 4);
-      ctx.fillRect(FARM.MAP_W * T - 18, 10, 4, 2);
-      ctx.fillRect(FARM.MAP_W * T - 14, 16, 2, 3);
-      ctx.fillRect(FARM.MAP_W * T - 20, 6, 2, 2);
-      ctx.fillRect(FARM.MAP_W * T - 8, 6, 2, 2);
-    } else if (weather === 'breeze') {
-      const T2 = FARM.MAP_W * T;
-      const y = (t / 2) % (FARM.MAP_H * T);
-      ctx.fillStyle = 'rgba(124,179,66,0.8)';
-      ctx.fillRect(10 + (t % T2), y, 3, 2);
-      ctx.fillRect((t * 1.7) % T2, (y + 20) % (FARM.MAP_H * T), 3, 2);
-    }
-  },
-
-  paintTerrain() {
-    const T = this.tile, W = FARM.MAP_W * T, H = FARM.MAP_H * T;
-    const cv = document.createElement('canvas');
-    cv.width = W; cv.height = H;
-    const ctx = cv.getContext('2d');
-    // 草地（两种绿随机）
-    for (let y = 0; y < FARM.MAP_H; y++) {
-      for (let x = 0; x < FARM.MAP_W; x++) {
-        ctx.fillStyle = ((x * 7 + y * 13) % 5 < 2) ? '#9CCC65' : '#8BC34A';
-        ctx.fillRect(x * T, y * T, T, T);
-        if ((x * 3 + y * 5) % 7 === 0) { ctx.fillStyle = '#7CB342'; ctx.fillRect(x * T + 5, y * T + 5, 3, 3); }
-        if ((x * 11 + y * 3) % 9 === 0) { ctx.fillStyle = '#AED581'; ctx.fillRect(x * T + 9, y * T + 3, 3, 2); }
+    for (let d = 1; d <= days; d++) {
+      const cellIdx = wd + d - 1;
+      const cx = (cellIdx % 7) * C;
+      const cy = Math.floor(cellIdx / 7) * C;
+      // 背景草地
+      if (grass) {
+        ctx.drawImage(grass, cx, cy, C, C);
+      } else {
+        ctx.fillStyle = season === 'winter' ? '#E8EDE8' : '#9CCC65';
+        ctx.fillRect(cx, cy, C, C);
+      }
+      // 今天高亮
+      const isToday = !opts.readonly && d === now.getDate() && state.year === now.getFullYear() && state.month === now.getMonth() + 1;
+      if (isToday) {
+        ctx.strokeStyle = '#FAC75E';
+        ctx.lineWidth = 2.5;
+        ctx.strokeRect(cx + 1, cy + 1, C - 2, C - 2);
+      }
+      // 日期数字（清晰：深色+阴影）
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.font = 'bold 11px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText(String(d), cx + 4, cy + 3);
+      ctx.fillStyle = 'rgba(255,255,255,0.75)';
+      ctx.fillText(String(d), cx + 3, cy + 2);
+      // 格子分隔线
+      ctx.strokeStyle = 'rgba(0,0,0,0.07)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(cx + 0.5, cy + 0.5, C - 1, C - 1);
+      // 作物（放大绘制保持像素感）
+      const crop = planted[d];
+      if (crop && this._imgs.crops && FARM.CROP_DEFS[crop]) {
+        const def = FARM.CROP_DEFS[crop];
+        const sx = def.x * 96 + stage * 32;
+        ctx.drawImage(this._imgs.crops, sx, 0, 32, 32, cx + (C - 44) / 2, cy + C - 46, 44, 44);
+        // 名称小标（成熟时显示）
+        if (stage >= 2) {
+          ctx.fillStyle = 'rgba(0,0,0,0.45)';
+          ctx.font = '8px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(def.name, cx + C / 2, cy + C - 13);
+          ctx.textAlign = 'left';
+        }
+      }
+      // 装饰
+      const ds = decor.filter(x => x.day === d);
+      for (const de of ds) {
+        this.paintDecor(ctx, de.type, cx, cy, C, month);
       }
     }
-    // 池塘
-    const P = FARM.POND;
-    for (let y = P.y; y < P.y + P.h; y++) {
-      for (let x = P.x; x < P.x + P.w; x++) {
-        ctx.fillStyle = ((x + y) % 2) ? '#4FC3F7' : '#29B6F6';
-        ctx.fillRect(x * T, y * T, T, T);
-      }
-    }
-    ctx.fillStyle = 'rgba(255,255,255,0.35)';
-    ctx.fillRect(P.x * T + 3, P.y * T + 3, 6, 3);
-    // 小路（房子到耕地）
-    ctx.fillStyle = '#C8A882';
-    for (let y = 4; y < 7; y++) ctx.fillRect(5 * T + 2, y * T + 2, T - 4, T - 4);
-    // 房子
-    const Hc = FARM.HOUSE;
-    ctx.fillStyle = '#8D6E63';
-    ctx.fillRect(Hc.x * T - 2, (Hc.y + Hc.h) * T - 2, Hc.w * T + 4, 4);
-    ctx.fillStyle = '#EFEBE9';
-    ctx.fillRect(Hc.x * T, Hc.y * T, Hc.w * T, Hc.h * T);
-    ctx.fillStyle = '#A1887F';
-    ctx.fillRect(Hc.x * T, Hc.y * T, Hc.w * T, 3);
-    ctx.fillStyle = '#5D4037';
-    ctx.beginPath();
-    ctx.moveTo(Hc.x * T - 2, Hc.y * T);
-    ctx.lineTo(Hc.x * T + Hc.w * T / 2, (Hc.y - 2) * T);
-    ctx.lineTo(Hc.x * T + Hc.w * T + 2, Hc.y * T);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = '#FAF3E8';
-    ctx.fillRect(Hc.x * T + T, Hc.y * T + T, T - 4, T - 4);
-    ctx.fillStyle = '#4E342E';
-    ctx.fillRect(Hc.x * T + T * 2 + 2, Hc.y * T + T + 2, 4, 8);
-    // 围栏（地图边缘装饰线）
-    ctx.fillStyle = '#795548';
-    for (let x = 0; x < FARM.MAP_W; x += 2) ctx.fillRect(x * T + 4, 0, 3, 3);
-    return cv;
-  },
-
-  paintCrop(ctx, c, def) {
-    const T = this.tile, x = c.x * T, y = c.y * T;
-    const max = def.stages - 1;
-    const r = c.stage / max;
-    // 土垄
-    ctx.fillStyle = '#795548';
-    ctx.fillRect(x + 4, y + 8, T - 8, 4);
-    if (c.stage === 0) {
-      ctx.fillStyle = '#558B2F';
-      ctx.fillRect(x + 7, y + 6, 2, 4);
-    } else if (r < 0.5) {
-      ctx.fillStyle = def.leaf;
-      ctx.fillRect(x + 5, y + 4, 3, 6);
-      ctx.fillRect(x + 8, y + 3, 3, 7);
-    } else if (r < 1) {
-      ctx.fillStyle = def.leaf;
-      ctx.fillRect(x + 4, y + 3, 4, 7);
-      ctx.fillRect(x + 8, y + 2, 4, 8);
-      ctx.fillStyle = '#33691E';
-      ctx.fillRect(x + 6, y + 6, 4, 1);
-    } else {
-      ctx.fillStyle = def.leaf;
-      ctx.fillRect(x + 3, y + 2, 5, 8);
-      ctx.fillRect(x + 8, y + 1, 5, 9);
-      ctx.fillStyle = def.fruit;
-      ctx.fillRect(x + 6, y + 5, 4, 4);
-      ctx.fillStyle = '#FFFFFF';
-      ctx.fillRect(x + 6, y + 5, 1, 1);
+    // 空格（月末之后）画浅色底
+    const total = wd + days;
+    for (let i = total; i < 42; i++) {
+      const cx = (i % 7) * C;
+      const cy = Math.floor(i / 7) * C;
+      ctx.fillStyle = 'rgba(0,0,0,0.05)';
+      ctx.fillRect(cx, cy, C, C);
     }
   },
 
-  paintTree(ctx, tr, def) {
-    const T = this.tile, x = tr.x * T, y = tr.y * T;
-    const max = def.stages - 1;
-    const r = tr.stage / max;
-    ctx.fillStyle = '#5D4037';
-    ctx.fillRect(x + 6, y + 8, 4, 7);
-    const size = 3 + Math.round(r * 5);
-    ctx.fillStyle = tr.stage >= max ? def.leaf : '#8BC34A';
-    ctx.beginPath();
-    ctx.arc(x + 8, y + 8 - size / 2, size, 0, Math.PI * 2);
-    ctx.fill();
-    if (tr.stage >= max) {
-      ctx.fillStyle = '#FAC75E';
-      ctx.fillRect(x + 5, y + 2, 2, 2);
-      ctx.fillRect(x + 10, y + 4, 2, 2);
+  /* 装饰绘制：优先 AI sprite（assets/decor/<type>.png），没有则程序化兜底 */
+  paintDecor(ctx, type, cx, cy, C, month) {
+    const img = this._imgs['decor_' + type];
+    const size = 36;
+    if (img) {
+      ctx.drawImage(img, 0, 0, img.width, img.height, cx + (C - size) / 2, cy + (C - size) / 2 - 4, size, size);
+      return;
     }
-  },
-
-  paintDecor(ctx, d) {
-    const T = this.tile, x = d.x * T, y = d.y * T;
-    switch (d.type) {
-      case 'path':
-        ctx.fillStyle = '#C8A882';
-        ctx.fillRect(x + 1, y + 1, T - 2, T - 2);
-        ctx.fillStyle = '#B99C77';
-        ctx.fillRect(x + 3, y + 3, T - 6, T - 6);
-        break;
-      case 'fence':
-        ctx.fillStyle = '#795548';
-        ctx.fillRect(x + 1, y + 5, T - 2, 3);
-        ctx.fillRect(x + 3, y + 2, 2, 10);
-        ctx.fillRect(x + 11, y + 2, 2, 10);
-        break;
-      case 'stone':
-        ctx.fillStyle = '#9E9E9E';
-        ctx.fillRect(x + 4, y + 7, 8, 6);
-        ctx.fillStyle = '#BDBDBD';
-        ctx.fillRect(x + 4, y + 7, 8, 2);
-        break;
-      case 'flowerpot':
-        ctx.fillStyle = '#8D6E63';
-        ctx.fillRect(x + 4, y + 10, 8, 4);
-        ctx.fillStyle = '#E57373';
-        ctx.fillRect(x + 6, y + 4, 4, 4);
-        ctx.fillStyle = '#7CB342';
-        ctx.fillRect(x + 6, y + 7, 4, 4);
-        break;
+    // 程序化兜底（简单形状）
+    const mx = cx + C / 2, my = cy + C / 2;
+    ctx.save();
+    switch (type) {
       case 'bench':
-        ctx.fillStyle = '#6D4C41';
-        ctx.fillRect(x + 1, y + 8, T - 2, 4);
-        ctx.fillRect(x + 2, y + 12, 3, 3);
-        ctx.fillRect(x + T - 5, y + 12, 3, 3);
-        ctx.fillStyle = '#8D6E63';
-        ctx.fillRect(x + 1, y + 4, T - 2, 2);
+        ctx.fillStyle = '#6D4C41'; ctx.fillRect(mx - 14, my + 2, 28, 5);
+        ctx.fillStyle = '#8D6E63'; ctx.fillRect(mx - 14, my - 6, 28, 3);
+        ctx.fillRect(mx - 13, my + 7, 3, 6); ctx.fillRect(mx + 10, my + 7, 3, 6);
         break;
       case 'lamp':
-        ctx.fillStyle = '#455A64';
-        ctx.fillRect(x + 7, y + 5, 2, 9);
-        ctx.fillStyle = '#FAC75E';
-        ctx.fillRect(x + 4, y + 2, 8, 4);
-        ctx.fillStyle = '#FFF8E1';
-        ctx.fillRect(x + 5, y + 3, 6, 2);
+        ctx.fillStyle = '#455A64'; ctx.fillRect(mx - 1, my - 8, 3, 16);
+        ctx.fillStyle = '#FAC75E'; ctx.fillRect(mx - 6, my - 13, 13, 6);
         break;
-      case 'sign':
+      case 'pot':
+        ctx.fillStyle = '#8D6E63'; ctx.fillRect(mx - 7, my + 4, 14, 6);
+        ctx.fillStyle = '#E57373'; ctx.fillRect(mx - 4, my - 6, 8, 7);
+        break;
+      case 'fence':
+        ctx.fillStyle = '#795548'; ctx.fillRect(mx - 15, my - 2, 30, 3);
+        ctx.fillRect(mx - 12, my - 8, 3, 13); ctx.fillRect(mx + 9, my - 8, 3, 13);
+        break;
+      case 'stone':
+        ctx.fillStyle = '#9E9E9E'; ctx.fillRect(mx - 8, my - 2, 16, 10);
+        ctx.fillStyle = '#BDBDBD'; ctx.fillRect(mx - 8, my - 2, 16, 3);
+        break;
+      case 'windmill':
+        ctx.fillStyle = '#D7CCC8'; ctx.fillRect(mx - 1, my - 8, 3, 14);
+        ctx.fillStyle = '#FAC75E'; ctx.beginPath(); ctx.arc(mx + 0.5, my - 8, 6, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = '#5D4037';
-        ctx.fillRect(x + 7, y + 4, 2, 10);
-        ctx.fillStyle = '#8D6E63';
-        ctx.fillRect(x + 1, y + 1, T - 2, 7);
-        ctx.fillStyle = '#FAF3E8';
-        ctx.fillRect(x + 2, y + 2, T - 4, 5);
-        ctx.fillStyle = '#4E342E';
-        ctx.fillRect(x + 4, y + 3, 3, 3);
+        ctx.fillRect(mx - 6, my - 6, 12, 2); ctx.fillRect(mx - 1, my - 12, 2, 12);
         break;
+      default:
+        ctx.fillStyle = '#FAC75E';
+        ctx.fillRect(mx - 5, my - 5, 10, 10);
     }
+    ctx.restore();
   },
 
-  paintRain(ctx, t) {
-    ctx.strokeStyle = 'rgba(120,180,230,0.5)';
-    ctx.lineWidth = 1;
-    const T = FARM.MAP_W * 16;
-    for (let i = 0; i < 14; i++) {
-      const x = ((i * 53 + t * 3) % T);
-      const y = ((i * 97 + t * 6) % (FARM.MAP_H * 16));
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-      ctx.lineTo(x + 2, y + 4);
-      ctx.stroke();
-    }
-  },
-
-  /* 点击命中：像素坐标 → 格子 */
-  hitTest(canvas, e) {
+  /* 点击：像素 → 日期格（返回 day 或 null） */
+  hitDay(canvas, e, year, month) {
     const rect = canvas.getBoundingClientRect();
-    const scale = rect.width / (FARM.MAP_W * this.tile);
-    const px = (e.clientX - rect.left) / scale;
-    const py = (e.clientY - rect.top) / scale;
-    return { x: Math.floor(px / this.tile), y: Math.floor(py / this.tile) };
+    const C = this.CELL;
+    const scale = rect.width / (7 * C);
+    const px = Math.floor((e.clientX - rect.left) / scale / C);
+    const py = Math.floor((e.clientY - rect.top) / scale / C);
+    const idx = py * 7 + px;
+    const wd = FARM.firstWeekday(year, month);
+    const day = idx - wd + 1;
+    if (day >= 1 && day <= FARM.daysInMonth(year, month)) return day;
+    return null;
   },
 };
 
-/* 有效学习时长追踪：有交互且页面可见时累计，每 3 分钟 +1 成长值 */
+/* 有效学习时长追踪：有交互且页面可见时累计，每 3 分钟 +1 月积分（幂等段，防挂机刷） */
 const FarmActivity = {
   lastActivity: Date.now(),
   _acc: 0,
@@ -525,7 +388,10 @@ const FarmActivity = {
       this._acc += 30;
       if (this._acc >= 180) {
         this._acc = 0;
-        try { await Farm.tickTime(180); } catch (e) {}
+        try {
+          const seg = Math.floor(Date.now() / 180000);
+          await Farm.addPoints('time', { key: 'seg:' + seg, pts: 1 });
+        } catch (e) {}
       }
     }, 30000);
   },

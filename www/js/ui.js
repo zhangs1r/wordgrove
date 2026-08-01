@@ -184,6 +184,203 @@ const UI = {
     if (r.growth) parts.push('成长 +' + r.growth);
     this.toast(label + '：' + parts.join(' · '));
   },
+
+  async renderGarden() {
+    const st = await Farm.load();
+    await Farm.ensureImgs();
+    this.el('gardenMonth').textContent = st.month + '月';
+    this.el('gardenPoints').textContent = st.points;
+    this.el('gardenStage').textContent = 'Lv' + (st.stage + 1);
+    const cta = this.el('gardenCta');
+    const today = new Date().getDate();
+    const planted = st.planted[today];
+    if (!planted) {
+      cta.innerHTML = `<span>今天还没学习——学一点，<b>${today} 号格</b>就会长出<b>${FARM.CROP_DEFS[FARM.monthCrop(st.month, today)].name}</b></span>`;
+    } else {
+      cta.innerHTML = `<span>今天已种下 <b>${FARM.CROP_DEFS[planted].name}</b> · 再学 <b>${Math.max(0, FARM.GROW_PER_STAGE * (st.stage + 1) - st.totalEarned)}</b> 积分全院升级</span>`;
+    }
+    this.paintGarden(st);
+    this.renderDashboards();
+  },
+  paintGarden(st) {
+    const cv = this.el('farmCanvas');
+    if (!cv) return;
+    const ctx = cv.getContext('2d');
+    const view = this._gardenView;
+    if (view) {
+      Farm.paintCalendar(ctx, st, { year: view.year, month: view.month, planted: view.planted, decor: view.decor, stage: view.stage, readonly: true });
+    } else {
+      Farm.paintCalendar(ctx, st);
+    }
+  },
+  renderDashboards() {
+    const p = Profile.load();
+    const streak = p.streak || 0;
+    const stats = this.el('dashStats');
+    if (stats) {
+      stats.innerHTML = `
+        <div class="stat-card"><div class="stat-num">${p.wordsLearned || 0}</div><div class="stat-label">累计学词</div></div>
+        <div class="stat-card"><div class="stat-num">${p.sessions || 0}</div><div class="stat-label">对话局数</div></div>
+        <div class="stat-card"><div class="stat-num">${streak}</div><div class="stat-label">连击天数</div></div>
+        <div class="stat-card"><div class="stat-num" id="dashBalance">…</div><div class="stat-label">API 余额</div></div>`;
+      this.loadBalance();
+    }
+    // 排行榜（原有逻辑：忘词/表达/常犯错）
+    const ranks = this.el('dashRanks');
+    if (ranks) {
+      const forget = Agent.forgetWords ? Agent.forgetWords() : [];
+      const exprs = (Settings.get('expressions', []) || []).slice(-5).reverse();
+      const errs = (Profile.load().mistakes || []).slice(0, 5);
+      ranks.innerHTML = `<div class="rank-col"><div class="rank-head">忘词最多</div>${forget.slice(0, 5).map(w => `<div class="rank-item" data-rw="${this.esc(w)}">${this.esc(w)}</div>`).join('') || '<div class="rank-item muted">暂无</div>'}</div>
+        <div class="rank-col"><div class="rank-head">常用表达</div>${exprs.map(e => `<div class="rank-item">${this.esc(e.en || '')}</div>`).join('') || '<div class="rank-item muted">暂无</div>'}</div>
+        <div class="rank-col"><div class="rank-head">常犯错</div>${errs.map(e => `<div class="rank-item">${this.esc(e || '')}</div>`).join('') || '<div class="rank-item muted">暂无</div>'}</div>`;
+      ranks.querySelectorAll('[data-rw]').forEach(b => b.addEventListener('click', () => this.showWordQuery(b.dataset.rw)));
+    }
+  },
+  bindFarm() {
+    const cv = this.el('farmCanvas');
+    if (cv) cv.addEventListener('click', (e) => this.gardenTap(e));
+    const shop = this.el('gardenShopBtn');
+    if (shop) shop.addEventListener('click', () => this.gardenOpenShop());
+    const hist = this.el('gardenHistBtn');
+    if (hist) hist.addEventListener('click', () => this.gardenOpenHistory());
+    const drawer = this.el('farmDrawer');
+    if (drawer) drawer.addEventListener('click', (e) => this.gardenDrawerClick(e));
+  },
+  gardenTap(e) {
+    const cv = this.el('farmCanvas');
+    const st = Farm._state;
+    if (!st) return;
+    if (this._gardenView) {
+      this.toast(this._gardenView.year + ' 年 ' + this._gardenView.month + ' 月（已封存）');
+      return;
+    }
+    const day = Farm.hitDay(cv, e, st.year, st.month);
+    if (day == null) return;
+    if (this._gardenMode) {
+      this.gardenPlace(day);
+      return;
+    }
+    this.gardenDayMenu(day);
+  },
+  async gardenPlace(day) {
+    const mode = this._gardenMode;
+    if (!mode) return;
+    const st = await Farm.load();
+    if (st.decor.some(x => x.day === day && x.type === mode.type)) {
+      this.toast('这天已经放了 ' + (FARM.DECOR[mode.type] ? FARM.DECOR[mode.type].name : ''));
+      return;
+    }
+    const r = await Farm.placeDecor(mode.type, day);
+    if (r.ok) {
+      this.toast('已放在 ' + day + ' 号');
+      this._gardenMode = null;
+      this.farmDrawerClose();
+      await this.renderGarden();
+    } else {
+      this.toast(r.msg || '无法放置');
+    }
+  },
+  async gardenDayMenu(day) {
+    const st = await Farm.load();
+    const d = this.el('farmDrawer');
+    const crop = st.planted[day];
+    const decor = st.decor.filter(x => x.day === day);
+    let html = `<div class="fd-head">${day} 号</div><div class="fd-list">`;
+    if (crop && FARM.CROP_DEFS[crop]) {
+      const def = FARM.CROP_DEFS[crop];
+      html += `<div class="fd-item"><span class="fd-name">${def.name} · ${st.stage >= 2 ? '已成熟' : '阶段 ' + (st.stage + 1) + '/3'}</span></div>`;
+    } else {
+      html += `<div class="fd-item"><span class="fd-name">${day} 号还没学——今天学习就能种下 ${FARM.CROP_DEFS[FARM.monthCrop(st.month, day)].name}</span></div>`;
+    }
+    for (const de of decor) {
+      const dn = FARM.DECOR[de.type] ? FARM.DECOR[de.type].name : (FARM.MONTH_DECOR[st.month] && FARM.MONTH_DECOR[st.month][de.type] ? FARM.MONTH_DECOR[st.month][de.type].name : de.type);
+      html += `<div class="fd-item"><span class="fd-name">${dn}</span><button class="btn btn-ghost btn-sm" data-rmdecor="${day}:${de.type}">收起</button></div>`;
+    }
+    if (!decor.length) html += `<div class="fd-item"><span class="fd-name">装饰：商店里买当月装饰，点这天摆放</span></div>`;
+    html += `<button class="btn btn-ghost" data-act="close">关闭</button></div>`;
+    d.innerHTML = html;
+    d.classList.remove('hidden');
+  },
+  async gardenOpenShop() {
+    const st = await Farm.load();
+    const d = this.el('farmDrawer');
+    const common = Object.keys(FARM.DECOR).map(k => {
+      const dc = FARM.DECOR[k];
+      return `<div class="fd-item"><span class="fd-name">${dc.name} · ${dc.price} 积分</span><button class="btn btn-primary btn-sm" data-buydecor="${k}">买</button></div>`;
+    }).join('');
+    const monthDefs = FARM.MONTH_DECOR[st.month] || {};
+    const month = Object.keys(monthDefs).map(k => {
+      const dc = monthDefs[k];
+      return `<div class="fd-item"><span class="fd-name">${dc.name} · 当月限定</span><button class="btn btn-primary btn-sm" data-buydecor="${k}">买</button></div>`;
+    }).join('');
+    d.innerHTML = `<div class="fd-head">商店（本月积分 ${st.points}） <button class="icon-btn-sm" data-act="close">✕</button></div>
+      <div class="fd-scroll">
+        <div class="fd-sec">通用装饰</div>${common}
+        <div class="fd-sec">${st.month} 月限定（下月下架）</div>${month || '<div class="fd-item"><span class="fd-name">本月限定已售罄</span></div>'}
+      </div>`;
+    d.classList.remove('hidden');
+  },
+  async gardenOpenHistory() {
+    const st = await Farm.load();
+    const d = this.el('farmDrawer');
+    const hist = st.history || [];
+    if (!hist.length) {
+      d.innerHTML = `<div class="fd-head">历史院子 <button class="icon-btn-sm" data-act="close">✕</button></div>
+        <div class="fd-scroll"><div class="fd-item"><span class="fd-name">还没有封存的院子——月底自动封存</span></div></div>`;
+      d.classList.remove('hidden');
+      return;
+    }
+    const rows = hist.map((h, i) => `<div class="fd-item"><span class="fd-name">${h.year} 年 ${h.month} 月 · ${Object.keys(h.planted || {}).length} 天有学习</span><button class="btn btn-primary btn-sm" data-viewhist="${i}">查看</button></div>`).join('');
+    d.innerHTML = `<div class="fd-head">历史院子（${hist.length}） <button class="icon-btn-sm" data-act="close">✕</button></div>
+      <div class="fd-scroll">${rows}<div class="fd-item"><span class="fd-name">点查看回到当前月</span><button class="btn btn-ghost btn-sm" data-viewhist="back">返回</button></div></div>`;
+    d.classList.remove('hidden');
+  },
+  async gardenDrawerClick(e) {
+    const btn = e.target.closest('[data-act],[data-buydecor],[data-rmdecor],[data-viewhist]');
+    if (!btn) return;
+    const act = btn.dataset.act;
+    if (act === 'close') { this.farmDrawerClose(); return; }
+    if (btn.dataset.buydecor) {
+      const type = btn.dataset.buydecor;
+      const r = await Farm.buyDecor(type);
+      if (!r.ok) { this.toast(r.msg || '购买失败'); return; }
+      this._gardenMode = { type };
+      this.toast('已购买，点日历上的某天摆放');
+      this.farmDrawerClose();
+      await this.renderGarden();
+      return;
+    }
+    if (btn.dataset.rmdecor) {
+      const [day, type] = btn.dataset.rmdecor.split(':');
+      await Farm.removeDecor(parseInt(day, 10), type);
+      await this.renderGarden();
+      await this.gardenDayMenu(parseInt(day, 10));
+      return;
+    }
+    if (btn.dataset.viewhist) {
+      const v = btn.dataset.viewhist;
+      if (v === 'back') { this._gardenView = null; this.farmDrawerClose(); await this.renderGarden(); return; }
+      const st = await Farm.load();
+      const h = (st.history || [])[parseInt(v, 10)];
+      if (h) {
+        this._gardenView = h;
+        this.farmDrawerClose();
+        await this.renderGarden();
+      }
+      return;
+    }
+  },
+  farmDrawerClose() {
+    const d = this.el('farmDrawer');
+    if (d) d.classList.add('hidden');
+  },
+
+  /* 奖励提示（轻量 toast） */
+  rewardToast(r, label) {
+    if (!r || !r.pts) return;
+    this.toast(label + '：+' + r.pts + ' 积分');
+  },
   /* 对话奖励：会话内用户英文累计词数达到 24/48/72 档各发一次（每日最多 3 次） */
   async chatRewardTick() {
     try {
@@ -192,245 +389,19 @@ const UI = {
         .reduce((n, m) => n + ((m.content.match(/[a-zA-Z]+/g) || []).length), 0);
       for (let i = 0; i < 3; i++) {
         if (total >= 24 * (i + 1)) {
-          const r = await Farm.grant('chat', { key: this.state.convId + ':t' + i, acorns: 3, growth: 6, maxDay: 3 });
+          const r = await Farm.addPoints('chat', { key: this.state.convId + ':t' + i, pts: 3, maxDay: 3 });
           if (r) this.rewardToast(r, '对话');
         }
       }
     } catch (e) {}
   },
 
-  /* ============ 言木小院（v0.32） ============ */
-  _farmMode: null,   // 放置模式 {type, kind}
-  async renderFarm() {
-    const state = await Farm.load();
-    await Farm.growAll();
-    this.el('farmLevel').textContent = state.level;
-    this.el('farmAcorns').textContent = state.acorns;
-    const wMap = { sun: '晴', rain: '雨', cloud: '阴', breeze: '晚风' };
-    this.el('farmWeather').textContent = wMap[FARM.weatherFor(FARM.dayKey(new Date()))] || '晴';
-    const cta = this.el('farmCta');
-    if (state.firstTime) cta.innerHTML = `<span>开垦包已送达：32 木果 + 4 块耕地 + 1 株免费幼苗</span>`;
-    else cta.innerHTML = `<span>学得越多，院子越美 · 今日已得 <b>${state.dayAcorns}</b> 木果</span>`;
-    this.paintFarm();
-    this.renderFarmHarvests();
-  },
-  paintFarm() {
-    const cv = this.el('farmCanvas');
-    if (!cv) return;
-    const ctx = cv.getContext('2d');
-    const state = Farm._state || Farm.defaultState();
-    const t = Math.floor(Date.now() / 100);
-    Farm.paint(ctx, state, FARM.weatherFor(FARM.dayKey(new Date())), t);
-  },
-  renderFarmHarvests() {
-    const state = Farm._state || Farm.defaultState();
-    const hs = Object.keys(state.harvests || {});
-    const wrap = this.el('farmHarvests');
-    if (!wrap) return;
-    if (!hs.length) { wrap.classList.add('hidden'); wrap.innerHTML = ''; return; }
-    wrap.classList.remove('hidden');
-    wrap.innerHTML = hs.map(k => `<span class="hv-chip">${FARM.CROPS[k] ? FARM.CROPS[k].name : k} ×${state.harvests[k]}</span>`).join('');
-  },
-  bindFarm() {
-    const cv = this.el('farmCanvas');
-    if (cv) cv.addEventListener('click', (e) => this.farmTap(e));
-    const shop = this.el('farmShopBtn');
-    if (shop) shop.addEventListener('click', () => this.farmOpenShop());
-    const back = this.el('farmBackBtn');
-    if (back) back.addEventListener('click', () => this.farmOpenBackpack());
-    const drawer = this.el('farmDrawer');
-    if (drawer) drawer.addEventListener('click', (e) => this.farmDrawerClick(e));
-  },
-  farmTap(e) {
-    const cv = this.el('farmCanvas');
-    const g = Farm.hitTest(cv, e);
-    if (this._farmMode) {
-      this.farmPlace(g.x, g.y);
-      return;
-    }
-    this.farmCellMenu(g.x, g.y);
-  },
-  async farmPlace(x, y) {
-    const mode = this._farmMode;
-    const state = await Farm.load();
-    if (!state.plots.some(p => p.x === x && p.y === y)) {
-      this.toast('这里不是耕地');
-      return;
-    }
-    let r;
-    if (mode.type === 'crop') r = await Farm.plant('crop', mode.kind, x, y);
-    else if (mode.type === 'tree') r = await Farm.plant('tree', mode.kind, x, y);
-    else r = await Farm.placeDecor(mode.type, x, y);
-    if (r.ok) {
-      // 从背包移除一个
-      const bi = state.backpack.findIndex(b => b.type === mode.type && b.kind === mode.kind);
-      if (bi !== -1) { state.backpack.splice(bi, 1); await Farm.save(); }
-      this.toast('已放置 ' + (FARM.CROPS[mode.kind] ? FARM.CROPS[mode.kind].name : FARM.TREES[mode.kind] ? FARM.TREES[mode.kind].name : FARM.DECOR[mode.kind] ? FARM.DECOR[mode.kind].name : ''));
-      this._farmMode = null;
-      this.farmDrawerClose();
-      await this.renderFarm();
-    } else {
-      this.toast(r.msg || '无法放置');
-    }
-  },
-  async farmCellMenu(x, y) {
-    const state = await Farm.load();
-    const crop = state.crops.find(c => c.x === x && c.y === y);
-    const tree = state.trees.find(t => t.x === x && t.y === y);
-    const decor = state.decor.find(d => d.x === x && d.y === y);
-    const plot = state.plots.find(p => p.x === x && p.y === y);
-    const d = this.el('farmDrawer');
-    if (crop) {
-      const def = FARM.CROPS[crop.kind];
-      const mature = crop.stage >= def.stages - 1;
-      const need = Math.max(0, Math.ceil((crop.planted + def.growth - state.growth)));
-      d.innerHTML = `<div class="fd-head">${def.name}${mature ? ' · 已成熟' : ''}</div>
-        <div class="fd-list">
-          <div class="fd-item"><span class="fd-name">阶段 ${crop.stage + 1}/${def.stages}${mature ? '' : ` · 再得 ${need} 成长值成熟`}</span></div>
-          ${mature ? `<button class="btn btn-primary" data-act="harvest" data-x="${x}" data-y="${y}">收获</button>` : ''}
-          <button class="btn btn-ghost" data-act="remove" data-x="${x}" data-y="${y}">移除</button>
-          <button class="btn btn-ghost" data-act="close">关闭</button>
-        </div>`;
-      d.classList.remove('hidden');
-    } else if (tree) {
-      const def = FARM.TREES[tree.kind];
-      const mature = tree.stage >= def.stages - 1;
-      const need = Math.max(0, Math.ceil((tree.planted + def.growth - state.growth)));
-      d.innerHTML = `<div class="fd-head">${def.name}${mature ? ' · 已成树' : ''}</div>
-        <div class="fd-list">
-          <div class="fd-item"><span class="fd-name">阶段 ${tree.stage + 1}/${def.stages}${mature ? '' : ` · 再得 ${need} 成长值成树`}</span></div>
-          <button class="btn btn-ghost" data-act="remove" data-x="${x}" data-y="${y}">移除</button>
-          <button class="btn btn-ghost" data-act="close">关闭</button>
-        </div>`;
-      d.classList.remove('hidden');
-    } else if (decor) {
-      d.innerHTML = `<div class="fd-head">${FARM.DECOR[decor.type] ? FARM.DECOR[decor.type].name : decor.type}</div>
-        <div class="fd-list">
-          <button class="btn btn-ghost" data-act="remove" data-x="${x}" data-y="${y}">移除</button>
-          <button class="btn btn-ghost" data-act="close">关闭</button>
-        </div>`;
-      d.classList.remove('hidden');
-    } else if (plot) {
-      d.innerHTML = `<div class="fd-head">耕地</div>
-        <div class="fd-list">
-          <div class="fd-item"><span class="fd-name">空着 · 去商店买种子</span></div>
-          <button class="btn btn-primary" data-act="shop">去商店</button>
-          <button class="btn btn-ghost" data-act="close">关闭</button>
-        </div>`;
-      d.classList.remove('hidden');
-    } else if (state.plots.length < FARM.PLOTS.length && !state.decor.some(dd => dd.x === x && dd.y === y)) {
-      // 可扩展地块位置提示（简化：点空地提示）
-      d.innerHTML = `<div class="fd-head">空地</div>
-        <div class="fd-list">
-          <div class="fd-item"><span class="fd-name">这里可以放装饰（商店→装饰）</span></div>
-          <button class="btn btn-ghost" data-act="close">关闭</button>
-        </div>`;
-      d.classList.remove('hidden');
-    } else {
-      this.farmDrawerClose();
-    }
-  },
-  async farmOpenShop() {
-    const state = await Farm.load();
-    const d = this.el('farmDrawer');
-    const cropRows = Object.keys(FARM.CROPS).map(k => {
-      const c = FARM.CROPS[k];
-      return `<div class="fd-item"><span class="fd-name">${c.name} · ${c.price} 木果</span><button class="btn btn-primary btn-sm" data-buy="crop:${k}">买</button></div>`;
-    }).join('');
-    const treeRows = Object.keys(FARM.TREES).map(k => {
-      const t = FARM.TREES[k];
-      return `<div class="fd-item"><span class="fd-name">${t.name} · ${t.price} 木果</span><button class="btn btn-primary btn-sm" data-buy="tree:${k}">买</button></div>`;
-    }).join('');
-    const decorRows = Object.keys(FARM.DECOR).filter(k => !FARM.DECOR[k].special).map(k => {
-      const dc = FARM.DECOR[k];
-      const locked = (dc.level || 0) > state.level;
-      return `<div class="fd-item"><span class="fd-name">${dc.name} · ${dc.price} 木果${locked ? ' · Lv.' + dc.level : ''}</span><button class="btn btn-primary btn-sm" data-buy="decor:${k}" ${locked ? 'disabled' : ''}>买</button></div>`;
-    }).join('');
-    const landRow = `<div class="fd-item"><span class="fd-name">新增耕地（${state.plots.length}/${FARM.PLOTS.length}）</span><button class="btn btn-primary btn-sm" data-buy="land">扩</button></div>`;
-    d.innerHTML = `<div class="fd-head">商店 <button class="icon-btn-sm" data-act="close">✕</button></div>
-      <div class="fd-scroll">
-        <div class="fd-sec">种子（种在耕地上，学习让它成长）</div>${cropRows}
-        <div class="fd-sec">树苗</div>${treeRows}
-        <div class="fd-sec">装饰（放空地）</div>${decorRows}
-        <div class="fd-sec">地块</div>${landRow}
-      </div>`;
-    d.classList.remove('hidden');
-  },
-  async farmOpenBackpack() {
-    const state = await Farm.load();
-    const d = this.el('farmDrawer');
-    const bp = state.backpack || [];
-    if (!bp.length) {
-      d.innerHTML = `<div class="fd-head">背包 <button class="icon-btn-sm" data-act="close">✕</button></div>
-        <div class="fd-scroll"><div class="fd-item"><span class="fd-name">空的 · 去商店买点东西</span></div></div>`;
-      d.classList.remove('hidden');
-      return;
-    }
-    const rows = bp.map((b, i) => {
-      const name = FARM.CROPS[b.kind] ? FARM.CROPS[b.kind].name : FARM.TREES[b.kind] ? FARM.TREES[b.kind].name : FARM.DECOR[b.kind] ? FARM.DECOR[b.kind].name : b.kind;
-      const hint = b.type === 'decor' ? '点空地放置' : '点耕地种植';
-      return `<div class="fd-item"><span class="fd-name">${name}（${hint}）</span><button class="btn btn-primary btn-sm" data-place="${i}">放置</button></div>`;
-    }).join('');
-    d.innerHTML = `<div class="fd-head">背包 <button class="icon-btn-sm" data-act="close">✕</button></div>
-      <div class="fd-scroll">${rows}</div>`;
-    d.classList.remove('hidden');
-  },
-  async farmDrawerClick(e) {
-    const btn = e.target.closest('[data-act],[data-buy],[data-place]');
-    if (!btn) return;
-    const d = this.el('farmDrawer');
-    const act = btn.dataset.act;
-    if (act === 'close') { this.farmDrawerClose(); return; }
-    if (act === 'shop') { this.farmOpenShop(); return; }
-    if (act === 'harvest') {
-      const r = await Farm.harvest(parseInt(btn.dataset.x, 10), parseInt(btn.dataset.y, 10));
-      if (r.ok) { this.toast('收获 ' + FARM.CROPS[r.harvest].name + '（图鉴 +1）'); this.farmDrawerClose(); await this.renderFarm(); }
-      else this.toast(r.msg || '还不能收获');
-      return;
-    }
-    if (act === 'remove') {
-      const r = await Farm.removeAt(parseInt(btn.dataset.x, 10), parseInt(btn.dataset.y, 10));
-      if (r.ok) { this.farmDrawerClose(); await this.renderFarm(); }
-      else this.toast(r.msg || '移除失败');
-      return;
-    }
-    if (btn.dataset.buy) {
-      const [type, kind] = btn.dataset.buy.split(':');
-      if (type === 'land') {
-        const r = await Farm.expandPlot();
-        if (r.ok) { this.toast('新开垦一块耕地'); this.farmDrawerClose(); await this.renderFarm(); }
-        else this.toast(r.msg || '无法开垦');
-        return;
-      }
-      const r = await Farm.buy(type, kind);
-      if (!r.ok) { this.toast(r.msg || '购买失败'); return; }
-      // 放入背包
-      const state = await Farm.load();
-      if (!state.backpack) state.backpack = [];
-      state.backpack.push({ type, kind });
-      await Farm.save();
-      this.toast('已放入背包');
-      await this.renderFarm();
-      await this.farmOpenShop();
-      return;
-    }
-    if (btn.dataset.place !== undefined) {
-      const state = await Farm.load();
-      const item = state.backpack[parseInt(btn.dataset.place, 10)];
-      if (!item) return;
-      this.farmDrawerClose(); // 先关抽屉（会清 _farmMode）
-      this._farmMode = { type: item.type, kind: item.kind }; // 再进入放置模式
-      this.toast(item.type === 'decor' ? '点地图上的空地放置' : '点地图上的耕地种植');
-    }
-  },
-  farmDrawerClose() {
-    const d = this.el('farmDrawer');
-    if (d) d.classList.add('hidden');
-    this._farmMode = null;
-  },
+  /* ============ 言木小院 v0.33（月历花园） ============ */
+  _gardenMode: null,   // 放置模式 {type}
+  _gardenView: null,   // 历史查看 {year, month, planted, decor, stage}
 
   async renderToday() {
-    await this.renderFarm();
+    await this.renderGarden();
     const p = Profile.load();
     const streak = p.streak || 0;
 
@@ -970,7 +941,7 @@ const UI = {
     list.push({ en: better, at: Date.now() });
     Settings.set('expressions', list.slice(-50));
     try {
-      const r = await Farm.grant('expr', { key: better.toLowerCase(), acorns: 2, growth: 4, maxDay: 3 });
+      const r = await Farm.addPoints('expr', { key: better.toLowerCase(), pts: 2, maxDay: 3 });
       if (r) this.rewardToast(r, '表达');
     } catch (e) {}
     box.innerHTML = `<div class="sg-done">✓ 已记入表达积累：${this.esc(better)}</div>`;
@@ -1062,7 +1033,7 @@ const UI = {
         this.toast('复盘完成');
         try {
           const rp = !!this.state.rpMode;
-          const r = await Farm.grant('review', { key: this.state.convId + ':' + (this.state.chatHistory.length || this.state.rpHistory.length || 0), acorns: rp ? 10 : 8, growth: rp ? 20 : 16, maxDay: 2 });
+          const r = await Farm.addPoints('review', { key: this.state.convId + ':' + (this.state.chatHistory.length || this.state.rpHistory.length || 0), pts: rp ? 8 : 6, maxDay: 2 });
           if (r) this.rewardToast(r, '复盘');
         } catch (e) {}
       }
@@ -1482,7 +1453,7 @@ const UI = {
       const inSet = !!exist;
       if (!inSet) {
         try {
-          const r = await Farm.grant('word', { key: word.toLowerCase() + ':' + FARM.dayKey(new Date()), acorns: 2, growth: 2, maxDay: 10 });
+          const r = await Farm.addPoints('word', { key: word.toLowerCase() + ':' + FARM.dayKey(new Date()), pts: 2, maxDay: 10 });
           if (r) this.rewardToast(r, '查词');
         } catch (e) {}
       }
@@ -2067,7 +2038,7 @@ const UI = {
       if (!isContinue && userMsg && (userMsg.match(/[a-zA-Z]+/g) || []).length >= 8) {
         try {
           const roundN = this.state.rpHistory.filter(m => m.role === 'user').length;
-          const r = await Farm.grant('rp', { key: this.state.convId + ':r' + roundN, acorns: 3, growth: 6, maxDay: 3 });
+          const r = await Farm.addPoints('rp', { key: this.state.convId + ':r' + roundN, pts: 3, maxDay: 3 });
           if (r) this.rewardToast(r, '剧场');
         } catch (e) {}
       }
@@ -2227,7 +2198,7 @@ const UI = {
 
   exportData() {
     Words.list().then(async words => {
-      const farmState = await Farm.txGet('state');
+      const farmState = await Farm.txGet('garden');
       const data = { words, profile: Profile.load(), settings: {
         apiBase: Settings.get('apiBase', ''), chatModel: Settings.get('chatModel', ''), buildModel: Settings.get('buildModel', ''),
       }, farm: farmState || undefined };
@@ -2256,7 +2227,7 @@ const UI = {
         if (data.profile) Profile.save(data.profile);
         // 农场状态（独立替换，不合并格子）
         if (data.farm && data.farm.id) {
-          data.farm.id = 'state';
+          data.farm.id = 'garden';
           Farm._state = data.farm;
           await Farm.save();
         }

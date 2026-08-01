@@ -21,25 +21,23 @@
 
 <main id="main">
 
-  <!-- ======== 今日小院 ======== -->
+  <!-- ======== 今日小院（月历花园） ======== -->
   <section id="tab-today" class="tab-page active">
     <div class="farm-head">
       <div class="farm-h-left">
-        <div class="farm-title">言木小院</div>
-        <div class="farm-sub">家园 Lv.<span id="farmLevel">1</span> · <span id="farmWeather">晴</span></div>
+        <div class="farm-title">言木小院 · <span id="gardenMonth">8月</span></div>
+        <div class="farm-sub">本月积分 <b id="gardenPoints">0</b> · 作物 <span id="gardenStage">Lv1</span></div>
       </div>
       <div class="farm-h-right">
-        <span class="farm-acorn" id="farmAcorns">0</span>
-        <button id="farmShopBtn" class="btn btn-ghost btn-sm">商店</button>
-        <button id="farmBackBtn" class="btn btn-ghost btn-sm">背包</button>
+        <button id="gardenShopBtn" class="btn btn-ghost btn-sm">商店</button>
+        <button id="gardenHistBtn" class="btn btn-ghost btn-sm">历史院子</button>
       </div>
     </div>
-    <div id="farmCta" class="farm-cta"></div>
+    <div id="gardenCta" class="farm-cta"></div>
     <div class="farm-canvas-wrap">
-      <canvas id="farmCanvas" width="320" height="224"></canvas>
+      <canvas id="farmCanvas" width="336" height="288"></canvas>
     </div>
     <div id="farmDrawer" class="farm-drawer hidden"></div>
-    <div id="farmHarvests" class="farm-harvests hidden"></div>
     <div id="dashStats" class="dash-stats"></div>
     <div id="dashRanks" class="dash-ranks"></div>
   </section>

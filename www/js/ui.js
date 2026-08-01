@@ -592,7 +592,7 @@ const UI = {
     } catch (e) {
       typing.remove();
       const host = API.base.includes('deepseek.com') ? 'deepseek' : API.base.includes('opencode.ai') ? 'opencode' : API.base;
-      const label = '⚠️ [' + scene.name + ' / ' + Settings.get('chatModel', 'deepseek-v4-flash') + ' @' + host + '] ' + (e.message || '出错了');
+      const label = '⚠️ [' + scene.name + ' / ' + Settings.get('chatModel', 'deepseek-chat') + ' @' + host + '] ' + (e.message || '出错了');
       const div = this.appendMsg('assistant', label);
       const actions = div.querySelector('.msg-actions');
       if (actions) {
@@ -1011,7 +1011,7 @@ const UI = {
       ${w.example ? `<div class="wd-ex">${this.esc(w.example)}</div>` : ''}
       ${w.exampleCn ? `<div class="wd-excn">${this.esc(w.exampleCn)}</div>` : ''}
       ${rows}
-      <div class="wd-meta">来源：${this.esc(src)} · ${this.fmtDate(w.created)}${(w.forgot || 0) > 0 ? ` · 忘了 ${w.forgot} 次` : ''}</div>
+      <div class="wd-meta">来源：${this.esc(src)} · ${this.fmtDate(w.created)}${(w.forgot || 0) > 0 ? ` · 忘了 ${w.forgot} 次` : ''}${(w.peak || w.forgot || 0) > 1 ? ` · 历史最高忘 ${w.peak || w.forgot} 次` : ''}</div>
       ${w.ctx ? `<div class="si-ctx">收藏场景：${this.esc(w.ctx)}</div>` : ''}
       ${this.tagEditorHtml(w.tags)}
       <button class="btn btn-ghost btn-sm btn-block" id="wdEnrich" style="margin-top:10px">${Icons.search} 补全/刷新详情</button>
@@ -1178,10 +1178,11 @@ const UI = {
       const exist = existing.find(w => (w.word || '').toLowerCase() === word.toLowerCase());
       const inSet = !!exist;
       if (inSet) {
-        // 又忘了 → 合并本次上下文 + 忘记次数 +1
+        // 又忘了 → 合并本次上下文 + 忘记次数 +1 + 历史最高值更新
         const ctxNow = this.currentCtx();
         const ctxNew = exist.ctx ? exist.ctx + '\n▸ 又忘了（' + this.fmtDate(Date.now()) + '）：' + ctxNow : ctxNow;
-        await Words.update(exist.id, { ctx: ctxNew.slice(0, 600), forgot: (exist.forgot || 0) + 1 });
+        const nextForgot = (exist.forgot || 0) + 1;
+        await Words.update(exist.id, { ctx: ctxNew.slice(0, 600), forgot: nextForgot, peak: Math.max(exist.peak || exist.forgot || 0, nextForgot) });
         this.refreshWordsSet();
       } else {
         await Words.add({
@@ -1301,7 +1302,7 @@ const UI = {
   bindSettings() {
     // API 提供商预设（只用 DeepSeek 官方，国内直连）
     const PROVIDERS = {
-      deepseek: { base: 'https://api.deepseek.com/v1/chat/completions', models: ['deepseek-v4-flash', 'deepseek-v4-pro'] },
+      deepseek: { base: 'https://api.deepseek.com/v1/chat/completions', models: ['deepseek-chat', 'deepseek-v4-pro'] },
     };
     const fillModels = (provider) => {
       const chat = this.el('setChatModel');

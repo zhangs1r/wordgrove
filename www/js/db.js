@@ -87,6 +87,7 @@ const Words = {
       source: w.source || 'manual', created: now,
       ctx: w.ctx || '',
       forgot: w.forgot || 0,
+      peak: w.peak || w.forgot || 0,
       tags: w.tags || [],
       root: w.root || '', collocations: w.collocations || '', synonyms: w.synonyms || '', antonyms: w.antonyms || '', note: w.note || '',
       srs: { due: now, interval: 0, reps: 0, lapses: 0, ease: 2.5 },

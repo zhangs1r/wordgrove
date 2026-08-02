@@ -45,19 +45,21 @@ const FARM = {
     windmill: { name: '风车', price: 60 },
   },
   // 月度限定装饰（AI 生成 sprite；v0.36 起每月 2 个，按原规划表）
+  // 🔴 v0.43 积分设计：限定装饰 price=150（比普通装饰 8~60 贵，体现稀缺）；
+  //   每日上限 40 分 → 全勤月 ≈1200 分 = 买完 2 个限定(300) + 剩 900 买普通装饰（可买 15~100 个）
   MONTH_DECOR: {
-    1:  { lantern: { name: '灯笼' }, snowman: { name: '雪人' } },
-    2:  { flower_lamp: { name: '花灯' }, heart_ornament: { name: '桃心摆件' } },
-    3:  { kite: { name: '风筝' }, swing: { name: '秋千' } },
-    4:  { sakura_umbrella: { name: '樱花伞' }, picnic_mat: { name: '野餐垫' } },
-    5:  { flower_wreath: { name: '花环' }, watering_can: { name: '洒水壶' } },
-    6:  { firefly_jar: { name: '萤火虫罐' }, wind_chime: { name: '风铃' } },
-    7:  { seashell: { name: '贝壳' }, beach_umbrella: { name: '沙滩伞' } },
-    8:  { star_lamp: { name: '星星灯' }, cicada_tree: { name: '蝉鸣树' } },
-    9:  { scarecrow: { name: '稻草人' }, leaf_pile: { name: '落叶堆' } },
-    10: { pumpkin_lantern: { name: '南瓜灯' }, spider_web: { name: '蛛网' } },
-    11: { campfire: { name: '篝火' }, ginkgo_fan: { name: '银杏扇' } },
-    12: { santa_sock: { name: '圣诞袜' }, fairy_lights: { name: '彩灯' } },
+    1:  { lantern: { name: '灯笼', price: 150 }, snowman: { name: '雪人', price: 150 } },
+    2:  { flower_lamp: { name: '花灯', price: 150 }, heart_ornament: { name: '桃心摆件', price: 150 } },
+    3:  { kite: { name: '风筝', price: 150 }, swing: { name: '秋千', price: 150 } },
+    4:  { sakura_umbrella: { name: '樱花伞', price: 150 }, picnic_mat: { name: '野餐垫', price: 150 } },
+    5:  { flower_wreath: { name: '花环', price: 150 }, watering_can: { name: '洒水壶', price: 150 } },
+    6:  { firefly_jar: { name: '萤火虫罐', price: 150 }, wind_chime: { name: '风铃', price: 150 } },
+    7:  { seashell: { name: '贝壳', price: 150 }, beach_umbrella: { name: '沙滩伞', price: 150 } },
+    8:  { star_lamp: { name: '星星灯', price: 150 }, cicada_tree: { name: '蝉鸣树', price: 150 } },
+    9:  { scarecrow: { name: '稻草人', price: 150 }, leaf_pile: { name: '落叶堆', price: 150 } },
+    10: { pumpkin_lantern: { name: '南瓜灯', price: 150 }, spider_web: { name: '蛛网', price: 150 } },
+    11: { campfire: { name: '篝火', price: 150 }, ginkgo_fan: { name: '银杏扇', price: 150 } },
+    12: { santa_sock: { name: '圣诞袜', price: 150 }, fairy_lights: { name: '彩灯', price: 150 } },
   },
 
   dayKey(d) { return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); },
@@ -69,8 +71,11 @@ const FARM = {
   },
   seasonOf(month) { return this.MONTH_SEASON[month - 1]; },
   monthCrop(month, day) {
+    // 🔴 v0.43 随机种植：每天从当月季节作物池随机选一种（不用固定轮换）；
+    //   用 day 做种子伪随机，保证同一天稳定（重进不换）
     const pool = this.SEASON_CROPS[this.seasonOf(month)];
-    return pool[(day - 1) % pool.length];
+    const seed = (month * 31 + day) * 2654435761 % 100000;
+    return pool[seed % pool.length];
   },
   daysInMonth(year, month) { return new Date(year, month, 0).getDate(); },
   firstWeekday(year, month) { return new Date(year, month - 1, 1).getDay(); }, // 0=周日
@@ -110,6 +115,10 @@ const Farm = {
       // 🔴 v0.40 修复：decor 必须深拷贝（否则历史月与当前月共享同一数组，当前月摆装饰历史也跟着变）
       st.history.unshift({ year: st.year, month: st.month, planted: st.planted, decor: JSON.parse(JSON.stringify(st.decor || [])), owned: (st.owned || []).slice(), stage: st.stage, totalEarned: st.totalEarned, sealedAt: Date.now() });
       const fresh = this.defaultState();
+      // 🔴 v0.43 积分可累积：当月没花完的积分结转到下个月（可花可不花）
+      fresh.points = st.points || 0;
+      // 🔴 v0.43 已购装饰全局共用：跨月保留 owned（买的装饰永久属于你）
+      fresh.owned = (st.owned || []).slice();
       fresh.history = st.history.slice(0, 36); // 保留 3 年
       this._state = fresh;
       await this.save();
@@ -204,6 +213,10 @@ const Farm = {
             // 🔴 v0.40 修复：decor 深拷贝（模拟整月封存路径同样问题）
             st.history.unshift({ year: st.year, month: st.month, planted: st.planted, decor: JSON.parse(JSON.stringify(st.decor || [])), stage: st.stage, totalEarned: st.totalEarned, sealedAt: Date.now() });
             const fresh = this.defaultState();
+            // 🔴 v0.43 积分可累积：当月没花完的积分结转到下个月（可花可不花）
+            fresh.points = st.points || 0;
+            // 🔴 v0.43 已购装饰全局共用：跨月保留 owned（买的装饰永久属于你）
+            fresh.owned = (st.owned || []).slice();
             fresh.history = st.history.slice(0, 36);
             st = fresh;
           }

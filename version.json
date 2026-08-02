@@ -1,1 +1,1 @@
-{"version": "0.42", "notes": "修复新摆装饰无id无法旋转/缩放/删除且拖动会复制的问题；装饰图层顺序（置顶/置底按钮，后摆在上层）；修复RP输出JSON截断显示原始结构；选完选项旧按钮消失；删除会话彻底清空不再复活；句子本同句不重复加入且翻译失败不保存", "apk": "EnglishApp-v0.42.apk", "url": "https://github.com/zhangs1r/wordgrove/releases/download/v0.42/EnglishApp-v0.42.apk"}
+{"version": "0.43", "notes": "图层按钮位置修复；回滚/重新生成按钮改到我的输入上（旧输入回滚、最新输入重新生成、AI消息无操作钮）；幽灵会话修复；RP话题切换不再提示退出；提示词加世界观一致性；积分系统：跨月累积可花可不花+已购装饰跨月保留+月度限定150分+植物随机种植", "apk": "EnglishApp-v0.43.apk", "url": "https://github.com/zhangs1r/wordgrove/releases/download/v0.43/EnglishApp-v0.43.apk"}

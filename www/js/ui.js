@@ -1037,10 +1037,18 @@ const UI = {
     this.closeConvModal();
   },
   switchConv(id) {
-    if (this.state.rpMode) this.exitRp(); // 切会话前退出角色扮演，避免状态错乱
+    // 🔴 v0.43：切到 RP 话题时不再提示"退出角色扮演"——只有切到普通会话才真正退出
+    const target = this.listConversations().find(c => c.id === id);
+    if (!target) return;
+    if (this.state.rpMode) {
+      if (target.isRp) {
+        this.saveChatState(); // 保存当前 RP 绘画，然后直接覆盖为新的 RP 会话
+      } else {
+        this.exitRp(); // 切到普通会话才退出
+      }
+    }
     if (this.state.chatHistory.length) this.saveConversation(this.currentConv());
-    const conv = this.listConversations().find(c => c.id === id);
-    if (!conv) return;
+    const conv = target;
     if (conv.isRp) {
       // 恢复剧场绘画
       const w = this.listWorlds().find(x => x.id === conv.worldId) || null;
@@ -1077,13 +1085,18 @@ const UI = {
     this.el('convTitle').textContent = this.state.convTitle || '新会话';
   },
   renderConvList() {
-    const list = this.listConversations().sort((a, b) => (b.updated || 0) - (a.updated || 0));
+    // 🔴 v0.43：幽灵会话修复——旧数据可能有无 id 的会话（点击/删除都匹配不上），先补 id
+    const list = this.listConversations();
+    let fixed = false;
+    list.forEach(c => { if (!c.id) { c.id = 'c_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7); fixed = true; } });
+    if (fixed) Settings.set('conversations', list);
+    const sorted = [...list].sort((a, b) => (b.updated || 0) - (a.updated || 0));
     const wrap = this.el('convList');
     if (!list.length) {
       wrap.innerHTML = '<p class="empty-sub" style="text-align:center;padding:28px 0">还没有保存的会话</p>';
       return;
     }
-    wrap.innerHTML = list.map(c => {
+    wrap.innerHTML = sorted.map(c => {
       return `
       <div class="conv-item ${c.id === this.state.convId ? 'active' : ''}" data-id="${c.id}">
         <div class="ci-main">
@@ -1214,10 +1227,10 @@ const UI = {
         return;
       }
       this.state.rpHistory.forEach((m, i) => {
-        if (m.role === 'user') this.appendMsg('user', m.content);
+        if (m.role === 'user') this.appendMsg('user', m.content, { idx: i });
         else if (m.name) this.appendRpChar(m.name, m.content, this.dialogueVoice({ name: m.name }), i);
         // 🔴 v0.41：旁白用保存的 voice（默认取设置里的旁白音色），否则切回会话会变默认女声
-        else this.appendMsg('assistant', m.content, { voice: m.voice || Settings.get('narratorVoice', 'f') });
+        else this.appendMsg('assistant', m.content, { idx: i, voice: m.voice || Settings.get('narratorVoice', 'f') });
       });
       // 🔴 v0.41：恢复最后一条 assistant 的选项（继续/分支按钮）
       const lastOpts = [...this.state.rpHistory].reverse().find(m => m.options && m.options.length);
@@ -1266,8 +1279,16 @@ const UI = {
       const readBtn = role === 'assistant' ? `<button class="msg-chip-btn" data-say="${this.esc(text)}" data-voice="${v}" title="朗读">${this.sayIcon()}</button>` : '';
       const hLen = this.state.rpMode ? this.state.rpHistory.length : this.state.chatHistory.length;
       const idx = opts.idx !== undefined ? opts.idx : hLen - 1;
-      const isLastAi = role === 'assistant' && idx === hLen - 1;
-      const actions = `<div class="msg-actions">${readBtn}<button class="msg-chip-btn" data-sel="${this.esc(text)}" title="查单词">${Icons.search}</button><button class="msg-chip-btn" data-sent="${this.esc(text)}" title="查这句">${Icons.chat}</button><button class="msg-chip-btn" data-rb="${idx}" title="回滚到此">${Icons.undo}</button>${isLastAi ? `<button class="msg-chip-btn" data-rg title="重新生成">${Icons.refresh}</button>` : ''}</div>`;
+      // 🔴 v0.43：回滚/重新生成按钮放在「我的输入」（user 消息）上：
+      //   旧输入 → 只有回滚（删掉这条及以下所有上下文）；最新输入 → 只有重新生成（按这条重新生成）
+      const hArr = this.state.rpMode ? this.state.rpHistory : this.state.chatHistory;
+      let lastUserIdx = -1;
+      for (let i = hArr.length - 1; i >= 0; i--) { if (hArr[i].role === 'user') { lastUserIdx = i; break; } }
+      const isUser = role === 'user';
+      const isLastUser = isUser && idx === lastUserIdx && hArr.length > 0;
+      const rbBtn = isUser && !isLastUser ? `<button class="msg-chip-btn" data-rb="${idx}" title="回滚到此（删除这条及以下）">${Icons.undo}</button>` : '';
+      const rgBtn = isUser && isLastUser ? `<button class="msg-chip-btn" data-rg title="重新生成">${Icons.refresh}</button>` : '';
+      const actions = `<div class="msg-actions">${readBtn}<button class="msg-chip-btn" data-sel="${this.esc(text)}" title="查单词">${Icons.search}</button><button class="msg-chip-btn" data-sent="${this.esc(text)}" title="查这句">${Icons.chat}</button>${rbBtn}${rgBtn}</div>`;
       div.innerHTML = `<div class="msg-en">${this.renderMsgText(text)}</div>${cn}${actions}`;
       this.bindTapWords(div);
       if (role === 'assistant') {
@@ -1284,13 +1305,13 @@ const UI = {
         e.stopPropagation();
         this.translateSelection(text);
       });
-      const rbBtn = div.querySelector('[data-rb]');
-      if (rbBtn) rbBtn.addEventListener('click', (e) => {
+      const rbBtnEl = div.querySelector('[data-rb]');
+      if (rbBtnEl) rbBtnEl.addEventListener('click', (e) => {
         e.stopPropagation();
-        this.rollbackMsg(parseInt(rbBtn.dataset.rb, 10));
+        this.rollbackMsg(parseInt(rbBtnEl.dataset.rb, 10));
       });
-      const rgBtn = div.querySelector('[data-rg]');
-      if (rgBtn) rgBtn.addEventListener('click', (e) => {
+      const rgBtnEl = div.querySelector('[data-rg]');
+      if (rgBtnEl) rgBtnEl.addEventListener('click', (e) => {
         e.stopPropagation();
         this.regenerateMsg();
       });
@@ -2011,6 +2032,7 @@ const UI = {
   },
 
   /* 回滚到此消息：删除该条及之后所有（普通对话 / 剧场绘画通用） */
+  /* 🔴 v0.43：回滚 = 删掉这条 user 消息及以下所有上下文（包括这条）；选项跟着重新渲染 */
   rollbackMsg(idx) {
     if (this.state.rpMode) {
       if (idx < 0 || idx > this.state.rpHistory.length) return;
@@ -2021,7 +2043,7 @@ const UI = {
     }
     this.saveChatState();
     this.renderChatHistory();
-    this.toast('已回滚');
+    this.toast('已回滚到这条之前');
   },
   /* 重新生成：删除最后一条 AI 回复（RP 删整个最后一轮），重新生成（失败恢复，不丢记录） */
   async regenerateMsg() {

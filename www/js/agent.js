@@ -356,12 +356,12 @@ Output ONLY JSON: {"name":"角色英文名","gender":"male或female","persona":"
   forgetLine() {
     let lines = '';
     if (this._forgetWords.length) {
-      lines += `\n- 学习者最常忘的词（请自然地把这些词带进对话里，帮他巩固，但别硬塞）：${this._forgetWords.join('、')}`;
+      lines += `\n- 学习者最常忘的词（这些词只是可以参考的素材：如果符合当前场景/世界观就自然带进对话帮他巩固；如果明显违和——比如仙侠世界里的现代咖啡——就不要用，宁可错过也不要生硬塞入）：${this._forgetWords.join('、')}`;
     }
     // 沉淀词：历史忘过但现在已记住 → 约 30% 概率随机带一个，偶尔重现巩固
     if (this._dormantWords && this._dormantWords.length && Math.random() < 0.3) {
       const w = this._dormantWords[Math.floor(Math.random() * this._dormantWords.length)];
-      lines += `\n- 巩固词（学习者以前忘过这个词，现在记起来了，对话中自然提一次就好，不用强调）：${w.word}`;
+      lines += `\n- 巩固词（学习者以前忘过这个词，现在记起来了；同样只在符合场景时自然提一次，违和就不用）：${w.word}`;
     }
     return lines;
   },
@@ -373,6 +373,7 @@ Output ONLY JSON: {"name":"角色英文名","gender":"male或female","persona":"
 2. Stay in character at all times. Never break the fourth wall.
 3. Keep responses concise (under 150 words).
 4. If the user writes in Chinese, gently correct them: first show the correct English way to say what they meant, then continue the story in English.
+5. WORLD CONSISTENCY: everything in the story must fit the world's setting and era. Do NOT introduce modern or out-of-world objects (coffee, phones, cars, computers) unless the world setting actually includes them. Vocabulary reminders below are optional material: use a word only if it fits naturally; never force it.
 ${this.forgetLine()}
 
 WORLD: ${w.name || 'Unknown world'}

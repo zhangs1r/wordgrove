@@ -579,6 +579,14 @@ body {
 }
 .garden-edit-layer .edit-decor-szin { left: -8px; }
 .garden-edit-layer .edit-decor-szout { right: -8px; }
+.garden-edit-layer .edit-decor-zup, .garden-edit-layer .edit-decor-zdown {
+  position: absolute; width: 20px; height: 20px; border-radius: 50%;
+  border: none; background: rgba(155,89,182,0.9); color: #fff; font-size: 10px;
+  line-height: 1; display: flex; align-items: center; justify-content: center;
+  z-index: 2; cursor: pointer; padding: 0; right: -8px;
+}
+.garden-edit-layer .edit-decor-zup { top: -34px; }
+.garden-edit-layer .edit-decor-zdown { top: -8px; }
 .garden-edit-bar {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   background: var(--card); border-radius: 12px; padding: 8px 10px; margin-top: 8px;

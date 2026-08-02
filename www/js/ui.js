@@ -479,7 +479,8 @@ const UI = {
     const scaleX = frameRect.width / 1024, scaleY = frameRect.height / 1536;
     // canvas 渲染尺寸 110（1024 坐标系）→ 屏幕像素；编辑层必须一致（v0.39 修复大小偏差）
     const base = 110 * scaleX;
-    const all = (src.list || []).concat(this._gardenEdit && this._gardenEdit.placing ? [this._gardenEdit.placing] : []);
+    // 已摆的全部装饰（新摆的直接入数组，无需 placing concat）
+    const all = src.list || [];
     layer.innerHTML = all.filter(d => d.x != null && d.y != null).map(d => {
       const s = base * (d.scale || 1);
       // 旋转只作用在 img 上（按钮保持正向）
@@ -490,6 +491,8 @@ const UI = {
         ${d.id ? `<button class="edit-decor-rot" data-rotid="${d.id}">↻</button>` : ''}
         ${d.id ? `<button class="edit-decor-szin" data-szid="${d.id}" data-dir="in">+</button>
         <button class="edit-decor-szout" data-szid="${d.id}" data-dir="out">−</button>` : ''}
+        ${d.id ? `<button class="edit-decor-zup" data-zid="${d.id}" data-dir="up">▲</button>
+        <button class="edit-decor-zdown" data-zid="${d.id}" data-dir="down">▼</button>` : ''}
       </div>`;
     }).join('');
     // 拖动绑定
@@ -531,6 +534,22 @@ const UI = {
         this.gardenEditRenderLayer();
       });
     });
+    // 🔴 v0.42：图层顺序（数组顺序 = z 顺序，后摆的在上层；▲置顶/▼置底一层）
+    layer.querySelectorAll('[data-zid]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.zid;
+        const src2 = this.decorSource();
+        const idx = src2.list.findIndex(d => d.id === id);
+        if (idx < 0) return;
+        const [item] = src2.list.splice(idx, 1);
+        if (btn.dataset.dir === 'up') src2.list.push(item);          // 置顶（数组末尾 = 最上层）
+        else src2.list.unshift(item);                                 // 置底（数组开头 = 最下层）
+        if (src2.isView) this._gardenView.decor = src2.list;
+        else Farm._state.decor = src2.list;
+        this.gardenEditRenderLayer();
+      });
+    });
   },
   gardenEditBindDrag(el) {
     let dragging = false;
@@ -545,15 +564,17 @@ const UI = {
       return { x, y };
     };
     el.addEventListener('pointerdown', (e) => {
-      if (e.button === 2 || e.target.closest('.edit-decor-del,.edit-decor-rot,.edit-decor-szin,.edit-decor-szout')) return;
+      if (e.button === 2 || e.target.closest('.edit-decor-del,.edit-decor-rot,.edit-decor-szin,.edit-decor-szout,.edit-decor-zup,.edit-decor-zdown')) return;
       e.preventDefault(); e.stopPropagation();
       dragging = true;
-      const id = el.dataset.editid;
+      let id = el.dataset.editid;
       const type = el.dataset.editdecor;
       const src = this.decorSource();
       const p = move(e.clientX, e.clientY);
       if (id === 'new') {
-        this._gardenEdit.placing = { type, x: p.x, y: p.y };
+        // 老数据无 id 的装饰：拖动时补 id，避免被当成"新摆"复制
+        const found = src.list.find(d => d.x != null && d.y != null && !d.id && d.type === type);
+        if (found) { found.id = Farm.newDecorId(); id = found.id; el.dataset.editid = id; found.x = p.x; found.y = p.y; }
       } else {
         const found = src.list.find(d => d.id === id);
         if (found) { found.x = p.x; found.y = p.y; }
@@ -589,7 +610,7 @@ const UI = {
     el.addEventListener('pointerup', up);
     el.addEventListener('pointercancel', up);
   },
-  /* 编辑模式：点 canvas 空白处摆放当前装饰（新的一份） */
+  /* 编辑模式：点 canvas 空白处摆放当前装饰（新的一份，直接带 id 入数组——否则无 id 无法编辑/拖动会复制） */
   gardenEditPlace(e) {
     if (!this._gardenEdit) return;
     if (!this._gardenEdit.type) { this.toast('先点装饰栏选一个装饰再摆放'); return; }
@@ -601,8 +622,11 @@ const UI = {
     const rect = cv.getBoundingClientRect();
     const x = (e.clientX - rect.left) / rect.width * 1024;
     const y = (e.clientY - rect.top) / rect.height * 1536;
-    // 只记录 placing（渲染层 concat 显示），不 push 进 list（避免重复）
-    this._gardenEdit.placing = { type: this._gardenEdit.type, x, y };
+    // 🔴 v0.42：直接生成带 id 的装饰入数组（与已摆装饰同等对待，可旋转/缩放/删除）
+    const src = this.decorSource();
+    src.list.push({ id: Farm.newDecorId(), type: this._gardenEdit.type, x, y, angle: 0, scale: 1 });
+    if (src.isView) this._gardenView.decor = src.list;
+    else Farm._state.decor = src.list;
     this._gardenEdit.canAdd = false;
     this.gardenEditRenderLayer();
     this.toast('已放这里，可拖动/旋转/缩放，或点保存');
@@ -617,10 +641,8 @@ const UI = {
     if (!this._gardenEdit) return;
     const st = await Farm.load();
     const src = this.decorSource();
-    const layout = (src.list || []).map(d => ({ ...d }));
-    if (this._gardenEdit.placing) {
-      layout.push(this._gardenEdit.placing);
-    }
+    // 已摆的全部装饰（新摆的直接在数组里了）；老数据无 id 的兜底补 id
+    const layout = (src.list || []).map(d => ({ ...d, id: d.id || Farm.newDecorId() }));
     if (src.isView) {
       // 历史月：更新自己图层的 decor（作物不动）
       this._gardenView.decor = layout;
@@ -1107,9 +1129,13 @@ const UI = {
         const id = e.target.dataset.del;
         this.deleteConversation(id);
         if (id === this.state.convId) {
+          // 🔴 v0.42：彻底清空当前会话状态（含 RP），否则下次 saveChatState 会把 id=null 的 RP 历史写回去，删了又回来
           this.state.convId = null;
           this.state.convTitle = '';
           this.state.chatHistory = [];
+          this.state.rpMode = false;
+          this.state.rpHistory = [];
+          this.state.rpWorld = null;
           this.renderConvTitle();
           this.renderChatHistory();
         }
@@ -1688,13 +1714,12 @@ const UI = {
       this.removeSentence(e.target.dataset.del);
       this.renderWords(this.el('wordSearch').value.trim());
     }));
-    // 点句子 → 详情（含标签编辑）
+    // 点句子 → 详情（含标签编辑）；🔴 v0.42：句子列表不绑定 bindTapWords——点句子先进详情，详情里才能点单词
     sentWrap.querySelectorAll('.sent-item').forEach(item => item.addEventListener('click', async e => {
       if (e.target.closest('.wi-say') || e.target.closest('.wi-del') || e.target.closest('[data-rm]') || e.target.closest('.tag-input')) return;
       const s = this.listSentences().find(x => x.id === item.dataset.id);
       if (s) this.showSentenceDetail(s);
     }));
-    this.bindTapWords(sentWrap);
   },
 
   /* 句子详情：文本/翻译/上下文/标签编辑 */
@@ -2037,9 +2062,16 @@ const UI = {
 
   /* ---------- 句子本 ---------- */
   listSentences() { return Settings.get('sentences', []); },
+  /* 🔴 v0.42：同一句子不重复加入（同 text 更新原条目） */
   saveSentence(s) {
-    const l = this.listSentences().filter(x => x.id !== s.id);
-    l.unshift(s);
+    const l = this.listSentences();
+    const exist = l.find(x => x.text === s.text);
+    if (exist) {
+      const idx = l.indexOf(exist);
+      l[idx] = { ...exist, ...s, id: exist.id, at: exist.at };
+    } else {
+      l.unshift(s);
+    }
     Settings.set('sentences', l.slice(0, 500));
   },
   removeSentence(id) { Settings.set('sentences', this.listSentences().filter(x => x.id !== id)); },
@@ -2112,6 +2144,11 @@ const UI = {
     this.el('wordModal').classList.remove('hidden');
     try {
       const r = await Agent.queryText(text);
+      // 🔴 v0.42：翻译为空说明模型没返回有效结果——不保存进句子本，提示重试（否则句子本里存空翻译）
+      if (!r.cn) {
+        body.innerHTML = `<div class="wd-ex">${this.esc(text)}</div><div class="wd-result" style="color:var(--danger)">翻译失败，请重试</div>`;
+        return;
+      }
       const s = { id: 's_' + Date.now(), text, cn: r.cn, note: r.note, source: 'query', ctx: this.currentCtx(), tags: ['查句'], at: Date.now() };
       this.saveSentence(s);
       body.innerHTML = `
@@ -2666,6 +2703,8 @@ const UI = {
     const area = this.el('chatArea');
     const ph = this.el('chatPlaceholder');
     if (ph) ph.remove();
+    // 🔴 v0.42：先移除旧选项（选完选项/新回合推进时旧按钮要消失，只剩新的）
+    area.querySelectorAll('.rp-options').forEach(el => el.remove());
     const div = document.createElement('div');
     div.className = 'rp-options';
     div.innerHTML = (options.length

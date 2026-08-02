@@ -430,19 +430,22 @@ For dialogue: characters from the cast keep their identity; NEW side characters 
       ...history.slice(-8),
       { role: 'user', content: 'Player action: ' + (userInput || '(the player lets the story continue on its own)') + '\n\nCharacter inner states:\n' + charBrief + '\n\nWrite the next beat.' },
     ];
-    const resp = await API.chat(msgs, { model, maxTokens: 1000 });
+    const resp = await API.chat(msgs, { model, maxTokens: 2200 }); // v0.42：1000 太小，narration+dialogue+options 会被截断→JSON解析失败显示原始JSON
     const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
     try {
       const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
       return { narration: j.narration || '', dialogue: j.dialogue || [], options: (j.options || []).slice(0, 4) };
     } catch {
-      // JSON 解析失败：尝试从文本里抓 dialogue 行
+      // JSON 解析失败（可能被截断）：逐字段兜底提取，绝不把原始 JSON 当旁白显示
       const dlg = [];
       content.split('\n').forEach(l => {
         const m = l.match(/^\s*([A-Za-z][A-Za-z0-9 _'-]*?):\s*(.+)$/);
         if (m) dlg.push({ name: m[1].trim(), line: m[2].trim(), gender: '' });
       });
-      return { narration: content.slice(0, 300), dialogue: dlg, options: [] };
+      const narration = (content.match(/"narration"\s*:\s*"([^"]*)"/) || [])[1] || '';
+      const opts = (content.match(/"options"\s*:\s*\[([^\]]*)\]/) || [])[1] || '';
+      const options = opts ? opts.match(/"([^"]+)"/g).map(s => s.slice(1, -1)).slice(0, 4) : [];
+      return { narration: narration || content.slice(0, 300), dialogue: dlg, options };
     }
   },
 

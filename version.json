@@ -1,1 +1,1 @@
-{"version": "0.41", "notes": "装饰品改为全局共用仓库（所有月份共用一个库存，这个月摆了历史月就不能重复摆）；修复RP切回会话后旁白变女生读（保存voice字段）+选项丢失（保存options）+记录截断（放宽到200条）；会话列表新增重命名按钮", "apk": "EnglishApp-v0.41.apk", "url": "https://github.com/zhangs1r/wordgrove/releases/download/v0.41/EnglishApp-v0.41.apk"}
+{"version": "0.42", "notes": "修复新摆装饰无id无法旋转/缩放/删除且拖动会复制的问题；装饰图层顺序（置顶/置底按钮，后摆在上层）；修复RP输出JSON截断显示原始结构；选完选项旧按钮消失；删除会话彻底清空不再复活；句子本同句不重复加入且翻译失败不保存", "apk": "EnglishApp-v0.42.apk", "url": "https://github.com/zhangs1r/wordgrove/releases/download/v0.42/EnglishApp-v0.42.apk"}

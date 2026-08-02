@@ -312,6 +312,8 @@ const UI = {
     if (drawer) drawer.addEventListener('click', (e) => this.gardenDrawerClick(e));
     const gdrawer = this.el('gardenDrawer');
     if (gdrawer) gdrawer.addEventListener('click', (e) => this.gardenDrawerClick(e));
+    const fmask = this.el('farmMask');
+    if (fmask) fmask.addEventListener('click', () => this.farmDrawerClose());
     // 月历花园整页版（v0.34）
     const fcv = this.el('gardenFullCanvas');
     if (fcv) fcv.addEventListener('click', (e) => this.gardenFullTap(e));
@@ -377,7 +379,7 @@ const UI = {
     this.gardenDayMenu(day);
   },
 
-  /* ---------- 装饰栏 + 编辑模式（v0.36） ---------- */
+  /* ---------- 装饰栏 + 编辑模式（v0.36 / v0.37 多份支持） ---------- */
   renderGardenTray(st) {
     const items = this.el('gardenTrayItems');
     if (!items) return;
@@ -386,15 +388,21 @@ const UI = {
       items.innerHTML = '<div class="garden-tray-empty">还没有装饰——点商店买一个，就能摆进小院</div>';
       return;
     }
-    const placed = st.decor.map(d => d.type);
-    const tray = st.decor.map(d => d.type); // 已摆的也显示（可再编辑）
-    items.innerHTML = owned.map(k => {
+    // 按类型计数（可买多份）
+    const counts = {};
+    for (const k of owned) counts[k] = (counts[k] || 0) + 1;
+    const placedCount = {};
+    for (const d of st.decor) placedCount[d.type] = (placedCount[d.type] || 0) + 1;
+    items.innerHTML = Object.keys(counts).map(k => {
       const name = (FARM.DECOR[k] || {}).name || (FARM.MONTH_DECOR[st.month] || {})[k]?.name || k;
       const img = Farm._imgs['decor_' + k];
-      const isPlaced = placed.includes(k);
-      return `<div class="garden-tray-item ${isPlaced ? 'placed' : ''}" data-traydecor="${k}">
+      const total = counts[k];
+      const placed = placedCount[k] || 0;
+      const isAllPlaced = placed >= total;
+      return `<div class="garden-tray-item ${isAllPlaced ? 'placed' : ''}" data-traydecor="${k}">
         <div class="tray-img">${img ? `<img src="assets/decor/${k}.png" alt="">` : `<span class="month-decor-ph">${name[0]}</span>`}</div>
-        <div class="tray-name">${name}</div>
+        <div class="tray-name">${name}${total > 1 ? ' ×' + total : ''}</div>
+        <div class="tray-sub">${isAllPlaced ? '已全摆' : '可摆 ' + Math.max(0, total - placed)}</div>
       </div>`;
     }).join('');
     items.querySelectorAll('[data-traydecor]').forEach(el => {
@@ -405,15 +413,22 @@ const UI = {
   async gardenEditStart(type) {
     const st = await Farm.load();
     if (!st.owned.includes(type)) { this.toast('还没有这个装饰'); return; }
-    this._gardenEdit = { type, items: st.decor.map(d => ({ ...d })) }; // 快照当前布局
+    // 已摆的数量 >= 拥有的数量时，只能移动已有的（不能新增）
+    const placedCount = st.decor.filter(d => d.type === type).length;
+    const ownedCount = st.owned.filter(k => k === type).length;
+    this._gardenEdit = {
+      type,
+      canAdd: placedCount < ownedCount,
+      placing: null, // 正在新摆的 {type,x,y}
+      snapshot: st.decor.map(d => ({ ...d })), // 快照当前布局
+    };
     const layer = this.el('gardenEditLayer');
     const bar = this.el('gardenEditBar');
     layer.classList.remove('hidden');
     bar.classList.remove('hidden');
-    this.el('gardenFullHint').textContent = '编辑模式：点小院任意位置摆放「' + this.decorName(type) + '」，点保存生效';
-    // 把当前已摆装饰画进编辑层（可拖动）
+    this.el('gardenFullHint').textContent = '编辑模式：拖动装饰调整位置' + (this._gardenEdit.canAdd ? '，点小院空地摆放新的「' + this.decorName(type) + '」' : '');
     this.gardenEditRenderLayer();
-    this.toast('编辑模式：点小院空地摆放，可拖动调整');
+    this.toast(this._gardenEdit.canAdd ? '点小院空地摆放，可拖动调整' : '已全摆出来了——拖动调整位置吧');
   },
   gardenEditRenderLayer() {
     const layer = this.el('gardenEditLayer');
@@ -422,18 +437,27 @@ const UI = {
     const frame = layer.parentElement; // garden-full-frame
     const frameRect = frame.getBoundingClientRect();
     const scaleX = frameRect.width / 1024, scaleY = frameRect.height / 1536;
-    // 已有布局 + 正在摆的装饰
-    const all = (st.decor || []).filter(d => !this._gardenEdit || d.type !== this._gardenEdit.type)
-      .concat(this._gardenEdit ? [{ type: this._gardenEdit.type, x: this._gardenEdit.x, y: this._gardenEdit.y }] : []);
+    // 已摆的全部装饰（可拖动）+ 正在新摆的装饰
+    const all = (st.decor || []).concat(this._gardenEdit && this._gardenEdit.placing ? [this._gardenEdit.placing] : []);
     layer.innerHTML = all.filter(d => d.x != null && d.y != null).map(d => `
-      <div class="edit-decor" data-editdecor="${d.type}" style="left:${d.x * scaleX}px;top:${d.y * scaleY}px">
+      <div class="edit-decor" data-editid="${d.id || 'new'}" data-editdecor="${d.type}" style="left:${d.x * scaleX}px;top:${d.y * scaleY}px">
         <img src="assets/decor/${d.type}.png" alt="">
+        ${d.id ? `<button class="edit-decor-del" data-delid="${d.id}">✕</button>` : ''}
       </div>`).join('');
     // 拖动绑定
     layer.querySelectorAll('.edit-decor').forEach(el => this.gardenEditBindDrag(el));
+    // 删除按钮
+    layer.querySelectorAll('[data-delid]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.delid;
+        Farm._state.decor = Farm._state.decor.filter(d => d.id !== id);
+        this.gardenEditRenderLayer();
+      });
+    });
   },
   gardenEditBindDrag(el) {
-    let dragging = false, startX = 0, startY = 0, origX = 0, origY = 0;
+    let dragging = false;
     const layer = this.el('gardenEditLayer');
     const frame = layer.parentElement;
     const move = (cx, cy) => {
@@ -445,44 +469,62 @@ const UI = {
       return { x, y };
     };
     el.addEventListener('pointerdown', (e) => {
-      if (e.button === 2) return;
+      if (e.button === 2 || e.target.closest('.edit-decor-del')) return;
       e.preventDefault(); e.stopPropagation();
       dragging = true;
-      const frameRect = frame.getBoundingClientRect();
-      startX = e.clientX; startY = e.clientY;
-      origX = parseFloat(el.style.left); origY = parseFloat(el.style.top);
+      const id = el.dataset.editid;
       const type = el.dataset.editdecor;
-      this._gardenEdit = this._gardenEdit || { type, items: [] };
-      this._gardenEdit.type = type;
       const p = move(e.clientX, e.clientY);
-      this._gardenEdit.x = p.x; this._gardenEdit.y = p.y;
+      if (id === 'new') {
+        this._gardenEdit.placing = { type, x: p.x, y: p.y };
+      } else {
+        const found = Farm._state.decor.find(d => d.id === id);
+        if (found) { found.x = p.x; found.y = p.y; }
+      }
       el.setPointerCapture && el.setPointerCapture(e.pointerId);
     });
     el.addEventListener('pointermove', (e) => {
       if (!dragging) return;
       e.preventDefault(); e.stopPropagation();
       const p = move(e.clientX, e.clientY);
-      this._gardenEdit.x = p.x; this._gardenEdit.y = p.y;
+      const id = el.dataset.editid;
+      if (id === 'new') {
+        this._gardenEdit.placing.x = p.x; this._gardenEdit.placing.y = p.y;
+      } else {
+        const found = Farm._state.decor.find(d => d.id === id);
+        if (found) { found.x = p.x; found.y = p.y; }
+      }
     });
     const up = (e) => {
       if (!dragging) return;
       dragging = false;
       const p = move(e.clientX, e.clientY);
-      this._gardenEdit.x = p.x; this._gardenEdit.y = p.y;
+      const id = el.dataset.editid;
+      if (id === 'new') {
+        this._gardenEdit.placing.x = p.x; this._gardenEdit.placing.y = p.y;
+      } else {
+        const found = Farm._state.decor.find(d => d.id === id);
+        if (found) { found.x = p.x; found.y = p.y; }
+      }
     };
     el.addEventListener('pointerup', up);
     el.addEventListener('pointercancel', up);
   },
-  /* 编辑模式：点 canvas 空白处摆放当前装饰 */
+  /* 编辑模式：点 canvas 空白处摆放当前装饰（新的一份） */
   gardenEditPlace(e) {
+    if (!this._gardenEdit || !this._gardenEdit.canAdd) {
+      this.toast('拖动已有的装饰调整位置吧');
+      return;
+    }
     const cv = this.el('gardenFullCanvas');
     const rect = cv.getBoundingClientRect();
     const x = (e.clientX - rect.left) / rect.width * 1024;
     const y = (e.clientY - rect.top) / rect.height * 1536;
-    this._gardenEdit.x = x;
-    this._gardenEdit.y = y;
+    // 只记录 placing（渲染层 concat 显示），不 push 进 decor（避免重复）
+    this._gardenEdit.placing = { type: this._gardenEdit.type, x, y };
+    this._gardenEdit.canAdd = false;
     this.gardenEditRenderLayer();
-    this.toast('已放这里，继续点别处调整，或点保存');
+    this.toast('已放这里，可拖动微调，或点保存');
   },
   decorName(type) {
     const st = Farm._state;
@@ -492,10 +534,11 @@ const UI = {
   async gardenEditSave() {
     if (!this._gardenEdit) return;
     const st = await Farm.load();
-    const placed = this._gardenEdit.x != null && this._gardenEdit.y != null
-      ? [{ type: this._gardenEdit.type, x: this._gardenEdit.x, y: this._gardenEdit.y }] : [];
-    const others = st.decor.filter(d => d.type !== this._gardenEdit.type);
-    const layout = others.concat(placed);
+    // 已摆的（含拖动的）+ 正在新摆的 placing
+    const layout = st.decor.map(d => ({ ...d }));
+    if (this._gardenEdit.placing) {
+      layout.push(this._gardenEdit.placing);
+    }
     await Farm.saveDecorLayout(layout);
     this.gardenEditExit();
     this.toast('布局已保存 ✓');
@@ -559,23 +602,27 @@ const UI = {
     html += `<div class="fd-item"><span class="fd-name">装饰摆在小院空地上——底部「我的装饰」里点选摆放</span></div>`;
     html += `<button class="btn btn-ghost" data-act="close">关闭</button></div>`;
     d.innerHTML = html;
-    d.classList.remove('hidden');
+    this.farmDrawerOpen();
   },
-  /* 商店：带 sprite 预览 + 已购/价格标记（v0.36） */
+  /* 商店：带 sprite 预览 + 拥有数量（v0.37 不限购买次数） */
   async gardenOpenShop() {
     const st = await Farm.load();
     const d = this.gardenDrawerEl();
     const owned = st.owned || [];
+    const ownedCount = {};
+    for (const k of owned) ownedCount[k] = (ownedCount[k] || 0) + 1;
     const item = (k, dc, monthTag) => {
       const img = Farm._imgs['decor_' + k];
-      const isOwned = owned.includes(k);
+      const have = ownedCount[k] || 0;
+      const isMonthOnly = monthTag && !FARM.DECOR[k]; // 当月限定（无通用定义）
+      const price = dc.price != null ? dc.price : (isMonthOnly ? 30 : 15);
       return `<div class="shop-item">
         <div class="shop-img">${img ? `<img src="assets/decor/${k}.png" alt="">` : `<span class="month-decor-ph">${(dc.name || k)[0]}</span>`}</div>
         <div class="shop-info">
           <div class="shop-name">${dc.name}${monthTag ? ' <span class="shop-month-tag">当月限定</span>' : ''}</div>
-          <div class="shop-price">${isOwned ? '已拥有' : dc.price + ' 积分'}</div>
+          <div class="shop-price">${price} 积分 · 拥有 ${have} 个</div>
         </div>
-        <button class="btn ${isOwned ? 'btn-ghost' : 'btn-primary'} btn-sm" data-buydecor="${k}" ${isOwned ? 'disabled' : ''}>${isOwned ? '已买' : '买'}</button>
+        <button class="btn btn-primary btn-sm" data-buydecor="${k}">买</button>
       </div>`;
     };
     const common = Object.keys(FARM.DECOR).map(k => item(k, FARM.DECOR[k], false)).join('');
@@ -585,9 +632,9 @@ const UI = {
       <div class="fd-scroll">
         <div class="fd-sec">通用装饰</div>${common}
         <div class="fd-sec">${st.month} 月限定（下月下架）</div>${month || '<div class="fd-item"><span class="fd-name">本月限定已售罄</span></div>'}
-        <div class="fd-item"><span class="fd-name" style="font-size:11px;color:var(--muted)">买到后去小院底部「我的装饰」点选，摆到空地上</span></div>
+        <div class="fd-item"><span class="fd-name" style="font-size:11px;color:var(--muted)">可重复购买——买几个就能摆几个，去小院底部「我的装饰」点选摆放</span></div>
       </div>`;
-    d.classList.remove('hidden');
+    this.farmDrawerOpen();
   },
   async gardenOpenHistory() {
     const st = await Farm.load();
@@ -596,13 +643,13 @@ const UI = {
     if (!hist.length) {
       d.innerHTML = `<div class="fd-head">历史院子 <button class="icon-btn-sm" data-act="close">✕</button></div>
         <div class="fd-scroll"><div class="fd-item"><span class="fd-name">还没有封存的院子——月底自动封存</span></div></div>`;
-      d.classList.remove('hidden');
+      this.farmDrawerOpen();
       return;
     }
     const rows = hist.map((h, i) => `<div class="fd-item"><span class="fd-name">${h.year} 年 ${h.month} 月 · ${Object.keys(h.planted || {}).length} 天有学习</span><button class="btn btn-primary btn-sm" data-viewhist="${i}">查看</button></div>`).join('');
     d.innerHTML = `<div class="fd-head">历史院子（${hist.length}） <button class="icon-btn-sm" data-act="close">✕</button></div>
       <div class="fd-scroll">${rows}<div class="fd-item"><span class="fd-name">点查看回到当前月</span><button class="btn btn-ghost btn-sm" data-viewhist="back">返回</button></div></div>`;
-    d.classList.remove('hidden');
+    this.farmDrawerOpen();
   },
   async gardenDrawerClick(e) {
     const btn = e.target.closest('[data-act],[data-buydecor],[data-rmdecor],[data-viewhist]');
@@ -647,9 +694,17 @@ const UI = {
   gardenDrawerEl() {
     return this.state.tab === 'garden' ? this.el('gardenDrawer') : this.el('farmDrawer');
   },
+  farmDrawerOpen() {
+    const d = this.gardenDrawerEl();
+    const m = this.el('farmMask');
+    if (d) d.classList.remove('hidden');
+    if (m) m.classList.remove('hidden');
+  },
   farmDrawerClose() {
     const d = this.gardenDrawerEl();
+    const m = this.el('farmMask');
     if (d) d.classList.add('hidden');
+    if (m) m.classList.add('hidden');
   },
 
   /* 奖励提示（轻量 toast） */

@@ -541,8 +541,9 @@ body {
 .garden-tray-item .tray-img { width: 44px; height: 44px; margin: 0 auto 4px; display: flex; align-items: center; justify-content: center; image-rendering: pixelated; }
 .garden-tray-item .tray-img img { width: 40px; height: 40px; image-rendering: pixelated; }
 .garden-tray-item .tray-name { font-size: 10.5px; color: var(--text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.garden-tray-item.placed { opacity: .45; border-color: var(--card-2); }
-.garden-tray-item.placed .tray-name::after { content: '·已摆'; color: var(--muted); }
+.garden-tray-item .tray-sub { font-size: 9px; color: var(--muted); margin-top: 2px; }
+.garden-tray-item.placed { opacity: .55; border-color: var(--card-2); }
+.garden-tray-item.placed .tray-sub { color: #8a8a8a; }
 .garden-tray-empty { font-size: 12px; color: var(--muted); padding: 10px 2px; }
 /* 编辑模式 */
 .garden-edit-layer {
@@ -556,6 +557,12 @@ body {
   cursor: grab; touch-action: none;
 }
 .garden-edit-layer .edit-decor img { width: 46px; height: 46px; image-rendering: pixelated; pointer-events: none; }
+.garden-edit-layer .edit-decor-del {
+  position: absolute; top: -8px; right: -8px; width: 22px; height: 22px;
+  border-radius: 50%; border: none; background: rgba(192,57,43,0.9); color: #fff;
+  font-size: 12px; line-height: 1; display: flex; align-items: center; justify-content: center;
+  z-index: 2; cursor: pointer; padding: 0;
+}
 .garden-edit-bar {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   background: var(--card); border-radius: 12px; padding: 8px 10px; margin-top: 8px;
@@ -574,8 +581,14 @@ body {
 .shop-price { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
 #farmCanvas { width: 100%; height: auto; display: block; border-radius: 10px; image-rendering: pixelated; touch-action: manipulation; }
 .farm-drawer {
-  background: var(--card); border-radius: 16px; padding: 12px 14px; margin-bottom: 10px;
-  box-shadow: var(--shadow);
+  position: fixed; left: 10px; right: 10px; bottom: 10px; z-index: 300;
+  background: var(--card); border-radius: 16px; padding: 12px 14px;
+  box-shadow: 0 -6px 30px rgba(0,0,0,0.22); max-height: 55vh;
+  overflow-y: auto; animation: drawerUp .22s ease;
+}
+@keyframes drawerUp { from { transform: translateY(30px); opacity: .4; } to { transform: translateY(0); opacity: 1; } }
+.farm-mask {
+  position: fixed; inset: 0; z-index: 290; background: rgba(0,0,0,0.35);
 }
 .fd-head { display: flex; align-items: center; justify-content: space-between; font-weight: 700; font-size: 14px; margin-bottom: 8px; }
 .fd-scroll { max-height: 220px; overflow-y: auto; }

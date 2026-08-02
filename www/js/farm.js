@@ -115,25 +115,31 @@ const Farm = {
     }
     return this._state;
   },
-  /* 旧装饰数据迁移：{type, day} → {type, x, y}（day 映射到旧 12 锚点） */
+  /* 旧装饰数据迁移：{type, day} → {type, x, y}（day 映射到旧 12 锚点）；补 decor id（v0.37 多份支持） */
   _migrateDecor(st) {
-    if (!st || !Array.isArray(st.decor) || st.decor.length === 0) return;
-    if (st.decor[0] && st.decor[0].x != null) return; // 已是坐标制
     st.owned = st.owned || [];
+    if (!Array.isArray(st.decor)) st.decor = [];
+    if (st.decor.length && st.decor[0].x != null && st.decor[0].id != null) return; // 已是坐标+id 制
     const anchors = [
       { x: 220, y: 290 }, { x: 420, y: 275 }, { x: 620, y: 280 }, { x: 820, y: 295 },
       { x: 220, y: 1180 }, { x: 420, y: 1200 }, { x: 620, y: 1190 }, { x: 820, y: 1185 },
       { x: 120, y: 800 }, { x: 910, y: 800 }, { x: 140, y: 1380 }, { x: 880, y: 1380 },
     ];
+    let i = 0;
     const migrated = [];
     for (const d of st.decor) {
-      if (!st.owned.includes(d.type)) st.owned.push(d.type);
-      if (d.day != null) {
-        const a = anchors[(d.day - 1) % anchors.length];
-        migrated.push({ type: d.type, x: a.x, y: a.y });
+      let x = d.x, y = d.y;
+      if (x == null || y == null) {
+        const a = anchors[(d.day != null ? d.day - 1 : i) % anchors.length];
+        x = a.x; y = a.y;
       }
+      migrated.push({ id: d.id || this.newDecorId(), type: d.type, x, y });
+      i++;
     }
     st.decor = migrated;
+  },
+  newDecorId() {
+    return 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   },
   async save() { await this.txPut('garden', this._state); },
   async txGet(id) {
@@ -219,33 +225,34 @@ const Farm = {
     const mdef = monthDef[type] || null;
     const d = def || mdef;
     if (!d) return { ok: false, msg: '装饰不存在' };
-    if (st.owned.includes(type)) return { ok: false, msg: '已经买过这个了' };
-    if (st.points < d.price) return { ok: false, msg: '积分不够（需 ' + d.price + '）' };
-    st.points -= d.price;
-    st.owned.push(type);
+    // 🔴 月度限定装饰定义里没有 price 字段（只有 name）——统一 fallback 30
+    const price = d.price != null ? d.price : 30;
+    if (st.points < price) return { ok: false, msg: '积分不够（需 ' + price + '）' };
+    st.points -= price;
+    st.owned.push(type); // v0.37：不限次数，可买多份
     await this.save();
     return { ok: true, type };
   },
-  /* 摆放装饰（坐标制 v0.36）：x,y 为 1024×1536 画布坐标 */
+  /* 摆放装饰（坐标制）：x,y 为 1024×1536 画布坐标；同类型可摆多份（各带 id） */
   async placeDecor(type, x, y) {
     const st = await this.load();
     if (!st.owned.includes(type)) return { ok: false, msg: '还没有这个装饰，先去商店买' };
-    st.decor = st.decor.filter(d => d.type !== type); // 同类型只能摆一个（移动即替换）
-    st.decor.push({ type, x: Math.round(x), y: Math.round(y) });
+    const id = this.newDecorId();
+    st.decor.push({ id, type, x: Math.round(x), y: Math.round(y) });
     await this.save();
-    return { ok: true };
+    return { ok: true, id };
   },
-  /* 收起装饰（从院子移除，仍在 owned 里可再摆） */
-  async removeDecor(type) {
+  /* 收起装饰（按 id 移除，仍在 owned 里可再摆） */
+  async removeDecor(id) {
     const st = await this.load();
-    st.decor = st.decor.filter(d => d.type !== type);
+    st.decor = st.decor.filter(d => d.id !== id);
     await this.save();
     return { ok: true };
   },
-  /* 保存整体摆放布局（编辑模式点勾时调用） */
+  /* 保存整体摆放布局（编辑模式点勾时调用，layout 带 id，同类型多份） */
   async saveDecorLayout(layout) {
     const st = await this.load();
-    st.decor = layout.map(d => ({ type: d.type, x: Math.round(d.x), y: Math.round(d.y) }));
+    st.decor = layout.map(d => ({ id: d.id || this.newDecorId(), type: d.type, x: Math.round(d.x), y: Math.round(d.y) }));
     await this.save();
     return { ok: true };
   },

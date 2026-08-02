@@ -1,1 +1,1 @@
-{"version": "0.36", "notes": "装饰系统大改：商店带装饰预览图+每月2个限定装饰（新增12个：雪人/桃心/秋千/野餐垫/洒水壶/风铃/沙滩伞/蝉鸣树/落叶堆/蛛网/银杏扇/彩灯）；装饰可自由摆在小院任意空地（拖拽摆放+保存坐标）；修复点击格子误报空地的bug；修复重复id导致小院抽屉不显示的bug", "apk": "EnglishApp-v0.36.apk", "url": "https://github.com/zhangs1r/wordgrove/releases/download/v0.36/EnglishApp-v0.36.apk"}
+{"version": "0.37", "notes": "修复：顶部商店/历史按钮点了没反应（抽屉改为底部弹层+遮罩）；装饰不限购买次数（可买多份摆多个）；同类型装饰可摆多份（带id管理，编辑模式可删）；修复月度限定装饰价格缺失导致积分变NaN的bug", "apk": "EnglishApp-v0.37.apk", "url": "https://github.com/zhangs1r/wordgrove/releases/download/v0.37/EnglishApp-v0.37.apk"}

@@ -1,1 +1,1 @@
-{"version": "0.40", "notes": "修复历史月份装饰与当前月串数据（封存时深拷贝）；修复编辑位置与保存后位置偏差（残留margin）；修复缩放后保存视图不变（canvas按scale渲染）；顶部新增编辑按钮直接进编辑模式", "apk": "EnglishApp-v0.40.apk", "url": "https://github.com/zhangs1r/wordgrove/releases/download/v0.40/EnglishApp-v0.40.apk"}
+{"version": "0.41", "notes": "装饰品改为全局共用仓库（所有月份共用一个库存，这个月摆了历史月就不能重复摆）；修复RP切回会话后旁白变女生读（保存voice字段）+选项丢失（保存options）+记录截断（放宽到200条）；会话列表新增重命名按钮", "apk": "EnglishApp-v0.41.apk", "url": "https://github.com/zhangs1r/wordgrove/releases/download/v0.41/EnglishApp-v0.41.apk"}

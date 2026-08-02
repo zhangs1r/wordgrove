@@ -392,12 +392,21 @@ const UI = {
     this.gardenDayMenu(day);
   },
 
-  /* ---------- 装饰栏 + 编辑模式（v0.36 / v0.39 历史月独立图层 + 旋转缩放） ---------- */
+  /* ---------- 装饰栏 + 编辑模式（v0.36 / v0.40 仓库全局共用 + 历史月独立图层 + 旋转缩放） ---------- */
   /* 当前编辑目标的数据源：历史月 = view.decor，当前月 = st.decor */
   decorSource() {
     const st = Farm._state;
     if (this._gardenView) return { list: this._gardenView.decor || (this._gardenView.decor = []), isView: true };
     return { list: st.decor, isView: false };
+  },
+  /* 🔴 v0.41：装饰品全局共用一个仓库——某类型在所有月份（当前+历史）已摆总数 */
+  placedTotal(type) {
+    const st = Farm._state;
+    let n = (st.decor || []).filter(d => d.type === type).length;
+    for (const h of st.history || []) {
+      n += (h.decor || []).filter(d => d.type === type).length;
+    }
+    return n;
   },
   renderGardenTray(src) {
     const items = this.el('gardenTrayItems');
@@ -419,12 +428,14 @@ const UI = {
       const name = (FARM.DECOR[k] || {}).name || (FARM.MONTH_DECOR[monthTag] || {})[k]?.name || k;
       const img = Farm._imgs['decor_' + k];
       const total = counts[k];
-      const placed = placedCount[k] || 0;
-      const isAllPlaced = placed >= total;
+      const here = placedCount[k] || 0;          // 本视图（月）已摆
+      const usedAll = this.placedTotal(k);       // 全局已摆（含其他月份）
+      const left = Math.max(0, total - usedAll); // 仓库剩余可摆
+      const isAllPlaced = left <= 0;
       return `<div class="garden-tray-item ${isAllPlaced ? 'placed' : ''}" data-traydecor="${k}">
         <div class="tray-img">${img ? `<img src="assets/decor/${k}.png" alt="">` : `<span class="month-decor-ph">${name[0]}</span>`}</div>
         <div class="tray-name">${name}${total > 1 ? ' ×' + total : ''}</div>
-        <div class="tray-sub">${isAllPlaced ? '已全摆' : '可摆 ' + Math.max(0, total - placed)}</div>
+        <div class="tray-sub">${here > 0 ? '本月已摆 ' + here + ' · ' : ''}${left > 0 ? '可摆 ' + left : '已全摆'}</div>
       </div>`;
     }).join('');
     items.querySelectorAll('[data-traydecor]').forEach(el => {
@@ -436,14 +447,15 @@ const UI = {
     const st = await Farm.load();
     if (type && !st.owned.includes(type)) { this.toast('还没有这个装饰'); return; }
     const src = this.decorSource();
-    let placedCount = 0, ownedCount = 0;
+    let canAdd = false;
     if (type) {
-      placedCount = src.list.filter(d => d.type === type).length;
-      ownedCount = st.owned.filter(k => k === type).length;
+      // 🔴 v0.41：可新增数 = 仓库总数 - 全局已摆（含其他月份）
+      const ownedCount = st.owned.filter(k => k === type).length;
+      canAdd = this.placedTotal(type) < ownedCount;
     }
     this._gardenEdit = {
       type: type || null,
-      canAdd: !!(type && placedCount < ownedCount),
+      canAdd,
       placing: null, // 正在新摆的 {type,x,y}
       snapshot: src.list.map(d => ({ ...d })), // 快照当前布局
     };
@@ -1018,7 +1030,11 @@ const UI = {
       this.state.rpPlayer = null;
       this.state.rpStep = 'play';
       this.state.rpActiveChars = ((w && w.roles) || []).map(r => ({ name: r.name, gender: r.gender }));
-      this.state.rpHistory = (conv.history || []).map(m => ({ role: m.role, content: m.content, name: m.name || '' }));
+      // 🔴 v0.41：保留 voice/options 字段（还原旁白音色和选项）；同时从历史重建 roster（新角色音色）
+      this.state.rpHistory = (conv.history || []).map(m => ({ role: m.role, content: m.content, name: m.name || '', voice: m.voice || '', options: m.options || null }));
+      for (const m of this.state.rpHistory) {
+        if (m.name && !this.state.rpRoster[m.name]) this.state.rpRoster[m.name] = 'f';
+      }
       this.state.convId = conv.id;
       this.state.convTitle = conv.title || (w ? w.name : '剧场');
       this.state.autoTurn = 0;
@@ -1052,13 +1068,37 @@ const UI = {
           <div class="ci-title">${this.esc(c.title || '新会话')}</div>
           <div class="ci-meta">${c.isRp ? '剧场 · ' : ''}${(c.history || []).length} 条 · ${this.fmtTime(c.updated)}</div>
         </div>
-        <button class="ci-del" data-del="${c.id}">✕</button>
+        <div class="ci-actions">
+          <button class="ci-edit" data-edit="${c.id}" title="重命名">✎</button>
+          <button class="ci-del" data-del="${c.id}">✕</button>
+        </div>
       </div>`;
     }).join('');
     wrap.querySelectorAll('.conv-item').forEach(item => {
       item.addEventListener('click', e => {
         if (e.target.dataset.del) return;
+        if (e.target.dataset.edit) return;
         this.switchConv(item.dataset.id);
+      });
+    });
+    // 🔴 v0.41：会话重命名
+    wrap.querySelectorAll('[data-edit]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.edit;
+        const conv = this.listConversations().find(c => c.id === id);
+        if (!conv) return;
+        const name = prompt('给这个会话起个名字：', conv.title || '');
+        if (name == null) return;
+        const title = name.trim();
+        conv.title = title;
+        this.saveConversation(conv);
+        if (this.state.convId === id) {
+          this.state.convTitle = title || (conv.isRp && this.state.rpWorld ? this.state.rpWorld.name : '');
+          this.renderConvTitle();
+        }
+        this.renderConvList();
+        this.toast(title ? '已重命名' : '已清除名字');
       });
     });
     wrap.querySelectorAll('.ci-del').forEach(b => {
@@ -1108,11 +1148,12 @@ const UI = {
   saveChatState() {
     if (this.state.rpMode) {
       // RP 绘画保存进会话历史（可回看/切换；下次"开始角色扮演"仍是新局）
+      // 🔴 v0.41：voice 和 options 都要存，切回会话时才能还原旁白音色和选项
       if (this.state.rpHistory.length) {
         this.saveConversation({
           id: this.state.convId,
           title: this.state.convTitle || (this.state.rpWorld ? this.state.rpWorld.name : '剧场'),
-          history: this.state.rpHistory.map(m => ({ role: m.role, content: m.content, name: m.name || '' })),
+          history: this.state.rpHistory.map(m => ({ role: m.role, content: m.content, name: m.name || '', voice: m.voice || '', options: m.options || null })),
           isRp: true,
           worldId: this.state.rpWorld ? this.state.rpWorld.id : '',
           updated: Date.now(),
@@ -1149,9 +1190,12 @@ const UI = {
       this.state.rpHistory.forEach((m, i) => {
         if (m.role === 'user') this.appendMsg('user', m.content);
         else if (m.name) this.appendRpChar(m.name, m.content, this.dialogueVoice({ name: m.name }), i);
-        else this.appendMsg('assistant', m.content);
+        // 🔴 v0.41：旁白用保存的 voice（默认取设置里的旁白音色），否则切回会话会变默认女声
+        else this.appendMsg('assistant', m.content, { voice: m.voice || Settings.get('narratorVoice', 'f') });
       });
-      this.appendRpOptions([]);
+      // 🔴 v0.41：恢复最后一条 assistant 的选项（继续/分支按钮）
+      const lastOpts = [...this.state.rpHistory].reverse().find(m => m.options && m.options.length);
+      this.appendRpOptions(lastOpts ? lastOpts.options : []);
       area.scrollTop = area.scrollHeight;
       return;
     }
@@ -2485,8 +2529,9 @@ const UI = {
         this.el('chatInput').placeholder = 'Say something… 或输入"继续"';
         const intro = await Agent.rpOpenIntro(w, player, this.state.rpRoster);
         if (intro.narration) {
-          this.appendMsg('assistant', intro.narration, { voice: Settings.get('narratorVoice', 'f') });
-          this.state.rpHistory.push({ role: 'assistant', name: '', content: intro.narration });
+          const nv = Settings.get('narratorVoice', 'f');
+          this.appendMsg('assistant', intro.narration, { voice: nv });
+          this.state.rpHistory.push({ role: 'assistant', name: '', content: intro.narration, voice: nv, options: intro.options || null });
         }
         this.appendRpOptions(intro.options.length ? intro.options : ['继续']);
         this.saveChatState();
@@ -2535,10 +2580,20 @@ const UI = {
       }
       const beat = await Agent.rpDirect(w, chars, this.state.rpHistory, isContinue ? '' : userMsg, results);
       typing.remove();
-      if (beat.narration) this.state.rpHistory.push({ role: 'assistant', content: beat.narration });
+      const nv = Settings.get('narratorVoice', 'f');
+      if (beat.narration) this.state.rpHistory.push({ role: 'assistant', content: beat.narration, voice: nv });
       for (const d of beat.dialogue || []) this.state.rpHistory.push({ role: 'assistant', name: d.name, content: d.line });
-      this.state.rpHistory = this.state.rpHistory.slice(-60);
-      if (beat.narration) this.appendMsg('assistant', beat.narration, { voice: Settings.get('narratorVoice', 'f') });
+      this.state.rpHistory = this.state.rpHistory.slice(-200); // v0.41：放宽截断（原来 60 条，聊多了前面的记录会丢）
+      // 🔴 v0.41：选项记到最近一条 assistant 消息（切回会话时可恢复）
+      if (beat.options && beat.options.length) {
+        for (let i = this.state.rpHistory.length - 1; i >= 0; i--) {
+          if (this.state.rpHistory[i].role === 'assistant') {
+            this.state.rpHistory[i].options = beat.options;
+            break;
+          }
+        }
+      }
+      if (beat.narration) this.appendMsg('assistant', beat.narration, { voice: nv });
       for (const d of beat.dialogue || []) {
         // 新角色加入绘画名册（之后也有子智能体内心活动 + 固定配音）
         if (!this.state.rpChars.find(c => c.name === d.name) && !(this.state.rpActiveChars || []).find(c => c.name === d.name)) {

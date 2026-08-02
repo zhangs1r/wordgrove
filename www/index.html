@@ -42,6 +42,27 @@
     <div id="dashRanks" class="dash-ranks"></div>
   </section>
 
+  <!-- ======== 月历花园（整页像素版 v0.34） ======== -->
+  <section id="tab-garden" class="tab-page">
+    <div class="garden-full">
+      <div class="garden-full-head">
+        <div class="garden-full-title">
+          <div class="garden-full-month"><span id="gardenFullMonth">8月</span> · <span id="gardenFullSeason">夏</span></div>
+          <div class="garden-full-sub">本月积分 <b id="gardenFullPoints">0</b> · 阶段 <span id="gardenFullStage">Lv1</span></div>
+        </div>
+        <div class="garden-full-actions">
+          <button id="gardenFullShopBtn" class="px-btn small">商店</button>
+          <button id="gardenFullHistBtn" class="px-btn small ghost">历史</button>
+        </div>
+      </div>
+      <div class="garden-full-frame">
+        <canvas id="gardenFullCanvas" width="1024" height="1536"></canvas>
+      </div>
+      <div class="garden-full-hint" id="gardenFullHint">学习种下今天的作物 · 点格子看详情</div>
+    </div>
+    <div id="farmDrawer" class="farm-drawer hidden"></div>
+  </section>
+
   <!-- ======== 对话 ======== -->
   <section id="tab-chat" class="tab-page">
     <div class="conv-bar">
@@ -261,6 +282,7 @@
 
 <nav class="tab-bar">
   <button class="tab-btn active" data-tab="today"><span class="tab-icon"></span><span>今日</span></button>
+  <button class="tab-btn" data-tab="garden"><span class="tab-icon"></span><span>小院</span></button>
   <button class="tab-btn" data-tab="chat"><span class="tab-icon"></span><span>对话</span></button>
   <button class="tab-btn" data-tab="tavern"><span class="tab-icon"></span><span>剧场</span></button>
   <button class="tab-btn" data-tab="words"><span class="tab-icon"></span><span>笔记本</span></button>
@@ -271,6 +293,7 @@
 
 <script src="js/db.js"></script>
 <script src="js/farm.js"></script>
+<script src="js/garden-full.js"></script>
 <script src="js/tts.js"></script>
 <script src="js/api.js"></script>
 <script src="js/srs.js"></script>

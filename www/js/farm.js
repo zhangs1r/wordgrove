@@ -218,6 +218,16 @@ const Farm = {
         img.src = 'assets/' + n + '.png';
       });
     }
+    // 通用装饰 sprite（🔴 v0.34 修复：此前只加载月度装饰，通用装饰一直程序化兜底）
+    for (const k of Object.keys(FARM.DECOR)) {
+      if (this._imgs['decor_' + k]) continue;
+      await new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => { this._imgs['decor_' + k] = img; resolve(); };
+        img.onerror = () => resolve();
+        img.src = 'assets/decor/' + k + '.png';
+      });
+    }
     // 月度装饰 sprite（懒加载，失败静默用程序化兜底）
     const st = this._state;
     if (st) {

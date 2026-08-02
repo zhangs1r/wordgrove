@@ -1,6 +1,7 @@
 /* ui.js — 渲染 + 交互 */
 const Icons = {
   sprout: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22V12"/><path d="M12 12C12 8 9 5 5 5c0 4 3 7 7 7z"/><path d="M12 12c0-4 3-7 7-7 0 4-3 7-7 7z"/><path d="M9 22h6"/></svg>',
+  tree: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22V8"/><path d="M12 4 6 10h12l-6-6z"/><path d="M7 14h10l-5-5-5 5z"/><path d="M8 18h8l-4-4-4 4z"/></svg>',
   chat: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>',
   review: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15l2 2 4-4"/></svg>',
   mug: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 8H7l-1.2-5h12.4L17 8z"/><path d="M17 8c0 2.5-2.2 4.5-5 4.5S7 10.5 7 8"/><path d="M12 12.5V19"/><path d="M8 22h8"/></svg>',
@@ -122,7 +123,7 @@ const UI = {
 
   /* 静态 SVG 图标注入（tab/标题/关闭按钮） */
   injectIcons() {
-    const tabMap = { today: Icons.sprout, chat: Icons.chat, tavern: Icons.mug, words: Icons.book, settings: Icons.gear };
+    const tabMap = { today: Icons.sprout, garden: Icons.tree, chat: Icons.chat, tavern: Icons.mug, words: Icons.book, settings: Icons.gear };
     document.querySelectorAll('.tab-btn').forEach(btn => {
       const icon = tabMap[btn.dataset.tab];
       if (icon) {
@@ -157,6 +158,7 @@ const UI = {
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
     document.querySelectorAll('.tab-page').forEach(p => p.classList.toggle('active', p.id === 'tab-' + tab));
     if (tab === 'today') this.renderToday();
+    if (tab === 'garden') this.renderGardenFull();
     if (tab === 'words') this.renderWords();
     if (tab === 'tavern') this.renderTavern();
     if (tab === 'settings') this.renderProfile();
@@ -246,6 +248,54 @@ const UI = {
     if (hist) hist.addEventListener('click', () => this.gardenOpenHistory());
     const drawer = this.el('farmDrawer');
     if (drawer) drawer.addEventListener('click', (e) => this.gardenDrawerClick(e));
+    // 月历花园整页版（v0.34）
+    const fcv = this.el('gardenFullCanvas');
+    if (fcv) fcv.addEventListener('click', (e) => this.gardenFullTap(e));
+    const fshop = this.el('gardenFullShopBtn');
+    if (fshop) fshop.addEventListener('click', () => this.gardenOpenShop());
+    const fhist = this.el('gardenFullHistBtn');
+    if (fhist) fhist.addEventListener('click', () => this.gardenOpenHistory());
+  },
+
+  /* ---------- 月历花园整页版（v0.34 第六 tab） ---------- */
+  async renderGardenFull() {
+    const st = await Farm.load();
+    await Farm.ensureImgs();
+    GardenFull._imgs.crops = Farm._imgs.crops || null;
+    this.el('gardenFullMonth').textContent = st.month + '月';
+    const seasonNames = { spring: '春', summer: '夏', autumn: '秋', winter: '冬' };
+    this.el('gardenFullSeason').textContent = seasonNames[FARM.seasonOf(st.month)] || '';
+    this.el('gardenFullPoints').textContent = st.points;
+    this.el('gardenFullStage').textContent = 'Lv' + (st.stage + 1);
+    const cv = this.el('gardenFullCanvas');
+    if (!cv) return;
+    const ctx = cv.getContext('2d');
+    // 历史视图（_gardenView 复用现有逻辑）
+    const view = this._gardenView;
+    if (view) {
+      this.el('gardenFullMonth').textContent = view.month + '月';
+      this.el('gardenFullSeason').textContent = seasonNames[FARM.seasonOf(view.month)] || '';
+      this.el('gardenFullPoints').textContent = view.totalEarned != null ? view.totalEarned : st.points;
+      this.el('gardenFullStage').textContent = 'Lv' + ((view.stage || 0) + 1);
+      await GardenFull.paint(ctx, { state: st, year: view.year, month: view.month, planted: view.planted, decor: view.decor, stage: view.stage, readonly: true });
+    } else {
+      await GardenFull.paint(ctx, { state: st });
+    }
+  },
+  gardenFullTap(e) {
+    const cv = this.el('gardenFullCanvas');
+    const st = Farm._state;
+    if (!st) return;
+    if (this._gardenView) {
+      this.toast(this._gardenView.year + ' 年 ' + this._gardenView.month + ' 月（已封存）');
+      return;
+    }
+    const day = GardenFull.hitDay(cv, e);
+    if (day == null) {
+      this.toast('点到空地了——点田格子看详情');
+      return;
+    }
+    this.gardenDayMenu(day);
   },
   gardenTap(e) {
     const cv = this.el('farmCanvas');
@@ -360,13 +410,17 @@ const UI = {
     }
     if (btn.dataset.viewhist) {
       const v = btn.dataset.viewhist;
-      if (v === 'back') { this._gardenView = null; this.farmDrawerClose(); await this.renderGarden(); return; }
+      const refreshView = async () => {
+        if (this.state.tab === 'garden') await this.renderGardenFull();
+        else await this.renderGarden();
+      };
+      if (v === 'back') { this._gardenView = null; this.farmDrawerClose(); await refreshView(); return; }
       const st = await Farm.load();
       const h = (st.history || [])[parseInt(v, 10)];
       if (h) {
         this._gardenView = h;
         this.farmDrawerClose();
-        await this.renderGarden();
+        await refreshView();
       }
       return;
     }

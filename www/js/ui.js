@@ -337,7 +337,7 @@ const UI = {
     const editSave = this.el('gardenEditSave');
     if (editSave) editSave.addEventListener('click', () => this.gardenEditSave());
     const editCancel = this.el('gardenEditCancel');
-    if (editCancel) editCancel.addEventListener('click', () => this.gardenEditExit());
+    if (editCancel) editCancel.addEventListener('click', () => this.gardenEditExit(true));
   },
 
   /* ---------- 月历花园整页版（v0.34 第六 tab） ---------- */
@@ -361,22 +361,24 @@ const UI = {
       this.el('gardenFullPoints').textContent = view.totalEarned != null ? view.totalEarned : st.points;
       this.el('gardenFullStage').textContent = 'Lv' + ((view.stage || 0) + 1);
       await GardenFull.paint(ctx, { state: st, year: view.year, month: view.month, planted: view.planted, decor: view.decor, stage: view.stage, readonly: true });
+      // v0.39：历史月份也有自己独立的装饰图层，可编辑
+      this.renderGardenTray(view);
     } else {
       await GardenFull.paint(ctx, { state: st });
-      this.renderGardenTray(st); // 装饰栏（仅当前月）
+      this.renderGardenTray(st); // 装饰栏（当前月）
     }
   },
   gardenFullTap(e) {
     const cv = this.el('gardenFullCanvas');
     const st = Farm._state;
     if (!st) return;
-    if (this._gardenView) {
-      this.toast(this._gardenView.year + ' 年 ' + this._gardenView.month + ' 月（已封存）');
-      return;
-    }
-    // 编辑模式：点 canvas 摆放当前选中的装饰
+    // 编辑模式优先：历史月份也能编辑装饰
     if (this._gardenEdit) {
       this.gardenEditPlace(e);
+      return;
+    }
+    if (this._gardenView) {
+      this.toast(this._gardenView.year + ' 年 ' + this._gardenView.month + ' 月（已封存）——装饰可以改，作物锁定');
       return;
     }
     const day = GardenFull.hitDay(cv, e);
@@ -387,22 +389,31 @@ const UI = {
     this.gardenDayMenu(day);
   },
 
-  /* ---------- 装饰栏 + 编辑模式（v0.36 / v0.37 多份支持） ---------- */
-  renderGardenTray(st) {
+  /* ---------- 装饰栏 + 编辑模式（v0.36 / v0.39 历史月独立图层 + 旋转缩放） ---------- */
+  /* 当前编辑目标的数据源：历史月 = view.decor，当前月 = st.decor */
+  decorSource() {
+    const st = Farm._state;
+    if (this._gardenView) return { list: this._gardenView.decor || (this._gardenView.decor = []), isView: true };
+    return { list: st.decor, isView: false };
+  },
+  renderGardenTray(src) {
     const items = this.el('gardenTrayItems');
     if (!items) return;
+    const st = Farm._state;
     const owned = st.owned || [];
     if (!owned.length) {
       items.innerHTML = '<div class="garden-tray-empty">还没有装饰——点商店买一个，就能摆进小院</div>';
       return;
     }
-    // 按类型计数（可买多份）
+    // 当前视图的摆放数据（历史月独立图层）
+    const placedList = src && src.decor ? src.decor : (this._gardenView ? (this._gardenView.decor || []) : st.decor);
     const counts = {};
     for (const k of owned) counts[k] = (counts[k] || 0) + 1;
     const placedCount = {};
-    for (const d of st.decor) placedCount[d.type] = (placedCount[d.type] || 0) + 1;
+    for (const d of placedList) placedCount[d.type] = (placedCount[d.type] || 0) + 1;
+    const monthTag = this._gardenView ? this._gardenView.month : st.month;
     items.innerHTML = Object.keys(counts).map(k => {
-      const name = (FARM.DECOR[k] || {}).name || (FARM.MONTH_DECOR[st.month] || {})[k]?.name || k;
+      const name = (FARM.DECOR[k] || {}).name || (FARM.MONTH_DECOR[monthTag] || {})[k]?.name || k;
       const img = Farm._imgs['decor_' + k];
       const total = counts[k];
       const placed = placedCount[k] || 0;
@@ -417,41 +428,50 @@ const UI = {
       el.addEventListener('click', () => this.gardenEditStart(el.dataset.traydecor));
     });
   },
-  /* 进入编辑模式：选一个装饰开始摆放 */
+  /* 进入编辑模式：选一个装饰开始摆放（当前月 / 历史月都可） */
   async gardenEditStart(type) {
     const st = await Farm.load();
     if (!st.owned.includes(type)) { this.toast('还没有这个装饰'); return; }
-    // 已摆的数量 >= 拥有的数量时，只能移动已有的（不能新增）
-    const placedCount = st.decor.filter(d => d.type === type).length;
+    const src = this.decorSource();
+    const placedCount = src.list.filter(d => d.type === type).length;
     const ownedCount = st.owned.filter(k => k === type).length;
     this._gardenEdit = {
       type,
       canAdd: placedCount < ownedCount,
       placing: null, // 正在新摆的 {type,x,y}
-      snapshot: st.decor.map(d => ({ ...d })), // 快照当前布局
+      snapshot: src.list.map(d => ({ ...d })), // 快照当前布局
     };
     const layer = this.el('gardenEditLayer');
     const bar = this.el('gardenEditBar');
     layer.classList.remove('hidden');
     bar.classList.remove('hidden');
-    this.el('gardenFullHint').textContent = '编辑模式：拖动装饰调整位置' + (this._gardenEdit.canAdd ? '，点小院空地摆放新的「' + this.decorName(type) + '」' : '');
+    const monthLabel = this._gardenView ? this._gardenView.month + '月（历史）' : '本月';
+    this.el('gardenFullHint').textContent = '编辑 ' + monthLabel + ' 装饰：拖动调整，点空地摆放' + (this._gardenEdit.canAdd ? '新的「' + this.decorName(type) + '」' : '') + '，旋转↻ 缩放±';
     this.gardenEditRenderLayer();
-    this.toast(this._gardenEdit.canAdd ? '点小院空地摆放，可拖动调整' : '已全摆出来了——拖动调整位置吧');
+    this.toast(this._gardenEdit.canAdd ? '点小院空地摆放，可拖动/旋转/缩放' : '拖动调整位置，可旋转/缩放');
   },
   gardenEditRenderLayer() {
     const layer = this.el('gardenEditLayer');
     if (!layer) return;
-    const st = Farm._state;
+    const src = this.decorSource();
     const frame = layer.parentElement; // garden-full-frame
     const frameRect = frame.getBoundingClientRect();
     const scaleX = frameRect.width / 1024, scaleY = frameRect.height / 1536;
-    // 已摆的全部装饰（可拖动）+ 正在新摆的装饰
-    const all = (st.decor || []).concat(this._gardenEdit && this._gardenEdit.placing ? [this._gardenEdit.placing] : []);
-    layer.innerHTML = all.filter(d => d.x != null && d.y != null).map(d => `
-      <div class="edit-decor" data-editid="${d.id || 'new'}" data-editdecor="${d.type}" style="left:${d.x * scaleX}px;top:${d.y * scaleY}px">
-        <img src="assets/decor/${d.type}.png" alt="">
+    // canvas 渲染尺寸 110（1024 坐标系）→ 屏幕像素；编辑层必须一致（v0.39 修复大小偏差）
+    const base = 110 * scaleX;
+    const all = (src.list || []).concat(this._gardenEdit && this._gardenEdit.placing ? [this._gardenEdit.placing] : []);
+    layer.innerHTML = all.filter(d => d.x != null && d.y != null).map(d => {
+      const s = base * (d.scale || 1);
+      // 旋转只作用在 img 上（按钮保持正向）
+      const rot = d.angle ? `transform:rotate(${d.angle}deg)` : '';
+      return `<div class="edit-decor" data-editid="${d.id || 'new'}" data-editdecor="${d.type}" style="left:${d.x * scaleX}px;top:${d.y * scaleY}px;width:${s}px;height:${s}px;transform:translate(-50%,-50%)">
+        <img src="assets/decor/${d.type}.png" alt="" style="${rot}">
         ${d.id ? `<button class="edit-decor-del" data-delid="${d.id}">✕</button>` : ''}
-      </div>`).join('');
+        ${d.id ? `<button class="edit-decor-rot" data-rotid="${d.id}">↻</button>` : ''}
+        ${d.id ? `<button class="edit-decor-szin" data-szid="${d.id}" data-dir="in">+</button>
+        <button class="edit-decor-szout" data-szid="${d.id}" data-dir="out">−</button>` : ''}
+      </div>`;
+    }).join('');
     // 拖动绑定
     layer.querySelectorAll('.edit-decor').forEach(el => this.gardenEditBindDrag(el));
     // 删除按钮
@@ -459,7 +479,35 @@ const UI = {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const id = btn.dataset.delid;
-        Farm._state.decor = Farm._state.decor.filter(d => d.id !== id);
+        const src2 = this.decorSource();
+        src2.list = src2.list.filter(d => d.id !== id);
+        if (src2.isView) this._gardenView.decor = src2.list;
+        else Farm._state.decor = src2.list;
+        this.gardenEditRenderLayer();
+      });
+    });
+    // 旋转按钮（每次 45°）
+    layer.querySelectorAll('[data-rotid]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.rotid;
+        const src2 = this.decorSource();
+        const found = src2.list.find(d => d.id === id);
+        if (found) found.angle = ((found.angle || 0) + 45) % 360;
+        this.gardenEditRenderLayer();
+      });
+    });
+    // 缩放按钮
+    layer.querySelectorAll('[data-szid]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.szid;
+        const src2 = this.decorSource();
+        const found = src2.list.find(d => d.id === id);
+        if (found) {
+          const cur = found.scale || 1;
+          found.scale = Math.min(3, Math.max(0.5, +(btn.dataset.dir === 'in' ? cur * 1.2 : cur / 1.2).toFixed(2)));
+        }
         this.gardenEditRenderLayer();
       });
     });
@@ -477,16 +525,17 @@ const UI = {
       return { x, y };
     };
     el.addEventListener('pointerdown', (e) => {
-      if (e.button === 2 || e.target.closest('.edit-decor-del')) return;
+      if (e.button === 2 || e.target.closest('.edit-decor-del,.edit-decor-rot,.edit-decor-szin,.edit-decor-szout')) return;
       e.preventDefault(); e.stopPropagation();
       dragging = true;
       const id = el.dataset.editid;
       const type = el.dataset.editdecor;
+      const src = this.decorSource();
       const p = move(e.clientX, e.clientY);
       if (id === 'new') {
         this._gardenEdit.placing = { type, x: p.x, y: p.y };
       } else {
-        const found = Farm._state.decor.find(d => d.id === id);
+        const found = src.list.find(d => d.id === id);
         if (found) { found.x = p.x; found.y = p.y; }
       }
       el.setPointerCapture && el.setPointerCapture(e.pointerId);
@@ -496,10 +545,11 @@ const UI = {
       e.preventDefault(); e.stopPropagation();
       const p = move(e.clientX, e.clientY);
       const id = el.dataset.editid;
+      const src = this.decorSource();
       if (id === 'new') {
         this._gardenEdit.placing.x = p.x; this._gardenEdit.placing.y = p.y;
       } else {
-        const found = Farm._state.decor.find(d => d.id === id);
+        const found = src.list.find(d => d.id === id);
         if (found) { found.x = p.x; found.y = p.y; }
       }
     });
@@ -508,10 +558,11 @@ const UI = {
       dragging = false;
       const p = move(e.clientX, e.clientY);
       const id = el.dataset.editid;
+      const src = this.decorSource();
       if (id === 'new') {
         this._gardenEdit.placing.x = p.x; this._gardenEdit.placing.y = p.y;
       } else {
-        const found = Farm._state.decor.find(d => d.id === id);
+        const found = src.list.find(d => d.id === id);
         if (found) { found.x = p.x; found.y = p.y; }
       }
     };
@@ -528,32 +579,50 @@ const UI = {
     const rect = cv.getBoundingClientRect();
     const x = (e.clientX - rect.left) / rect.width * 1024;
     const y = (e.clientY - rect.top) / rect.height * 1536;
-    // 只记录 placing（渲染层 concat 显示），不 push 进 decor（避免重复）
+    // 只记录 placing（渲染层 concat 显示），不 push 进 list（避免重复）
     this._gardenEdit.placing = { type: this._gardenEdit.type, x, y };
     this._gardenEdit.canAdd = false;
     this.gardenEditRenderLayer();
-    this.toast('已放这里，可拖动微调，或点保存');
+    this.toast('已放这里，可拖动/旋转/缩放，或点保存');
   },
   decorName(type) {
     const st = Farm._state;
-    return (FARM.DECOR[type] || {}).name || (st && (FARM.MONTH_DECOR[st.month] || {})[type]?.name) || type;
+    const monthTag = this._gardenView ? this._gardenView.month : st.month;
+    return (FARM.DECOR[type] || {}).name || (FARM.MONTH_DECOR[monthTag] || {})[type]?.name || type;
   },
-  /* 保存布局 */
+  /* 保存布局（当前月 → st.decor；历史月 → 该月自己的 decor 图层） */
   async gardenEditSave() {
     if (!this._gardenEdit) return;
     const st = await Farm.load();
-    // 已摆的（含拖动的）+ 正在新摆的 placing
-    const layout = st.decor.map(d => ({ ...d }));
+    const src = this.decorSource();
+    const layout = (src.list || []).map(d => ({ ...d }));
     if (this._gardenEdit.placing) {
       layout.push(this._gardenEdit.placing);
     }
-    await Farm.saveDecorLayout(layout);
-    this.gardenEditExit();
-    this.toast('布局已保存 ✓');
-    await this.renderGardenFull();
+    if (src.isView) {
+      // 历史月：更新自己图层的 decor（作物不动）
+      this._gardenView.decor = layout;
+      const idx = (st.history || []).findIndex(h => h.year === this._gardenView.year && h.month === this._gardenView.month);
+      if (idx >= 0) st.history[idx].decor = layout;
+      await Farm.save();
+      this.gardenEditExit();
+      this.toast('历史 ' + this._gardenView.month + ' 月装饰已保存 ✓');
+      await this.renderGardenFull();
+    } else {
+      await Farm.saveDecorLayout(layout);
+      this.gardenEditExit();
+      this.toast('布局已保存 ✓');
+      await this.renderGardenFull();
+    }
   },
-  /* 取消编辑 */
-  gardenEditExit() {
+  /* 取消编辑（恢复快照）/ 退出编辑（保存后调用，不恢复） */
+  gardenEditExit(restore) {
+    if (restore && this._gardenEdit && this._gardenEdit.snapshot) {
+      const src = this.decorSource();
+      src.list = this._gardenEdit.snapshot.map(d => ({ ...d }));
+      if (src.isView) this._gardenView.decor = src.list;
+      else Farm._state.decor = src.list;
+    }
     this._gardenEdit = null;
     const layer = this.el('gardenEditLayer');
     const bar = this.el('gardenEditBar');

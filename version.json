@@ -1,1 +1,1 @@
-{"version": "0.38", "notes": "修复编辑模式点地图没反应的bug（拖拽层拦截点击，已改为点击绑定在编辑层）；删掉底部装饰栏的商店按钮（只留顶部）；买完装饰自动进入编辑模式，点小院空地直接摆放", "apk": "EnglishApp-v0.38.apk", "url": "https://github.com/zhangs1r/wordgrove/releases/download/v0.38/EnglishApp-v0.38.apk"}
+{"version": "0.39", "notes": "装饰系统升级：历史月份有独立装饰图层（封存后仍可编辑该月装饰，作物保持锁定）；装饰支持旋转（45°步进）和缩放（0.5-3倍）；修复编辑层与画布渲染大小不一致的偏差", "apk": "EnglishApp-v0.39.apk", "url": "https://github.com/zhangs1r/wordgrove/releases/download/v0.39/EnglishApp-v0.39.apk"}

@@ -556,13 +556,27 @@ body {
   background: rgba(255,255,255,0.25); border: 2px dashed #FAC75E; border-radius: 10px;
   cursor: grab; touch-action: none;
 }
-.garden-edit-layer .edit-decor img { width: 46px; height: 46px; image-rendering: pixelated; pointer-events: none; }
+.garden-edit-layer .edit-decor img { width: 100%; height: 100%; image-rendering: pixelated; pointer-events: none; object-fit: contain; }
 .garden-edit-layer .edit-decor-del {
   position: absolute; top: -8px; right: -8px; width: 22px; height: 22px;
   border-radius: 50%; border: none; background: rgba(192,57,43,0.9); color: #fff;
   font-size: 12px; line-height: 1; display: flex; align-items: center; justify-content: center;
   z-index: 2; cursor: pointer; padding: 0;
 }
+.garden-edit-layer .edit-decor-rot {
+  position: absolute; top: -8px; left: -8px; width: 22px; height: 22px;
+  border-radius: 50%; border: none; background: rgba(41,128,185,0.9); color: #fff;
+  font-size: 13px; line-height: 1; display: flex; align-items: center; justify-content: center;
+  z-index: 2; cursor: pointer; padding: 0;
+}
+.garden-edit-layer .edit-decor-szin, .garden-edit-layer .edit-decor-szout {
+  position: absolute; width: 20px; height: 20px; border-radius: 50%;
+  border: none; background: rgba(39,174,96,0.9); color: #fff; font-size: 13px;
+  line-height: 1; display: flex; align-items: center; justify-content: center;
+  z-index: 2; cursor: pointer; padding: 0; bottom: -8px;
+}
+.garden-edit-layer .edit-decor-szin { left: -8px; }
+.garden-edit-layer .edit-decor-szout { right: -8px; }
 .garden-edit-bar {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   background: var(--card); border-radius: 12px; padding: 8px 10px; margin-top: 8px;

@@ -105,7 +105,7 @@ const GardenFull = {
   },
 
   /* 装饰按坐标渲染：decor = [{type, x, y}]（1024×1536 坐标系，x/y 为装饰中心）
-   * 兼容旧历史数据 {type, day} → 映射到旧 12 锚点 */
+   * v0.39：支持 angle 旋转（度）；兼容旧历史数据 {type, day} → 映射到旧 12 锚点 */
   paintDecorAt(ctx, decor) {
     if (!decor) return;
     const anchors = [
@@ -125,7 +125,15 @@ const GardenFull = {
       const img = Farm._imgs['decor_' + de.type];
       const size = 110;
       if (img) {
-        ctx.drawImage(img, 0, 0, img.width, img.height, x - size / 2, y - size / 2, size, size);
+        if (de.angle) {
+          ctx.save();
+          ctx.translate(x, y);
+          ctx.rotate(de.angle * Math.PI / 180);
+          ctx.drawImage(img, 0, 0, img.width, img.height, -size / 2, -size / 2, size, size);
+          ctx.restore();
+        } else {
+          ctx.drawImage(img, 0, 0, img.width, img.height, x - size / 2, y - size / 2, size, size);
+        }
       } else {
         ctx.fillStyle = '#FAC75E';
         ctx.fillRect(x - 12, y - 12, 24, 24);

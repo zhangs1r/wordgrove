@@ -115,7 +115,7 @@ const Farm = {
     }
     return this._state;
   },
-  /* 旧装饰数据迁移：{type, day} → {type, x, y}（day 映射到旧 12 锚点）；补 decor id（v0.37 多份支持） */
+  /* 旧装饰数据迁移：{type, day} → {type, x, y}（day 映射到旧 12 锚点）；补 decor id/angle/scale（v0.39 多份+旋转+缩放） */
   _migrateDecor(st) {
     st.owned = st.owned || [];
     if (!Array.isArray(st.decor)) st.decor = [];
@@ -133,10 +133,27 @@ const Farm = {
         const a = anchors[(d.day != null ? d.day - 1 : i) % anchors.length];
         x = a.x; y = a.y;
       }
-      migrated.push({ id: d.id || this.newDecorId(), type: d.type, x, y });
+      migrated.push({ id: d.id || this.newDecorId(), type: d.type, x, y, angle: d.angle || 0, scale: d.scale || 1 });
       i++;
     }
     st.decor = migrated;
+    // 历史月份装饰也补 id/angle/scale
+    for (const h of st.history || []) {
+      if (!Array.isArray(h.decor)) { h.decor = []; continue; }
+      if (h.decor.length && h.decor[0].x != null && h.decor[0].id != null) continue;
+      const hm = [];
+      let hi = 0;
+      for (const d of h.decor) {
+        let x = d.x, y = d.y;
+        if (x == null || y == null) {
+          const a = anchors[(d.day != null ? d.day - 1 : hi) % anchors.length];
+          x = a.x; y = a.y;
+        }
+        hm.push({ id: d.id || this.newDecorId(), type: d.type, x, y, angle: d.angle || 0, scale: d.scale || 1 });
+        hi++;
+      }
+      h.decor = hm;
+    }
   },
   newDecorId() {
     return 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -249,10 +266,10 @@ const Farm = {
     await this.save();
     return { ok: true };
   },
-  /* 保存整体摆放布局（编辑模式点勾时调用，layout 带 id，同类型多份） */
+  /* 保存整体摆放布局（编辑模式点勾时调用，layout 带 id，同类型多份，保留 angle/scale） */
   async saveDecorLayout(layout) {
     const st = await this.load();
-    st.decor = layout.map(d => ({ id: d.id || this.newDecorId(), type: d.type, x: Math.round(d.x), y: Math.round(d.y) }));
+    st.decor = layout.map(d => ({ id: d.id || this.newDecorId(), type: d.type, x: Math.round(d.x), y: Math.round(d.y), angle: d.angle || 0, scale: d.scale || 1 }));
     await this.save();
     return { ok: true };
   },

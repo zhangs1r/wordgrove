@@ -329,6 +329,9 @@ const UI = {
     if (fshop) fshop.addEventListener('click', () => this.gardenOpenShop());
     const fhist = this.el('gardenFullHistBtn');
     if (fhist) fhist.addEventListener('click', () => this.gardenOpenHistory());
+    // v0.40：顶部"编辑"按钮——直接进编辑模式（可拖动/旋转/缩放已有装饰）
+    const fedt = this.el('gardenFullEditBtn');
+    if (fedt) fedt.addEventListener('click', () => this.gardenEditStart(null));
     const goGarden = this.el('todayGoGardenBtn');
     if (goGarden) goGarden.addEventListener('click', () => this.switchTab('garden'));
     // 装饰栏/编辑模式（v0.36）
@@ -428,16 +431,19 @@ const UI = {
       el.addEventListener('click', () => this.gardenEditStart(el.dataset.traydecor));
     });
   },
-  /* 进入编辑模式：选一个装饰开始摆放（当前月 / 历史月都可） */
+  /* 进入编辑模式：选一个装饰开始摆放（当前月 / 历史月都可）；type 为空 = 只编辑已有装饰（顶部"编辑"按钮） */
   async gardenEditStart(type) {
     const st = await Farm.load();
-    if (!st.owned.includes(type)) { this.toast('还没有这个装饰'); return; }
+    if (type && !st.owned.includes(type)) { this.toast('还没有这个装饰'); return; }
     const src = this.decorSource();
-    const placedCount = src.list.filter(d => d.type === type).length;
-    const ownedCount = st.owned.filter(k => k === type).length;
+    let placedCount = 0, ownedCount = 0;
+    if (type) {
+      placedCount = src.list.filter(d => d.type === type).length;
+      ownedCount = st.owned.filter(k => k === type).length;
+    }
     this._gardenEdit = {
-      type,
-      canAdd: placedCount < ownedCount,
+      type: type || null,
+      canAdd: !!(type && placedCount < ownedCount),
       placing: null, // 正在新摆的 {type,x,y}
       snapshot: src.list.map(d => ({ ...d })), // 快照当前布局
     };
@@ -446,9 +452,11 @@ const UI = {
     layer.classList.remove('hidden');
     bar.classList.remove('hidden');
     const monthLabel = this._gardenView ? this._gardenView.month + '月（历史）' : '本月';
-    this.el('gardenFullHint').textContent = '编辑 ' + monthLabel + ' 装饰：拖动调整，点空地摆放' + (this._gardenEdit.canAdd ? '新的「' + this.decorName(type) + '」' : '') + '，旋转↻ 缩放±';
+    this.el('gardenFullHint').textContent = type
+      ? '编辑 ' + monthLabel + ' 装饰：拖动调整，点空地摆放' + (this._gardenEdit.canAdd ? '新的「' + this.decorName(type) + '」' : '') + '，旋转↻ 缩放±'
+      : '编辑 ' + monthLabel + ' 装饰：拖动/旋转/缩放已有装饰，点装饰栏可新增';
     this.gardenEditRenderLayer();
-    this.toast(this._gardenEdit.canAdd ? '点小院空地摆放，可拖动/旋转/缩放' : '拖动调整位置，可旋转/缩放');
+    this.toast(type ? (this._gardenEdit.canAdd ? '点小院空地摆放，可拖动/旋转/缩放' : '拖动调整位置，可旋转/缩放') : '编辑模式：拖动已有装饰调整');
   },
   gardenEditRenderLayer() {
     const layer = this.el('gardenEditLayer');
@@ -571,7 +579,9 @@ const UI = {
   },
   /* 编辑模式：点 canvas 空白处摆放当前装饰（新的一份） */
   gardenEditPlace(e) {
-    if (!this._gardenEdit || !this._gardenEdit.canAdd) {
+    if (!this._gardenEdit) return;
+    if (!this._gardenEdit.type) { this.toast('先点装饰栏选一个装饰再摆放'); return; }
+    if (!this._gardenEdit.canAdd) {
       this.toast('拖动已有的装饰调整位置吧');
       return;
     }

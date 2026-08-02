@@ -107,7 +107,8 @@ const Farm = {
     if (!st.sealed && (st.year !== now.getFullYear() || st.month !== now.getMonth() + 1)) {
       st.sealed = true;
       st.history = st.history || [];
-      st.history.unshift({ year: st.year, month: st.month, planted: st.planted, decor: st.decor, owned: st.owned || [], stage: st.stage, totalEarned: st.totalEarned, sealedAt: Date.now() });
+      // 🔴 v0.40 修复：decor 必须深拷贝（否则历史月与当前月共享同一数组，当前月摆装饰历史也跟着变）
+      st.history.unshift({ year: st.year, month: st.month, planted: st.planted, decor: JSON.parse(JSON.stringify(st.decor || [])), owned: (st.owned || []).slice(), stage: st.stage, totalEarned: st.totalEarned, sealedAt: Date.now() });
       const fresh = this.defaultState();
       fresh.history = st.history.slice(0, 36); // 保留 3 年
       this._state = fresh;
@@ -200,7 +201,8 @@ const Farm = {
           if (st && !st.sealed && (st.year !== now.getFullYear() || st.month !== now.getMonth() + 1)) {
             st.sealed = true;
             st.history = st.history || [];
-            st.history.unshift({ year: st.year, month: st.month, planted: st.planted, decor: st.decor, stage: st.stage, totalEarned: st.totalEarned, sealedAt: Date.now() });
+            // 🔴 v0.40 修复：decor 深拷贝（模拟整月封存路径同样问题）
+            st.history.unshift({ year: st.year, month: st.month, planted: st.planted, decor: JSON.parse(JSON.stringify(st.decor || [])), stage: st.stage, totalEarned: st.totalEarned, sealedAt: Date.now() });
             const fresh = this.defaultState();
             fresh.history = st.history.slice(0, 36);
             st = fresh;

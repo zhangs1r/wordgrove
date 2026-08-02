@@ -123,7 +123,8 @@ const GardenFull = {
       }
       i++;
       const img = Farm._imgs['decor_' + de.type];
-      const size = 110;
+      // v0.40：size 乘 scale（编辑层缩放与画布渲染一致）
+      const size = 110 * (de.scale || 1);
       if (img) {
         if (de.angle) {
           ctx.save();
@@ -136,7 +137,8 @@ const GardenFull = {
         }
       } else {
         ctx.fillStyle = '#FAC75E';
-        ctx.fillRect(x - 12, y - 12, 24, 24);
+        const half = 12 * (de.scale || 1);
+        ctx.fillRect(x - half, y - half, half * 2, half * 2);
       }
     }
   },

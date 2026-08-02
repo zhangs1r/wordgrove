@@ -1,1 +1,1 @@
-{"version": "0.37", "notes": "修复：顶部商店/历史按钮点了没反应（抽屉改为底部弹层+遮罩）；装饰不限购买次数（可买多份摆多个）；同类型装饰可摆多份（带id管理，编辑模式可删）；修复月度限定装饰价格缺失导致积分变NaN的bug", "apk": "EnglishApp-v0.37.apk", "url": "https://github.com/zhangs1r/wordgrove/releases/download/v0.37/EnglishApp-v0.37.apk"}
+{"version": "0.38", "notes": "修复编辑模式点地图没反应的bug（拖拽层拦截点击，已改为点击绑定在编辑层）；删掉底部装饰栏的商店按钮（只留顶部）；买完装饰自动进入编辑模式，点小院空地直接摆放", "apk": "EnglishApp-v0.38.apk", "url": "https://github.com/zhangs1r/wordgrove/releases/download/v0.38/EnglishApp-v0.38.apk"}

@@ -314,6 +314,14 @@ const UI = {
     if (gdrawer) gdrawer.addEventListener('click', (e) => this.gardenDrawerClick(e));
     const fmask = this.el('farmMask');
     if (fmask) fmask.addEventListener('click', () => this.farmDrawerClose());
+    // 🔴 v0.37 修复：编辑模式的拖拽层覆盖在 canvas 上，点击落在层上、传不到 canvas
+    // → 点击绑定在编辑层上（仅编辑模式生效，且只响应点到层本身=空白处）
+    const editLayer = this.el('gardenEditLayer');
+    if (editLayer) editLayer.addEventListener('click', (e) => {
+      if (!this._gardenEdit) return;
+      if (e.target !== editLayer) return; // 点到装饰/按钮上不处理
+      this.gardenEditPlace(e);
+    });
     // 月历花园整页版（v0.34）
     const fcv = this.el('gardenFullCanvas');
     if (fcv) fcv.addEventListener('click', (e) => this.gardenFullTap(e));
@@ -661,9 +669,13 @@ const UI = {
       const r = await Farm.buyDecor(type);
       if (!r.ok) { this.toast(r.msg || '购买失败'); return; }
       this.farmDrawerClose();
-      this.toast('已购买「' + this.decorName(type) + '」——去小院底部「我的装饰」点选摆放');
-      if (this.state.tab === 'garden') await this.renderGardenFull();
-      else await this.renderGarden();
+      this.toast('已购买「' + this.decorName(type) + '」');
+      if (this.state.tab === 'garden') {
+        await this.renderGardenFull();
+        await this.gardenEditStart(type); // 买完直接进编辑模式，点小院摆放
+      } else {
+        await this.renderGarden();
+      }
       return;
     }
     if (btn.dataset.rmdecor) {

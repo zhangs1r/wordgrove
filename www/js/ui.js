@@ -190,30 +190,92 @@ const UI = {
   async renderGarden() {
     const st = await Farm.load();
     await Farm.ensureImgs();
+    const seasonNames = { spring: '春', summer: '夏', autumn: '秋', winter: '冬' };
     this.el('gardenMonth').textContent = st.month + '月';
     this.el('gardenPoints').textContent = st.points;
     this.el('gardenStage').textContent = 'Lv' + (st.stage + 1);
+    this.el('gardenPoints2').textContent = st.points;
+    this.el('gardenStage2').textContent = 'Lv' + (st.stage + 1);
+    const now = FARM.now();
+    this.el('todayVeggieDate').textContent = now.getMonth() + 1 + '月' + now.getDate() + '日';
+    this.el('todayVeggieSeason').textContent = seasonNames[FARM.seasonOf(now.getMonth() + 1)] || '';
     const cta = this.el('gardenCta');
-    const today = new Date().getDate();
+    const today = now.getDate();
     const planted = st.planted[today];
     if (!planted) {
       cta.innerHTML = `<span>今天还没学习——学一点，<b>${today} 号格</b>就会长出<b>${FARM.CROP_DEFS[FARM.monthCrop(st.month, today)].name}</b></span>`;
     } else {
       cta.innerHTML = `<span>今天已种下 <b>${FARM.CROP_DEFS[planted].name}</b> · 再学 <b>${Math.max(0, FARM.GROW_PER_STAGE * (st.stage + 1) - st.totalEarned)}</b> 积分全院升级</span>`;
     }
-    this.paintGarden(st);
+    this.paintTodayVeggie(st);
+    this.renderMonthDecor(st);
     this.renderDashboards();
   },
-  paintGarden(st) {
-    const cv = this.el('farmCanvas');
+  /* 今日植被大图：作物成熟帧放大 + 季节草地底 */
+  paintTodayVeggie(st) {
+    const cv = this.el('todayVeggieCanvas');
     if (!cv) return;
     const ctx = cv.getContext('2d');
-    const view = this._gardenView;
-    if (view) {
-      Farm.paintCalendar(ctx, st, { year: view.year, month: view.month, planted: view.planted, decor: view.decor, stage: view.stage, readonly: true });
+    const C = 220;
+    const now = FARM.now();
+    const today = now.getDate();
+    const season = FARM.seasonOf(now.getMonth() + 1);
+    ctx.clearRect(0, 0, C, C);
+    ctx.imageSmoothingEnabled = false;
+    // 季节草地底
+    const grass = Farm._imgs['grass_' + season] || null;
+    if (grass) {
+      ctx.drawImage(grass, 0, 0, 32, 32, 0, 0, C, C);
     } else {
-      Farm.paintCalendar(ctx, st);
+      ctx.fillStyle = season === 'winter' ? '#E8EDE8' : '#9CCC65';
+      ctx.fillRect(0, 0, C, C);
     }
+    // 今天高亮描边
+    ctx.strokeStyle = '#FAC75E';
+    ctx.lineWidth = 6;
+    ctx.strokeRect(4, 4, C - 8, C - 8);
+    // 今日作物（成熟帧 = 第三帧）
+    const crop = st.planted[today];
+    const nameEl = this.el('todayVeggieName');
+    const subEl = this.el('todayVeggieSub');
+    if (crop && Farm._imgs.crops && FARM.CROP_DEFS[crop]) {
+      const def = FARM.CROP_DEFS[crop];
+      const sx = def.x * 96 + 64; // 成熟帧
+      const size = 190;
+      ctx.drawImage(Farm._imgs.crops, sx, 0, 32, 32, (C - size) / 2, (C - size) / 2, size, size);
+      nameEl.textContent = def.name;
+      subEl.textContent = '今日已种下 · 学习就能收获';
+    } else {
+      // 未学习：画一个小种子 + 提示
+      nameEl.textContent = FARM.CROP_DEFS[FARM.monthCrop(st.month, today)].name;
+      subEl.textContent = '今天还没学习——学一点就种下';
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.font = 'bold 15px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('待播种', C / 2, C / 2 + 5);
+      ctx.textAlign = 'left';
+    }
+  },
+  /* 本月限定装饰：当月 sprite + 名称 + 已购标记 */
+  renderMonthDecor(st) {
+    const row = this.el('monthDecorRow');
+    if (!row) return;
+    const monthDefs = FARM.MONTH_DECOR[st.month] || {};
+    const keys = Object.keys(monthDefs);
+    if (!keys.length) {
+      row.innerHTML = '<div class="month-decor-empty">本月没有限定装饰</div>';
+      return;
+    }
+    const owned = st.decor.map(x => x.type);
+    row.innerHTML = keys.map(k => {
+      const dc = monthDefs[k];
+      const img = Farm._imgs['decor_' + k];
+      const ownedMark = owned.includes(k) ? '<span class="month-decor-owned">已买</span>' : '';
+      return `<div class="month-decor-item">
+        <div class="month-decor-img">${img ? `<img src="assets/decor/${k}.png" alt="">` : `<span class="month-decor-ph">${dc.name[0]}</span>`}</div>
+        <div class="month-decor-name">${dc.name}${ownedMark}</div>
+      </div>`;
+    }).join('');
   },
   renderDashboards() {
     const p = Profile.load();
@@ -255,6 +317,8 @@ const UI = {
     if (fshop) fshop.addEventListener('click', () => this.gardenOpenShop());
     const fhist = this.el('gardenFullHistBtn');
     if (fhist) fhist.addEventListener('click', () => this.gardenOpenHistory());
+    const goGarden = this.el('todayGoGardenBtn');
+    if (goGarden) goGarden.addEventListener('click', () => this.switchTab('garden'));
   },
 
   /* ---------- 月历花园整页版（v0.34 第六 tab） ---------- */
@@ -1507,7 +1571,7 @@ const UI = {
       const inSet = !!exist;
       if (!inSet) {
         try {
-          const r = await Farm.addPoints('word', { key: word.toLowerCase() + ':' + FARM.dayKey(new Date()), pts: 2, maxDay: 10 });
+          const r = await Farm.addPoints('word', { key: word.toLowerCase() + ':' + FARM.dayKey(FARM.now()), pts: 2, maxDay: 10 });
           if (r) this.rewardToast(r, '查词');
         } catch (e) {}
       }
@@ -1840,6 +1904,98 @@ const UI = {
     this.el('importBtn').addEventListener('click', () => this.el('importFile').click());
     const updBtn = this.el('checkUpdateBtn');
     if (updBtn) updBtn.addEventListener('click', () => this.checkUpdate());
+    this.bindDevSettings();
+  },
+
+  /* ---------- 🔧 开发者设置（测试用，正式版删除整个方法+页面分组） ---------- */
+  bindDevSettings() {
+    // 填充年月日下拉
+    const yEl = this.el('devDateYear'), mEl = this.el('devDateMonth'), dEl = this.el('devDateDay');
+    if (!yEl) return;
+    const now = new Date();
+    const dv = Settings.get('devDate', null);
+    const curY = dv ? dv.y : now.getFullYear();
+    const curM = dv ? dv.m : now.getMonth() + 1;
+    const curD = dv ? dv.d : now.getDate();
+    for (let y = now.getFullYear() - 1; y <= now.getFullYear() + 1; y++) yEl.innerHTML += `<option value="${y}">${y}年</option>`;
+    for (let m = 1; m <= 12; m++) mEl.innerHTML += `<option value="${m}">${m}月</option>`;
+    const fillDays = () => {
+      const days = new Date(parseInt(yEl.value, 10), parseInt(mEl.value, 10), 0).getDate();
+      dEl.innerHTML = '';
+      for (let d = 1; d <= days; d++) dEl.innerHTML += `<option value="${d}">${d}日</option>`;
+      dEl.value = Math.min(curD, days);
+    };
+    yEl.value = curY; mEl.value = curM;
+    fillDays();
+    mEl.addEventListener('change', fillDays);
+    const hint = this.el('devDateHint');
+    const refreshHint = () => {
+      const d = Settings.get('devDate', null);
+      hint.textContent = d ? `模拟中：${d.y}年${d.m}月${d.d}日（全 App 生效）` : '当前：真实时间';
+    };
+    refreshHint();
+    this.el('devDateApply').addEventListener('click', async () => {
+      Settings.set('devDate', { y: parseInt(yEl.value, 10), m: parseInt(mEl.value, 10), d: parseInt(dEl.value, 10) });
+      refreshHint();
+      this.toast('已切换模拟日期，正在刷新…');
+      await this.reloadFarmViews();
+    });
+    this.el('devResetDate').addEventListener('click', async () => {
+      Settings.remove('devDate');
+      refreshHint();
+      this.toast('已恢复真实日期');
+      await this.reloadFarmViews();
+    });
+    this.el('devSimLearn').addEventListener('click', async () => {
+      const now = FARM.now();
+      const r = await Farm.addPoints('dev', { key: 'sim:' + FARM.dayKey(now), pts: 5 });
+      const st = await Farm.load();
+      this.toast(r ? '模拟学习成功：+' + r.pts + ' 积分，' + (FARM.CROP_DEFS[r.planted] || {}).name + ' 已种下' : '今天已模拟过（幂等），点了不重复加');
+      await this.reloadFarmViews();
+    });
+    this.el('devFillMonth').addEventListener('click', async () => {
+      const st = await Farm.load();
+      const days = FARM.daysInMonth(st.year, st.month);
+      for (let d = 1; d <= days; d++) {
+        if (!st.planted[d]) st.planted[d] = FARM.monthCrop(st.month, d);
+      }
+      st.points = Math.max(st.points, 200);
+      st.totalEarned = Math.max(st.totalEarned, 160);
+      st.stage = Math.min(2, Math.floor(st.totalEarned / FARM.GROW_PER_STAGE));
+      await Farm.save();
+      this.toast('本月 ' + days + ' 天全部种下作物，积分补到 200');
+      await this.reloadFarmViews();
+    });
+    this.el('devClearData').addEventListener('click', async () => {
+      if (!confirm('确定清除开发者产生的数据？将删除：模拟日期、小院积分/作物/装饰/封存历史。学习数据（词库/画像）不受影响。')) return;
+      Settings.remove('devDate');
+      // 重置小院状态为全新（保留 id）
+      const fresh = Farm.defaultState();
+      await Farm.txPut('garden', fresh);
+      Farm._state = fresh;
+      // 清掉所有 dev 模拟事件（幂等键）
+      try {
+        const d = await db();
+        const t = d.transaction('farm', 'readwrite');
+        const store = t.objectStore('farm');
+        const keysReq = store.getAllKeys();
+        keysReq.onsuccess = () => {
+          for (const k of keysReq.result) {
+            if (typeof k === 'string' && (k.startsWith('ev_dev_') || k.startsWith('ev_word_') || k.startsWith('ev_time_') || k.startsWith('ev_chat_'))) {
+              store.delete(k);
+            }
+          }
+        };
+      } catch (e) {}
+      this.toast('开发者数据已清除，小院已重置');
+      await this.reloadFarmViews();
+    });
+  },
+  /* 开发者设置后刷新小院相关视图 */
+  async reloadFarmViews() {
+    if (this.state.tab === 'garden') await this.renderGardenFull();
+    else if (this.state.tab === 'today') await this.renderToday();
+    else await this.renderToday();
   },
 
   /* ============ 酒馆（世界卡/角色卡） ============ */

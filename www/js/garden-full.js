@@ -67,7 +67,7 @@ const GardenFull = {
     }
 
     const map = this._map;
-    const now = new Date();
+    const now = FARM.now();
     const isCurrentMonth = !readonly && year === st.year && month === st.month;
 
     // 作物画在坐标格中心

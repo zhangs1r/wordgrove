@@ -34,9 +34,22 @@
       </div>
     </div>
     <div id="gardenCta" class="farm-cta"></div>
-    <div class="farm-canvas-wrap">
-      <canvas id="farmCanvas" width="336" height="288"></canvas>
+    <!-- 今日植被大图（v0.35 替代丑月历格子） -->
+    <div class="today-veggie">
+      <div class="today-veggie-frame">
+        <canvas id="todayVeggieCanvas" width="220" height="220"></canvas>
+        <div class="today-veggie-name" id="todayVeggieName">—</div>
+        <div class="today-veggie-sub" id="todayVeggieSub"></div>
+      </div>
+      <div class="today-veggie-info">
+        <div class="today-veggie-date"><span id="todayVeggieDate">8月2日</span> · <span id="todayVeggieSeason">夏</span></div>
+        <div class="today-veggie-points">本月积分 <b id="gardenPoints2">0</b> · 全院等级 <span id="gardenStage2">Lv1</span></div>
+        <button class="btn btn-primary btn-sm" id="todayGoGardenBtn">去小院看看</button>
+      </div>
     </div>
+    <!-- 本月限定装饰 -->
+    <div class="month-decor-title">本月限定装饰</div>
+    <div class="month-decor-row" id="monthDecorRow"></div>
     <div id="farmDrawer" class="farm-drawer hidden"></div>
     <div id="dashStats" class="dash-stats"></div>
     <div id="dashRanks" class="dash-ranks"></div>
@@ -217,6 +230,28 @@
     <div class="settings-group">
       <h3>学习画像</h3>
       <div id="profileView" class="profile-view">还没开始学习，聊一局就有画像了</div>
+    </div>
+    <div class="settings-group">
+      <h3>🔧 开发者设置（测试用，正式版移除）</h3>
+      <label class="field">
+        <span>模拟日期（切到其他日期/月份测试小院）</span>
+        <div class="dev-date-row">
+          <select id="devDateYear"></select>
+          <select id="devDateMonth"></select>
+          <select id="devDateDay"></select>
+          <button id="devDateApply" class="btn btn-primary btn-sm">应用</button>
+        </div>
+        <div class="dev-date-hint" id="devDateHint">当前：真实时间</div>
+      </label>
+      <div class="field-btns">
+        <button id="devResetDate" class="btn btn-ghost">恢复真实日期</button>
+        <button id="devSimLearn" class="btn btn-ghost">模拟今日学习</button>
+      </div>
+      <div class="field-btns">
+        <button id="devFillMonth" class="btn btn-ghost">模拟本月全部学习</button>
+        <button id="devClearData" class="btn btn-ghost" style="color:#c0392b">清除开发者产生的数据</button>
+      </div>
+      <p class="footnote">模拟学习 = 给当月种作物 + 加积分（幂等，可重复点）。清除 = 删掉模拟日期 + 重置小院数据（积分/作物/装饰/封存历史）。</p>
     </div>
     <div class="settings-group">
       <h3>数据</h3>

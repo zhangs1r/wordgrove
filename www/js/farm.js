@@ -61,6 +61,12 @@ const FARM = {
   },
 
   dayKey(d) { return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); },
+  /* 🔴 全局日期源：开发者设置可模拟日期（devDate={y,m,d}），正式版删除此逻辑后自动回真实时间 */
+  now() {
+    const dv = Settings.get('devDate', null);
+    if (dv && dv.y && dv.m && dv.d) return new Date(dv.y, dv.m - 1, dv.d, 12, 0, 0);
+    return new Date();
+  },
   seasonOf(month) { return this.MONTH_SEASON[month - 1]; },
   monthCrop(month, day) {
     const pool = this.SEASON_CROPS[this.seasonOf(month)];
@@ -75,7 +81,7 @@ const Farm = {
   _imgs: {},  // 素材缓存
 
   defaultState() {
-    const now = new Date();
+    const now = FARM.now();
     return {
       id: 'garden', year: now.getFullYear(), month: now.getMonth() + 1,
       points: 0, totalEarned: 0, dayPoints: 0, day: FARM.dayKey(now),
@@ -85,7 +91,7 @@ const Farm = {
   },
 
   async load() {
-    const now = new Date();
+    const now = FARM.now();
     if (!this._state) {
       const s = await this.txGet('garden');
       this._state = s || this.defaultState();
@@ -139,7 +145,7 @@ const Farm = {
         const reqS = store.get('garden');
         reqS.onsuccess = () => {
           let st = reqS.result;
-          const now = new Date();
+          const now = FARM.now();
           const today = FARM.dayKey(now);
           // 跨月重置（封存旧月）
           if (st && !st.sealed && (st.year !== now.getFullYear() || st.month !== now.getMonth() + 1)) {
@@ -247,7 +253,7 @@ const Farm = {
   /* ============ Canvas 月历渲染 ============ */
   CELL: 48,
   paintCalendar(ctx, state, opts = {}) {
-    const now = new Date();
+    const now = FARM.now();
     const year = opts.year != null ? opts.year : state.year;
     const month = opts.month != null ? opts.month : state.month;
     const planted = opts.planted || state.planted;

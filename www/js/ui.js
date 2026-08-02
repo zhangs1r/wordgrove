@@ -982,6 +982,11 @@ const UI = {
           await Words.update(w.id, { forgot: (w.forgot || 0) - 1 });
           Agent.refreshForgetWords();
         }
+        // 🔴 v1.0 积分：复习卡片也给分（2分/卡，每天最多8卡=16分）——复习是核心学习行为
+        try {
+          const r = await Farm.addPoints('reviewcard', { key: w.id, pts: 2, maxDay: 8 });
+          if (r) this.rewardToast(r, '复习');
+        } catch (e) {}
         this.state.cardIndex++;
         const next = this.state.dueQueue[this.state.cardIndex];
         if (next) this.showCard(next);
@@ -1903,17 +1908,24 @@ const UI = {
   },
 
   /* 收藏上下文：当前场景/世界 + 最近一句 AI 消息 */
+  /* 🔴 v0.44：收藏场景更详细——来源 + 角色/场景 + 最近 2 条上下文 */
   currentCtx() {
     let where = '';
-    if (this.state.rpMode) where = '剧场 · ' + (this.state.rpWorld ? this.state.rpWorld.name : '');
-    else where = this.state.convTitle || '对话';
-    const h = this.state.rpMode ? this.state.rpHistory : this.state.chatHistory;
-    for (let i = h.length - 1; i >= 0; i--) {
-      if (h[i].role === 'assistant' && typeof h[i].content === 'string' && h[i].content.length > 3) {
-        return where + ' · ' + h[i].content.replace(/\s+/g, ' ').slice(0, 90);
-      }
+    if (this.state.rpMode) {
+      where = '剧场《' + (this.state.rpWorld ? this.state.rpWorld.name : '未命名') + '》';
+      if (this.state.rpPlayer && this.state.rpPlayer.name) where += ' · 扮演 ' + this.state.rpPlayer.name;
+    } else {
+      where = this.state.convTitle || '日常对话';
     }
-    return where;
+    const h = this.state.rpMode ? this.state.rpHistory : this.state.chatHistory;
+    const recent = [];
+    for (let i = h.length - 1; i >= 0 && recent.length < 2; i--) {
+      const m = h[i];
+      if (m.role !== 'assistant' || typeof m.content !== 'string' || m.content.length < 2) continue;
+      const who = m.name ? m.name + '：' : '';
+      recent.unshift(who + m.content.replace(/\s+/g, ' ').slice(0, 80));
+    }
+    return recent.length ? where + ' · ' + recent.join(' / ') : where;
   },
 
   /* ---------- 生词/句子笔记本 ---------- */
@@ -2682,7 +2694,7 @@ const UI = {
     div.className = 'msg msg-ai msg-rp-char';
     const mark = voice === 'm' ? '♂ ' : '♀ ';
     const idx = idxArg !== undefined ? idxArg : this.state.rpHistory.length;
-    div.innerHTML = `<div class="msg-rp-name">${mark}${this.esc(name)}</div><div class="msg-en">${this.renderMsgText(line)}</div><div class="msg-actions"><button class="msg-chip-btn" data-say="${this.esc(line)}" data-voice="${voice || 'f'}" title="朗读">${this.sayIcon()}</button><button class="msg-chip-btn" data-sel="${this.esc(line)}" title="查单词">${Icons.search}</button><button class="msg-chip-btn" data-sent="${this.esc(line)}" title="查这句">${Icons.chat}</button><button class="msg-chip-btn" data-rb="${idx}" title="回滚到此">${Icons.undo}</button></div>`;
+    div.innerHTML = `<div class="msg-rp-name">${mark}${this.esc(name)}</div><div class="msg-en">${this.renderMsgText(line)}</div><div class="msg-actions"><button class="msg-chip-btn" data-say="${this.esc(line)}" data-voice="${voice || 'f'}" title="朗读">${this.sayIcon()}</button><button class="msg-chip-btn" data-sel="${this.esc(line)}" title="查单词">${Icons.search}</button><button class="msg-chip-btn" data-sent="${this.esc(line)}" title="查这句">${Icons.chat}</button></div>`;
     this.bindTapWords(div);
     const sb = div.querySelector('[data-say]');
     if (sb) this.addSpeakListener(sb, sb.dataset.say, sb.dataset.voice || 'f');
@@ -2695,11 +2707,6 @@ const UI = {
     if (sentBtn) sentBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       this.translateSelection(line);
-    });
-    const rbBtn = div.querySelector('[data-rb]');
-    if (rbBtn) rbBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.rollbackMsg(parseInt(rbBtn.dataset.rb, 10));
     });
     area.appendChild(div);
     area.scrollTop = area.scrollHeight;

@@ -1,1 +1,1 @@
-{"version": "0.43", "notes": "图层按钮位置修复；回滚/重新生成按钮改到我的输入上（旧输入回滚、最新输入重新生成、AI消息无操作钮）；幽灵会话修复；RP话题切换不再提示退出；提示词加世界观一致性；积分系统：跨月累积可花可不花+已购装饰跨月保留+月度限定150分+植物随机种植", "apk": "EnglishApp-v0.43.apk", "url": "https://github.com/zhangs1r/wordgrove/releases/download/v0.43/EnglishApp-v0.43.apk"}
+{"version": "1.0", "notes": "1.0 正式版：装饰扩充（通用+10、每月限定+2，共64素材）；积分系统（跨月累积、每日50上限、复习卡片给分、限定150/100分）；植物格子独立生长；收藏场景更详细；今日复习词进对话上下文；RP角色无回滚按钮；幽灵会话修复", "apk": "EnglishApp-v1.0.apk", "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.0/EnglishApp-v1.0.apk"}

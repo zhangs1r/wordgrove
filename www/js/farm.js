@@ -4,7 +4,7 @@
  */
 
 const FARM = {
-  POINT_DAY_LIMIT: 40,   // 月积分每日上限（≈1200/月，接近 1000 概念）
+  POINT_DAY_LIMIT: 50,   // 每日积分上限（v1.0：全勤月 ≈1500 分 = 4 个限定 500 + 剩 1000 买普通）
   GROW_PER_STAGE: 40,    // 当月累计积分每 40 分，全月作物升一阶段（0/1/2）
 
   MONTH_SEASON: ['winter','winter','spring','spring','spring','summer','summer','summer','autumn','autumn','autumn','winter'],
@@ -43,23 +43,35 @@ const FARM = {
     fence:  { name: '围栏',   price: 12 },
     stone:  { name: '石头',   price: 8 },
     windmill: { name: '风车', price: 60 },
+    // 🔴 v1.0 通用装饰扩充（种类更多，搭配更丰富）
+    tree:  { name: '小树',   price: 40 },
+    flower_bed: { name: '花坛', price: 35 },
+    fountain: { name: '喷泉', price: 80 },
+    gazebo: { name: '凉亭', price: 90 },
+    birdhouse: { name: '鸟屋', price: 18 },
+    mushroom: { name: '蘑菇', price: 10 },
+    hay_bale: { name: '草垛', price: 15 },
+    mailbox: { name: '信箱', price: 22 },
+    stone_lantern: { name: '石灯笼', price: 50 },
+    flower_basket: { name: '花篮', price: 25 },
   },
   // 月度限定装饰（AI 生成 sprite；v0.36 起每月 2 个，按原规划表）
   // 🔴 v0.43 积分设计：限定装饰 price=150（比普通装饰 8~60 贵，体现稀缺）；
   //   每日上限 40 分 → 全勤月 ≈1200 分 = 买完 2 个限定(300) + 剩 900 买普通装饰（可买 15~100 个）
+  // 🔴 v1.0 每月再增 2 个限定（price=100，比 150 档便宜一点但仍是限定），每月 4 个限定共 500 分
   MONTH_DECOR: {
-    1:  { lantern: { name: '灯笼', price: 150 }, snowman: { name: '雪人', price: 150 } },
-    2:  { flower_lamp: { name: '花灯', price: 150 }, heart_ornament: { name: '桃心摆件', price: 150 } },
-    3:  { kite: { name: '风筝', price: 150 }, swing: { name: '秋千', price: 150 } },
-    4:  { sakura_umbrella: { name: '樱花伞', price: 150 }, picnic_mat: { name: '野餐垫', price: 150 } },
-    5:  { flower_wreath: { name: '花环', price: 150 }, watering_can: { name: '洒水壶', price: 150 } },
-    6:  { firefly_jar: { name: '萤火虫罐', price: 150 }, wind_chime: { name: '风铃', price: 150 } },
-    7:  { seashell: { name: '贝壳', price: 150 }, beach_umbrella: { name: '沙滩伞', price: 150 } },
-    8:  { star_lamp: { name: '星星灯', price: 150 }, cicada_tree: { name: '蝉鸣树', price: 150 } },
-    9:  { scarecrow: { name: '稻草人', price: 150 }, leaf_pile: { name: '落叶堆', price: 150 } },
-    10: { pumpkin_lantern: { name: '南瓜灯', price: 150 }, spider_web: { name: '蛛网', price: 150 } },
-    11: { campfire: { name: '篝火', price: 150 }, ginkgo_fan: { name: '银杏扇', price: 150 } },
-    12: { santa_sock: { name: '圣诞袜', price: 150 }, fairy_lights: { name: '彩灯', price: 150 } },
+    1:  { lantern: { name: '灯笼', price: 150 }, snowman: { name: '雪人', price: 150 }, ice_lamp: { name: '冰灯', price: 100 }, sled: { name: '雪橇', price: 100 } },
+    2:  { flower_lamp: { name: '花灯', price: 150 }, heart_ornament: { name: '桃心摆件', price: 150 }, rose_bouquet: { name: '玫瑰束', price: 100 }, chocolate_box: { name: '巧克力盒', price: 100 } },
+    3:  { kite: { name: '风筝', price: 150 }, swing: { name: '秋千', price: 150 }, willow_tree: { name: '柳树', price: 100 }, forsythia: { name: '迎春花', price: 100 } },
+    4:  { sakura_umbrella: { name: '樱花伞', price: 150 }, picnic_mat: { name: '野餐垫', price: 150 }, camellia: { name: '山茶花', price: 100 }, bamboo: { name: '竹笋', price: 100 } },
+    5:  { flower_wreath: { name: '花环', price: 150 }, watering_can: { name: '洒水壶', price: 150 }, rose_arch: { name: '玫瑰拱门', price: 100 }, beehive: { name: '蜂箱', price: 100 } },
+    6:  { firefly_jar: { name: '萤火虫罐', price: 150 }, wind_chime: { name: '风铃', price: 150 }, lotus: { name: '荷花', price: 100 }, dragonfly: { name: '蜻蜓', price: 100 } },
+    7:  { seashell: { name: '贝壳', price: 150 }, beach_umbrella: { name: '沙滩伞', price: 150 }, palm_tree: { name: '椰树', price: 100 }, lifebuoy: { name: '救生圈', price: 100 } },
+    8:  { star_lamp: { name: '星星灯', price: 150 }, cicada_tree: { name: '蝉鸣树', price: 150 }, watermelon: { name: '西瓜', price: 100 }, sunflower: { name: '向日葵', price: 100 } },
+    9:  { scarecrow: { name: '稻草人', price: 150 }, leaf_pile: { name: '落叶堆', price: 150 }, maple_tree: { name: '枫树', price: 100 }, grain_stack: { name: '谷堆', price: 100 } },
+    10: { pumpkin_lantern: { name: '南瓜灯', price: 150 }, spider_web: { name: '蛛网', price: 150 }, bat: { name: '蝙蝠', price: 100 }, ghost: { name: '幽灵', price: 100 } },
+    11: { campfire: { name: '篝火', price: 150 }, ginkgo_fan: { name: '银杏扇', price: 150 }, torch: { name: '火把', price: 100 }, ginkgo_tree: { name: '银杏树', price: 100 } },
+    12: { santa_sock: { name: '圣诞袜', price: 150 }, fairy_lights: { name: '彩灯', price: 150 }, christmas_tree: { name: '圣诞树', price: 100 }, gingerbread: { name: '姜饼人', price: 100 } },
   },
 
   dayKey(d) { return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); },

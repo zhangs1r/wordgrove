@@ -70,17 +70,25 @@ const GardenFull = {
     const now = FARM.now();
     const isCurrentMonth = !readonly && year === st.year && month === st.month;
 
-    // 作物画在坐标格中心
+    // 作物画在坐标格中心（🔴 v1.0：格子独立生长——按「今天 − 种植日」的年龄选阶段，不再整月统一 stage）
     if (map && map.cells) {
+      const today = now.getDate();
       for (const c of map.cells) {
         const d = c.day;
         const crop = planted[d];
         if (crop && Farm._imgs.crops && FARM.CROP_DEFS[crop]) {
           const def = FARM.CROP_DEFS[crop];
-          const sx = def.x * 96 + stage * 32;
+          // 格子年龄：今天 − 种植日；0=种子 1=发芽 2=长成 3+=结果（历史月按封存时的年龄定格）
+          let age = today - d;
+          if (readonly) {
+            // 历史月：用该月封存时的「当日」近似（用当月最后一天算，视觉稳定）
+            age = FARM.daysInMonth(year, month) - d;
+          }
+          const gStage = Math.max(0, Math.min(2, age)); // 3 帧 sprite：0种子/1发芽/2成熟
+          const sx = def.x * 96 + gStage * 32;
           const size = 84; // 放大绘制保持像素感（留出高亮框空间）
           ctx.drawImage(Farm._imgs.crops, sx, 0, 32, 32, c.cx - size / 2, c.cy - size / 2, size, size);
-          if (stage >= 2) {
+          if (gStage >= 2) {
             ctx.font = 'bold 24px sans-serif';
             ctx.textAlign = 'center';
             ctx.lineWidth = 4;

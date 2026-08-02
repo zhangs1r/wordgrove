@@ -338,8 +338,10 @@ Output ONLY JSON: {"name":"角色英文名","gender":"male或female","persona":"
   // 最常忘词缓存（对话/剧场生成时自然带入，巩固记忆）
   // _forgetWords: 当前还在忘（forgot>0）→ 每轮稳定带
   // _dormantWords: 历史忘过但现在记住（peak>0 且 forgot=0）→ 偶尔随机带一个巩固
+  // _dueWords: 今天 SRS 到期该复习的词（v0.44）→ 优先带进对话
   _forgetWords: [],
   _dormantWords: [],
+  _dueWords: [],
   async refreshForgetWords() {
     const n = parseInt(Settings.get('forgetCount', 5), 10) || 5;
     try {
@@ -351,7 +353,14 @@ Output ONLY JSON: {"name":"角色英文名","gender":"male或female","persona":"
         .slice(0, n)
         .map(w => w.word);
       this._dormantWords = withPeak.filter(w => (w.peak || 0) > 0 && !(w.forgot || 0) > 0);
-    } catch { this._forgetWords = []; this._dormantWords = []; }
+      // 🔴 v0.44：今天按复习规律该复习的词（SRS 到期且已学过），也带进对话上下文
+      const now = Date.now();
+      this._dueWords = withPeak
+        .filter(w => w.srs && w.srs.due > 0 && w.srs.reps > 0 && w.srs.due <= now)
+        .sort((a, b) => (a.srs.due || 0) - (b.srs.due || 0))
+        .slice(0, 8)
+        .map(w => w.word);
+    } catch { this._forgetWords = []; this._dormantWords = []; this._dueWords = []; }
   },
   forgetLine() {
     let lines = '';
@@ -362,6 +371,10 @@ Output ONLY JSON: {"name":"角色英文名","gender":"male或female","persona":"
     if (this._dormantWords && this._dormantWords.length && Math.random() < 0.3) {
       const w = this._dormantWords[Math.floor(Math.random() * this._dormantWords.length)];
       lines += `\n- 巩固词（学习者以前忘过这个词，现在记起来了；同样只在符合场景时自然提一次，违和就不用）：${w.word}`;
+    }
+    // 🔴 v0.44：今天按复习规律该复习的词（SRS 到期）——优先自然带进对话，帮他在对话里巩固
+    if (this._dueWords && this._dueWords.length) {
+      lines += `\n- 今天复习计划里的词（学习者今天应该复习这些词，请优先在对话中自然使用它们，同样要符合场景、不硬塞）：${this._dueWords.join('、')}`;
     }
     return lines;
   },

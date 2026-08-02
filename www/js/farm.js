@@ -44,20 +44,20 @@ const FARM = {
     stone:  { name: '石头',   price: 8 },
     windmill: { name: '风车', price: 60 },
   },
-  // 月度限定装饰（AI 生成 sprite）
+  // 月度限定装饰（AI 生成 sprite；v0.36 起每月 2 个，按原规划表）
   MONTH_DECOR: {
-    1:  { lantern:     { name: '灯笼' } },
-    2:  { flower_lamp: { name: '花灯' } },
-    3:  { kite:        { name: '风筝' } },
-    4:  { sakura_umbrella: { name: '樱花伞' } },
-    5:  { flower_wreath:   { name: '花环' } },
-    6:  { firefly_jar:     { name: '萤火虫罐' } },
-    7:  { seashell:        { name: '贝壳' } },
-    8:  { star_lamp:       { name: '星星灯' } },
-    9:  { scarecrow:       { name: '稻草人' } },
-    10: { pumpkin_lantern: { name: '南瓜灯' } },
-    11: { campfire:        { name: '篝火' } },
-    12: { santa_sock:      { name: '圣诞袜' } },
+    1:  { lantern: { name: '灯笼' }, snowman: { name: '雪人' } },
+    2:  { flower_lamp: { name: '花灯' }, heart_ornament: { name: '桃心摆件' } },
+    3:  { kite: { name: '风筝' }, swing: { name: '秋千' } },
+    4:  { sakura_umbrella: { name: '樱花伞' }, picnic_mat: { name: '野餐垫' } },
+    5:  { flower_wreath: { name: '花环' }, watering_can: { name: '洒水壶' } },
+    6:  { firefly_jar: { name: '萤火虫罐' }, wind_chime: { name: '风铃' } },
+    7:  { seashell: { name: '贝壳' }, beach_umbrella: { name: '沙滩伞' } },
+    8:  { star_lamp: { name: '星星灯' }, cicada_tree: { name: '蝉鸣树' } },
+    9:  { scarecrow: { name: '稻草人' }, leaf_pile: { name: '落叶堆' } },
+    10: { pumpkin_lantern: { name: '南瓜灯' }, spider_web: { name: '蛛网' } },
+    11: { campfire: { name: '篝火' }, ginkgo_fan: { name: '银杏扇' } },
+    12: { santa_sock: { name: '圣诞袜' }, fairy_lights: { name: '彩灯' } },
   },
 
   dayKey(d) { return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); },
@@ -85,29 +85,55 @@ const Farm = {
     return {
       id: 'garden', year: now.getFullYear(), month: now.getMonth() + 1,
       points: 0, totalEarned: 0, dayPoints: 0, day: FARM.dayKey(now),
-      planted: {}, stage: 0, decor: [],
+      planted: {}, stage: 0, decor: [], owned: [],
       sealed: false, history: [],
     };
   },
 
+  /* ============ 装饰（v0.36 坐标制） ============
+   * st.owned: 已购买的类型列表（string[]）
+   * st.decor: 已摆放 [{type, x, y}]（1024×1536 画布坐标）
+   * 旧数据（v0.35 之前 {type, day}）load 时自动迁移：day→锚点坐标
+   */
   async load() {
     const now = FARM.now();
     if (!this._state) {
       const s = await this.txGet('garden');
       this._state = s || this.defaultState();
+      this._migrateDecor(this._state);
     }
     // 跨月封存
     const st = this._state;
     if (!st.sealed && (st.year !== now.getFullYear() || st.month !== now.getMonth() + 1)) {
       st.sealed = true;
       st.history = st.history || [];
-      st.history.unshift({ year: st.year, month: st.month, planted: st.planted, decor: st.decor, stage: st.stage, totalEarned: st.totalEarned, sealedAt: Date.now() });
+      st.history.unshift({ year: st.year, month: st.month, planted: st.planted, decor: st.decor, owned: st.owned || [], stage: st.stage, totalEarned: st.totalEarned, sealedAt: Date.now() });
       const fresh = this.defaultState();
       fresh.history = st.history.slice(0, 36); // 保留 3 年
       this._state = fresh;
       await this.save();
     }
     return this._state;
+  },
+  /* 旧装饰数据迁移：{type, day} → {type, x, y}（day 映射到旧 12 锚点） */
+  _migrateDecor(st) {
+    if (!st || !Array.isArray(st.decor) || st.decor.length === 0) return;
+    if (st.decor[0] && st.decor[0].x != null) return; // 已是坐标制
+    st.owned = st.owned || [];
+    const anchors = [
+      { x: 220, y: 290 }, { x: 420, y: 275 }, { x: 620, y: 280 }, { x: 820, y: 295 },
+      { x: 220, y: 1180 }, { x: 420, y: 1200 }, { x: 620, y: 1190 }, { x: 820, y: 1185 },
+      { x: 120, y: 800 }, { x: 910, y: 800 }, { x: 140, y: 1380 }, { x: 880, y: 1380 },
+    ];
+    const migrated = [];
+    for (const d of st.decor) {
+      if (!st.owned.includes(d.type)) st.owned.push(d.type);
+      if (d.day != null) {
+        const a = anchors[(d.day - 1) % anchors.length];
+        migrated.push({ type: d.type, x: a.x, y: a.y });
+      }
+    }
+    st.decor = migrated;
   },
   async save() { await this.txPut('garden', this._state); },
   async txGet(id) {
@@ -193,21 +219,33 @@ const Farm = {
     const mdef = monthDef[type] || null;
     const d = def || mdef;
     if (!d) return { ok: false, msg: '装饰不存在' };
+    if (st.owned.includes(type)) return { ok: false, msg: '已经买过这个了' };
     if (st.points < d.price) return { ok: false, msg: '积分不够（需 ' + d.price + '）' };
     st.points -= d.price;
+    st.owned.push(type);
     await this.save();
     return { ok: true, type };
   },
-  async placeDecor(type, day) {
+  /* 摆放装饰（坐标制 v0.36）：x,y 为 1024×1536 画布坐标 */
+  async placeDecor(type, x, y) {
     const st = await this.load();
-    if (st.decor.some(x => x.day === day && x.type === type)) return { ok: false, msg: '这里已经放了这个' };
-    st.decor.push({ type, day });
+    if (!st.owned.includes(type)) return { ok: false, msg: '还没有这个装饰，先去商店买' };
+    st.decor = st.decor.filter(d => d.type !== type); // 同类型只能摆一个（移动即替换）
+    st.decor.push({ type, x: Math.round(x), y: Math.round(y) });
     await this.save();
     return { ok: true };
   },
-  async removeDecor(day, type) {
+  /* 收起装饰（从院子移除，仍在 owned 里可再摆） */
+  async removeDecor(type) {
     const st = await this.load();
-    st.decor = st.decor.filter(x => !(x.day === day && x.type === type));
+    st.decor = st.decor.filter(d => d.type !== type);
+    await this.save();
+    return { ok: true };
+  },
+  /* 保存整体摆放布局（编辑模式点勾时调用） */
+  async saveDecorLayout(layout) {
+    const st = await this.load();
+    st.decor = layout.map(d => ({ type: d.type, x: Math.round(d.x), y: Math.round(d.y) }));
     await this.save();
     return { ok: true };
   },

@@ -266,7 +266,7 @@ const UI = {
       row.innerHTML = '<div class="month-decor-empty">本月没有限定装饰</div>';
       return;
     }
-    const owned = st.decor.map(x => x.type);
+    const owned = st.owned || [];
     row.innerHTML = keys.map(k => {
       const dc = monthDefs[k];
       const img = Farm._imgs['decor_' + k];
@@ -310,6 +310,8 @@ const UI = {
     if (hist) hist.addEventListener('click', () => this.gardenOpenHistory());
     const drawer = this.el('farmDrawer');
     if (drawer) drawer.addEventListener('click', (e) => this.gardenDrawerClick(e));
+    const gdrawer = this.el('gardenDrawer');
+    if (gdrawer) gdrawer.addEventListener('click', (e) => this.gardenDrawerClick(e));
     // 月历花园整页版（v0.34）
     const fcv = this.el('gardenFullCanvas');
     if (fcv) fcv.addEventListener('click', (e) => this.gardenFullTap(e));
@@ -319,6 +321,13 @@ const UI = {
     if (fhist) fhist.addEventListener('click', () => this.gardenOpenHistory());
     const goGarden = this.el('todayGoGardenBtn');
     if (goGarden) goGarden.addEventListener('click', () => this.switchTab('garden'));
+    // 装饰栏/编辑模式（v0.36）
+    const trayShop = this.el('gardenTrayShopBtn');
+    if (trayShop) trayShop.addEventListener('click', () => this.gardenOpenShop());
+    const editSave = this.el('gardenEditSave');
+    if (editSave) editSave.addEventListener('click', () => this.gardenEditSave());
+    const editCancel = this.el('gardenEditCancel');
+    if (editCancel) editCancel.addEventListener('click', () => this.gardenEditExit());
   },
 
   /* ---------- 月历花园整页版（v0.34 第六 tab） ---------- */
@@ -344,6 +353,7 @@ const UI = {
       await GardenFull.paint(ctx, { state: st, year: view.year, month: view.month, planted: view.planted, decor: view.decor, stage: view.stage, readonly: true });
     } else {
       await GardenFull.paint(ctx, { state: st });
+      this.renderGardenTray(st); // 装饰栏（仅当前月）
     }
   },
   gardenFullTap(e) {
@@ -354,12 +364,152 @@ const UI = {
       this.toast(this._gardenView.year + ' 年 ' + this._gardenView.month + ' 月（已封存）');
       return;
     }
+    // 编辑模式：点 canvas 摆放当前选中的装饰
+    if (this._gardenEdit) {
+      this.gardenEditPlace(e);
+      return;
+    }
     const day = GardenFull.hitDay(cv, e);
     if (day == null) {
       this.toast('点到空地了——点田格子看详情');
       return;
     }
     this.gardenDayMenu(day);
+  },
+
+  /* ---------- 装饰栏 + 编辑模式（v0.36） ---------- */
+  renderGardenTray(st) {
+    const items = this.el('gardenTrayItems');
+    if (!items) return;
+    const owned = st.owned || [];
+    if (!owned.length) {
+      items.innerHTML = '<div class="garden-tray-empty">还没有装饰——点商店买一个，就能摆进小院</div>';
+      return;
+    }
+    const placed = st.decor.map(d => d.type);
+    const tray = st.decor.map(d => d.type); // 已摆的也显示（可再编辑）
+    items.innerHTML = owned.map(k => {
+      const name = (FARM.DECOR[k] || {}).name || (FARM.MONTH_DECOR[st.month] || {})[k]?.name || k;
+      const img = Farm._imgs['decor_' + k];
+      const isPlaced = placed.includes(k);
+      return `<div class="garden-tray-item ${isPlaced ? 'placed' : ''}" data-traydecor="${k}">
+        <div class="tray-img">${img ? `<img src="assets/decor/${k}.png" alt="">` : `<span class="month-decor-ph">${name[0]}</span>`}</div>
+        <div class="tray-name">${name}</div>
+      </div>`;
+    }).join('');
+    items.querySelectorAll('[data-traydecor]').forEach(el => {
+      el.addEventListener('click', () => this.gardenEditStart(el.dataset.traydecor));
+    });
+  },
+  /* 进入编辑模式：选一个装饰开始摆放 */
+  async gardenEditStart(type) {
+    const st = await Farm.load();
+    if (!st.owned.includes(type)) { this.toast('还没有这个装饰'); return; }
+    this._gardenEdit = { type, items: st.decor.map(d => ({ ...d })) }; // 快照当前布局
+    const layer = this.el('gardenEditLayer');
+    const bar = this.el('gardenEditBar');
+    layer.classList.remove('hidden');
+    bar.classList.remove('hidden');
+    this.el('gardenFullHint').textContent = '编辑模式：点小院任意位置摆放「' + this.decorName(type) + '」，点保存生效';
+    // 把当前已摆装饰画进编辑层（可拖动）
+    this.gardenEditRenderLayer();
+    this.toast('编辑模式：点小院空地摆放，可拖动调整');
+  },
+  gardenEditRenderLayer() {
+    const layer = this.el('gardenEditLayer');
+    if (!layer) return;
+    const st = Farm._state;
+    const frame = layer.parentElement; // garden-full-frame
+    const frameRect = frame.getBoundingClientRect();
+    const scaleX = frameRect.width / 1024, scaleY = frameRect.height / 1536;
+    // 已有布局 + 正在摆的装饰
+    const all = (st.decor || []).filter(d => !this._gardenEdit || d.type !== this._gardenEdit.type)
+      .concat(this._gardenEdit ? [{ type: this._gardenEdit.type, x: this._gardenEdit.x, y: this._gardenEdit.y }] : []);
+    layer.innerHTML = all.filter(d => d.x != null && d.y != null).map(d => `
+      <div class="edit-decor" data-editdecor="${d.type}" style="left:${d.x * scaleX}px;top:${d.y * scaleY}px">
+        <img src="assets/decor/${d.type}.png" alt="">
+      </div>`).join('');
+    // 拖动绑定
+    layer.querySelectorAll('.edit-decor').forEach(el => this.gardenEditBindDrag(el));
+  },
+  gardenEditBindDrag(el) {
+    let dragging = false, startX = 0, startY = 0, origX = 0, origY = 0;
+    const layer = this.el('gardenEditLayer');
+    const frame = layer.parentElement;
+    const move = (cx, cy) => {
+      const frameRect = frame.getBoundingClientRect();
+      const x = (cx - frameRect.left) / frameRect.width * 1024;
+      const y = (cy - frameRect.top) / frameRect.height * 1536;
+      el.style.left = (x / 1024 * frameRect.width) + 'px';
+      el.style.top = (y / 1536 * frameRect.height) + 'px';
+      return { x, y };
+    };
+    el.addEventListener('pointerdown', (e) => {
+      if (e.button === 2) return;
+      e.preventDefault(); e.stopPropagation();
+      dragging = true;
+      const frameRect = frame.getBoundingClientRect();
+      startX = e.clientX; startY = e.clientY;
+      origX = parseFloat(el.style.left); origY = parseFloat(el.style.top);
+      const type = el.dataset.editdecor;
+      this._gardenEdit = this._gardenEdit || { type, items: [] };
+      this._gardenEdit.type = type;
+      const p = move(e.clientX, e.clientY);
+      this._gardenEdit.x = p.x; this._gardenEdit.y = p.y;
+      el.setPointerCapture && el.setPointerCapture(e.pointerId);
+    });
+    el.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      e.preventDefault(); e.stopPropagation();
+      const p = move(e.clientX, e.clientY);
+      this._gardenEdit.x = p.x; this._gardenEdit.y = p.y;
+    });
+    const up = (e) => {
+      if (!dragging) return;
+      dragging = false;
+      const p = move(e.clientX, e.clientY);
+      this._gardenEdit.x = p.x; this._gardenEdit.y = p.y;
+    };
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
+  },
+  /* 编辑模式：点 canvas 空白处摆放当前装饰 */
+  gardenEditPlace(e) {
+    const cv = this.el('gardenFullCanvas');
+    const rect = cv.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width * 1024;
+    const y = (e.clientY - rect.top) / rect.height * 1536;
+    this._gardenEdit.x = x;
+    this._gardenEdit.y = y;
+    this.gardenEditRenderLayer();
+    this.toast('已放这里，继续点别处调整，或点保存');
+  },
+  decorName(type) {
+    const st = Farm._state;
+    return (FARM.DECOR[type] || {}).name || (st && (FARM.MONTH_DECOR[st.month] || {})[type]?.name) || type;
+  },
+  /* 保存布局 */
+  async gardenEditSave() {
+    if (!this._gardenEdit) return;
+    const st = await Farm.load();
+    const placed = this._gardenEdit.x != null && this._gardenEdit.y != null
+      ? [{ type: this._gardenEdit.type, x: this._gardenEdit.x, y: this._gardenEdit.y }] : [];
+    const others = st.decor.filter(d => d.type !== this._gardenEdit.type);
+    const layout = others.concat(placed);
+    await Farm.saveDecorLayout(layout);
+    this.gardenEditExit();
+    this.toast('布局已保存 ✓');
+    await this.renderGardenFull();
+  },
+  /* 取消编辑 */
+  gardenEditExit() {
+    this._gardenEdit = null;
+    const layer = this.el('gardenEditLayer');
+    const bar = this.el('gardenEditBar');
+    if (layer) layer.classList.add('hidden');
+    if (bar) bar.classList.add('hidden');
+    this.el('gardenFullHint').textContent = '学习种下今天的作物 · 点格子看详情';
+    if (layer) layer.innerHTML = '';
   },
   gardenTap(e) {
     const cv = this.el('farmCanvas');
@@ -397,9 +547,8 @@ const UI = {
   },
   async gardenDayMenu(day) {
     const st = await Farm.load();
-    const d = this.el('farmDrawer');
+    const d = this.gardenDrawerEl();
     const crop = st.planted[day];
-    const decor = st.decor.filter(x => x.day === day);
     let html = `<div class="fd-head">${day} 号</div><div class="fd-list">`;
     if (crop && FARM.CROP_DEFS[crop]) {
       const def = FARM.CROP_DEFS[crop];
@@ -407,37 +556,42 @@ const UI = {
     } else {
       html += `<div class="fd-item"><span class="fd-name">${day} 号还没学——今天学习就能种下 ${FARM.CROP_DEFS[FARM.monthCrop(st.month, day)].name}</span></div>`;
     }
-    for (const de of decor) {
-      const dn = FARM.DECOR[de.type] ? FARM.DECOR[de.type].name : (FARM.MONTH_DECOR[st.month] && FARM.MONTH_DECOR[st.month][de.type] ? FARM.MONTH_DECOR[st.month][de.type].name : de.type);
-      html += `<div class="fd-item"><span class="fd-name">${dn}</span><button class="btn btn-ghost btn-sm" data-rmdecor="${day}:${de.type}">收起</button></div>`;
-    }
-    if (!decor.length) html += `<div class="fd-item"><span class="fd-name">装饰：商店里买当月装饰，点这天摆放</span></div>`;
+    html += `<div class="fd-item"><span class="fd-name">装饰摆在小院空地上——底部「我的装饰」里点选摆放</span></div>`;
     html += `<button class="btn btn-ghost" data-act="close">关闭</button></div>`;
     d.innerHTML = html;
     d.classList.remove('hidden');
   },
+  /* 商店：带 sprite 预览 + 已购/价格标记（v0.36） */
   async gardenOpenShop() {
     const st = await Farm.load();
-    const d = this.el('farmDrawer');
-    const common = Object.keys(FARM.DECOR).map(k => {
-      const dc = FARM.DECOR[k];
-      return `<div class="fd-item"><span class="fd-name">${dc.name} · ${dc.price} 积分</span><button class="btn btn-primary btn-sm" data-buydecor="${k}">买</button></div>`;
-    }).join('');
+    const d = this.gardenDrawerEl();
+    const owned = st.owned || [];
+    const item = (k, dc, monthTag) => {
+      const img = Farm._imgs['decor_' + k];
+      const isOwned = owned.includes(k);
+      return `<div class="shop-item">
+        <div class="shop-img">${img ? `<img src="assets/decor/${k}.png" alt="">` : `<span class="month-decor-ph">${(dc.name || k)[0]}</span>`}</div>
+        <div class="shop-info">
+          <div class="shop-name">${dc.name}${monthTag ? ' <span class="shop-month-tag">当月限定</span>' : ''}</div>
+          <div class="shop-price">${isOwned ? '已拥有' : dc.price + ' 积分'}</div>
+        </div>
+        <button class="btn ${isOwned ? 'btn-ghost' : 'btn-primary'} btn-sm" data-buydecor="${k}" ${isOwned ? 'disabled' : ''}>${isOwned ? '已买' : '买'}</button>
+      </div>`;
+    };
+    const common = Object.keys(FARM.DECOR).map(k => item(k, FARM.DECOR[k], false)).join('');
     const monthDefs = FARM.MONTH_DECOR[st.month] || {};
-    const month = Object.keys(monthDefs).map(k => {
-      const dc = monthDefs[k];
-      return `<div class="fd-item"><span class="fd-name">${dc.name} · 当月限定</span><button class="btn btn-primary btn-sm" data-buydecor="${k}">买</button></div>`;
-    }).join('');
+    const month = Object.keys(monthDefs).map(k => item(k, monthDefs[k], true)).join('');
     d.innerHTML = `<div class="fd-head">商店（本月积分 ${st.points}） <button class="icon-btn-sm" data-act="close">✕</button></div>
       <div class="fd-scroll">
         <div class="fd-sec">通用装饰</div>${common}
         <div class="fd-sec">${st.month} 月限定（下月下架）</div>${month || '<div class="fd-item"><span class="fd-name">本月限定已售罄</span></div>'}
+        <div class="fd-item"><span class="fd-name" style="font-size:11px;color:var(--muted)">买到后去小院底部「我的装饰」点选，摆到空地上</span></div>
       </div>`;
     d.classList.remove('hidden');
   },
   async gardenOpenHistory() {
     const st = await Farm.load();
-    const d = this.el('farmDrawer');
+    const d = this.gardenDrawerEl();
     const hist = st.history || [];
     if (!hist.length) {
       d.innerHTML = `<div class="fd-head">历史院子 <button class="icon-btn-sm" data-act="close">✕</button></div>
@@ -459,17 +613,17 @@ const UI = {
       const type = btn.dataset.buydecor;
       const r = await Farm.buyDecor(type);
       if (!r.ok) { this.toast(r.msg || '购买失败'); return; }
-      this._gardenMode = { type };
-      this.toast('已购买，点日历上的某天摆放');
       this.farmDrawerClose();
-      await this.renderGarden();
+      this.toast('已购买「' + this.decorName(type) + '」——去小院底部「我的装饰」点选摆放');
+      if (this.state.tab === 'garden') await this.renderGardenFull();
+      else await this.renderGarden();
       return;
     }
     if (btn.dataset.rmdecor) {
-      const [day, type] = btn.dataset.rmdecor.split(':');
-      await Farm.removeDecor(parseInt(day, 10), type);
+      const type = btn.dataset.rmdecor;
+      await Farm.removeDecor(type);
       await this.renderGarden();
-      await this.gardenDayMenu(parseInt(day, 10));
+      if (this.state.tab === 'garden') await this.renderGardenFull();
       return;
     }
     if (btn.dataset.viewhist) {
@@ -489,8 +643,12 @@ const UI = {
       return;
     }
   },
+  /* 当前 tab 对应的抽屉元素（today 用 farmDrawer，garden 用 gardenDrawer——v0.36 修复重复 id bug） */
+  gardenDrawerEl() {
+    return this.state.tab === 'garden' ? this.el('gardenDrawer') : this.el('farmDrawer');
+  },
   farmDrawerClose() {
-    const d = this.el('farmDrawer');
+    const d = this.gardenDrawerEl();
     if (d) d.classList.add('hidden');
   },
 

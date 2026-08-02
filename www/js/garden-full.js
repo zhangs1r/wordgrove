@@ -100,40 +100,41 @@ const GardenFull = {
       }
     }
 
-    // 装饰摆四周（固定锚点，按 decor 顺序放）
-    this.paintDecorRing(ctx, decor, month);
+    // 装饰按坐标画（v0.36：任意空地可摆）
+    this.paintDecorAt(ctx, decor);
   },
 
-  /* 装饰环：12 个锚点分布在田地四周留白区（概念图布局：上下左右各留白） */
-  paintDecorRing(ctx, decor, month) {
-    // 锚点（1024×1536 坐标系，避开中央田地 x[140,890] y[460,1075]）
+  /* 装饰按坐标渲染：decor = [{type, x, y}]（1024×1536 坐标系，x/y 为装饰中心）
+   * 兼容旧历史数据 {type, day} → 映射到旧 12 锚点 */
+  paintDecorAt(ctx, decor) {
+    if (!decor) return;
     const anchors = [
-      // 上排（栅栏内）y≈300
       { x: 220, y: 290 }, { x: 420, y: 275 }, { x: 620, y: 280 }, { x: 820, y: 295 },
-      // 下排 y≈1180
       { x: 220, y: 1180 }, { x: 420, y: 1200 }, { x: 620, y: 1190 }, { x: 820, y: 1185 },
-      // 左右腰 y≈800（田两侧）
-      { x: 120, y: 800 }, { x: 910, y: 800 },
-      // 左下/右下角落
-      { x: 140, y: 1380 }, { x: 880, y: 1380 },
+      { x: 120, y: 800 }, { x: 910, y: 800 }, { x: 140, y: 1380 }, { x: 880, y: 1380 },
     ];
-    const used = decor.slice(0, anchors.length);
-    for (let i = 0; i < used.length; i++) {
-      const de = used[i];
+    let i = 0;
+    for (const de of decor) {
+      let x = de.x, y = de.y;
+      if (x == null || y == null) {
+        // 旧格式 {type, day}
+        const a = anchors[(de.day != null ? de.day - 1 : i) % anchors.length];
+        x = a.x; y = a.y;
+      }
+      i++;
       const img = Farm._imgs['decor_' + de.type];
-      const a = anchors[i];
       const size = 110;
       if (img) {
-        ctx.drawImage(img, 0, 0, img.width, img.height, a.x - size / 2, a.y - size / 2, size, size);
+        ctx.drawImage(img, 0, 0, img.width, img.height, x - size / 2, y - size / 2, size, size);
       } else {
-        // 程序化兜底
         ctx.fillStyle = '#FAC75E';
-        ctx.fillRect(a.x - 12, a.y - 12, 24, 24);
+        ctx.fillRect(x - 12, y - 12, 24, 24);
       }
     }
   },
 
-  /* 点击：canvas 像素 → 最近格子 day */
+  /* 点击：canvas 像素 → 格子 day（🔴 v0.36 修复：矩形判定代替圆形半径，点角落/作物边缘不再误报空地）
+   * 格子实际尺寸：列距 ~105-112px（半宽 ~55），行距 ~122px（半高 ~61）→ 矩形命中 */
   hitDay(canvas, e) {
     const rect = canvas.getBoundingClientRect();
     const scaleX = 1024 / rect.width;
@@ -143,11 +144,14 @@ const GardenFull = {
     if (!this._map || !this._map.cells) return null;
     let best = null, bestD = 1e9;
     for (const c of this._map.cells) {
-      const d = Math.hypot(c.cx - px, c.cy - py);
+      const dx = Math.abs(c.cx - px), dy = Math.abs(c.cy - py);
+      const d = Math.hypot(dx, dy);
       if (d < bestD) { bestD = d; best = c; }
     }
-    // 阈值：格内才算（约 55px 半径）
-    if (bestD < 60) return best.day;
+    if (!best) return null;
+    // 矩形判定：|dx| <= 57 且 |dy| <= 64（格子半宽/半高 + 少量容差）
+    const dx = Math.abs(best.cx - px), dy = Math.abs(best.cy - py);
+    if (dx <= 57 && dy <= 64) return best.day;
     return null;
   },
 };

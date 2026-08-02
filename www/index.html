@@ -70,10 +70,28 @@
       </div>
       <div class="garden-full-frame">
         <canvas id="gardenFullCanvas" width="1024" height="1536"></canvas>
+        <!-- 编辑模式拖拽层（v0.36） -->
+        <div id="gardenEditLayer" class="garden-edit-layer hidden"></div>
       </div>
       <div class="garden-full-hint" id="gardenFullHint">学习种下今天的作物 · 点格子看详情</div>
+      <!-- 编辑模式操作条（放 canvas 正下方，保证编辑时可见） -->
+      <div id="gardenEditBar" class="garden-edit-bar hidden">
+        <span class="garden-edit-tip">点选装饰 → 在小院里点位置摆放（可拖动）</span>
+        <div class="garden-edit-actions">
+          <button id="gardenEditCancel" class="px-btn small ghost">取消</button>
+          <button id="gardenEditSave" class="px-btn small">✓ 保存布局</button>
+        </div>
+      </div>
+      <!-- 我的装饰栏（v0.36：已购未摆放，点选进入编辑） -->
+      <div class="garden-tray" id="gardenTray">
+        <div class="garden-tray-head">
+          <span>我的装饰</span>
+          <button id="gardenTrayShopBtn" class="px-btn small ghost">商店</button>
+        </div>
+        <div class="garden-tray-items" id="gardenTrayItems"></div>
+      </div>
     </div>
-    <div id="farmDrawer" class="farm-drawer hidden"></div>
+    <div id="gardenDrawer" class="farm-drawer hidden"></div>
   </section>
 
   <!-- ======== 对话 ======== -->

@@ -1,1 +1,1 @@
-{"version": "0.35", "notes": "今日页改版：去掉丑月历格子，改为今日作物植被大图+本月限定装饰展示；新增开发者设置（模拟日期/模拟学习/整月填充/清除数据，测试用，正式版移除）", "apk": "EnglishApp-v0.35.apk", "url": "https://github.com/zhangs1r/wordgrove/releases/download/v0.35/EnglishApp-v0.35.apk"}
+{"version": "0.36", "notes": "装饰系统大改：商店带装饰预览图+每月2个限定装饰（新增12个：雪人/桃心/秋千/野餐垫/洒水壶/风铃/沙滩伞/蝉鸣树/落叶堆/蛛网/银杏扇/彩灯）；装饰可自由摆在小院任意空地（拖拽摆放+保存坐标）；修复点击格子误报空地的bug；修复重复id导致小院抽屉不显示的bug", "apk": "EnglishApp-v0.36.apk", "url": "https://github.com/zhangs1r/wordgrove/releases/download/v0.36/EnglishApp-v0.36.apk"}

@@ -523,6 +523,55 @@ body {
 .dev-date-row { display: flex; gap: 6px; align-items: center; }
 .dev-date-row select { flex: 1; min-width: 0; }
 .dev-date-hint { font-size: 11.5px; color: var(--muted); margin-top: 6px; }
+
+/* ============ 小院装饰栏 + 编辑模式（v0.36） ============ */
+.garden-tray {
+  background: var(--card); border-radius: 14px; padding: 10px 12px 12px;
+  box-shadow: var(--shadow); margin-top: 10px;
+}
+.garden-tray-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.garden-tray-head > span { font-size: 13px; font-weight: 700; color: var(--text); }
+.garden-tray-items { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; -webkit-overflow-scrolling: touch; }
+.garden-tray-item {
+  flex-shrink: 0; width: 74px; background: var(--card-2); border-radius: 10px;
+  padding: 8px 4px 6px; text-align: center; cursor: pointer;
+  border: 2px solid transparent; transition: border-color .15s ease;
+}
+.garden-tray-item:active { transform: scale(0.96); }
+.garden-tray-item .tray-img { width: 44px; height: 44px; margin: 0 auto 4px; display: flex; align-items: center; justify-content: center; image-rendering: pixelated; }
+.garden-tray-item .tray-img img { width: 40px; height: 40px; image-rendering: pixelated; }
+.garden-tray-item .tray-name { font-size: 10.5px; color: var(--text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.garden-tray-item.placed { opacity: .45; border-color: var(--card-2); }
+.garden-tray-item.placed .tray-name::after { content: '·已摆'; color: var(--muted); }
+.garden-tray-empty { font-size: 12px; color: var(--muted); padding: 10px 2px; }
+/* 编辑模式 */
+.garden-edit-layer {
+  position: absolute; inset: 0; z-index: 5;
+  background: rgba(0,0,0,0.18); touch-action: none;
+}
+.garden-edit-layer .edit-decor {
+  position: absolute; width: 60px; height: 60px; margin: -30px 0 0 -30px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,0.25); border: 2px dashed #FAC75E; border-radius: 10px;
+  cursor: grab; touch-action: none;
+}
+.garden-edit-layer .edit-decor img { width: 46px; height: 46px; image-rendering: pixelated; pointer-events: none; }
+.garden-edit-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  background: var(--card); border-radius: 12px; padding: 8px 10px; margin-top: 8px;
+  box-shadow: var(--shadow);
+}
+.garden-edit-tip { font-size: 11.5px; color: var(--muted); line-height: 1.4; }
+.garden-edit-actions { display: flex; gap: 6px; flex-shrink: 0; }
+/* 商店面板（v0.36：sprite 预览） */
+.shop-item { display: flex; align-items: center; gap: 10px; padding: 8px 4px; border-bottom: 1px solid var(--card-2); }
+.shop-item:last-child { border-bottom: none; }
+.shop-img { width: 52px; height: 52px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: var(--card-2); border-radius: 10px; }
+.shop-img img { width: 48px; height: 48px; image-rendering: pixelated; }
+.shop-info { flex: 1; min-width: 0; }
+.shop-name { font-size: 13.5px; font-weight: 600; color: var(--text); }
+.shop-month-tag { font-size: 9px; color: #c0392b; background: color-mix(in srgb, #c0392b 10%, transparent); border-radius: 999px; padding: 1px 5px; vertical-align: 1px; }
+.shop-price { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
 #farmCanvas { width: 100%; height: auto; display: block; border-radius: 10px; image-rendering: pixelated; touch-action: manipulation; }
 .farm-drawer {
   background: var(--card); border-radius: 16px; padding: 12px 14px; margin-bottom: 10px;

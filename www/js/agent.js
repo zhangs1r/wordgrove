@@ -351,15 +351,25 @@ ${this.forgetLine()}
   async suggestFromChinese(history, chinese) {
     const model = Settings.get('chatModel', 'deepseek-v4-flash');
     const ctx = history.slice(-6).map(m => `${m.role}: ${(m.content || '').slice(0, 200)}`).join('\n');
-    const resp = await API.chat([
+    const msgs = [
       { role: 'system', content: `你是英语口语教练。用户用中文描述想表达的意思，请结合对话上下文，给出地道自然的英文表达。
 返回 JSON：{"better":"英文表达","reason":"一句话中文解释为什么这样说/用这个词"}
 要求：英文要口语化、贴合语境。只输出 JSON，不要其他内容。` },
       { role: 'user', content: '对话上下文：\n' + ctx + '\n\n用户想表达（中文）：' + chinese },
-    ], { model, maxTokens: 300 });
-    const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
-    const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
-    return { better: j.better || '', reason: j.reason || '' };
+    ];
+    // 🔴 v1.2.31：maxTokens 300→2000 + 解析失败自动重试一次（思考链截断 JSON 同款坑）
+    const tryOnce = async () => {
+      const resp = await API.chat(msgs, { model, maxTokens: 2000 });
+      const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
+      const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
+      return { better: j.better || '', reason: j.reason || '' };
+    };
+    try {
+      return await tryOnce();
+    } catch {
+      try { return await tryOnce(); }
+      catch { return { better: '', reason: '' }; }
+    }
   },
 
   /* 选角：根据世界卡给出 3-4 个可扮演身份 */
@@ -392,7 +402,7 @@ Cast: ${(w.roles || []).map(r => r.name).join(', ') || 'none'}
 The player will roleplay as a character. Given their choice/description, produce a compact character card.
 Output ONLY JSON: {"name":"角色英文名","gender":"male或female","persona":"身份与性格(英文,2句)","background":"与世界的关联(英文,1-2句)"}` },
       { role: 'user', content: 'My character: ' + desc },
-    ], { model, maxTokens: 500 });
+    ], { model, maxTokens: 2000 });
     const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
     try {
       return JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
@@ -407,7 +417,7 @@ Output ONLY JSON: {"name":"角色英文名","gender":"male或female","persona":"
     const castLine = (w.roles || []).map(r => `${r.name}(${r.gender === 'male' ? 'M' : 'F'})`).join(', ');
     const sys = this.rpSystem(w) + `\nYou are the GAME MASTER / narrator.\n\nWrite the OPENING scene: the player ${p.name || 'the stranger'} arrives in ${w.name}. Set the scene vividly in 3-4 sentences of narration (English), introduce who is around (cast: ${castLine}), and end by presenting 3-4 English choices for the player's first move (second-person, actionable, short).\n\nOutput ONLY JSON: {"narration":"...","options":["Choice 1","Choice 2","Choice 3"]}`;
     const msgs = [{ role: 'system', content: sys }, { role: 'user', content: 'Open the story.' }];
-    const resp = await API.chat(msgs, { model, maxTokens: 700 });
+    const resp = await API.chat(msgs, { model, maxTokens: 2000 });
     const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
     try {
       const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
@@ -595,7 +605,7 @@ For dialogue: characters from the cast keep their identity; NEW side characters 
     const resp = await API.chat([
       { role: 'system', content: 'Translate the user input to natural, spoken English. Output ONLY the translation, nothing else.' },
       { role: 'user', content: text },
-    ], { model, maxTokens: 300 });
+    ], { model, maxTokens: 1000 });
     return (resp.choices?.[0]?.message?.content || '').trim();
   },
 
@@ -673,17 +683,23 @@ For dialogue: characters from the cast keep their identity; NEW side characters 
   async queryText(text) {
     const model = Settings.get('chatModel', 'deepseek-v4-flash');
     const lv = levelCfg();
-    const resp = await API.chat([
-      { role: 'system', content: `你是英语老师，在教一个${lv.label}水平的学生。翻译下面这句英文（或词组），返回 JSON（不要输出其他内容）：
-{"cn":"自然的中文翻译","note":"关键表达/语法点的一句话中文说明（如有）","expand":"这句话里的关键表达或搭配，以及 1 个类似说法（英文+中文）"}` },
+    const msgs = [
+      { role: 'system', content: `你是英语老师，在教一个${lv.label}水平的学生。翻译下面这句英文（或词组），返回 JSON（不要输出其他内容）：\n{"cn":"自然的中文翻译","note":"关键表达/语法点的一句话中文说明（如有）","expand":"这句话里的关键表达或搭配，以及 1 个类似说法（英文+中文）"}` },
       { role: 'user', content: text },
-    ], { model, maxTokens: 500 });
-    const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
-    try {
+    ];
+    // 🔴 v1.2.31：maxTokens 500→2000（思考链截断 JSON 同查词的坑——"小调用额度可以小"是错误认知，
+    //   思考链开销是固定的）+ 解析失败自动重试一次
+    const tryOnce = async () => {
+      const resp = await API.chat(msgs, { model, maxTokens: 2000 });
+      const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
       const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
       return { cn: j.cn || '', note: j.note || '', expand: j.expand || '' };
+    };
+    try {
+      return await tryOnce();
     } catch {
-      return { cn: '', note: '', expand: '' };
+      try { return await tryOnce(); }
+      catch { return { cn: '', note: '', expand: '' }; }
     }
   },
 

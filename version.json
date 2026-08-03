@@ -1,6 +1,6 @@
 {
-  "version": "1.2.30",
-  "notes": "1.2.30：修复网页版 Service Worker 缓存旧版永不更新——原来缓存命中就返回旧资源（缓存名固定），浏览器永远显示第一次访问的旧界面；改为网络优先（在线永远最新，离线自动用缓存），刷新一次即可看到最新版",
-  "apk": "EnglishApp-v1.2.30.apk",
-  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.30/EnglishApp-v1.2.30.apk"
+  "version": "1.2.31",
+  "notes": "1.2.31：修复句子翻译一直失败——查句翻译 maxTokens 只有 500，思考链吃掉输出额度导致 JSON 截断解析失败；所有小额度 JSON 调用统一加大（查句/中文求助/选角/开演 300-700→2000，中译英 300→1000）+ 解析失败自动重试一次。教训：小调用只是内容少，思考链开销是固定的，额度不能小",
+  "apk": "EnglishApp-v1.2.31.apk",
+  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.31/EnglishApp-v1.2.31.apk"
 }

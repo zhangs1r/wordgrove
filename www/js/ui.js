@@ -1414,12 +1414,15 @@ const UI = {
     const item = this.state.reviewQueue.shift();
     // 触发消息已被移除（切会话/回滚等）→ 跳过继续下一张
     // 🔴 v1.2.4：用 item.word 查 wordMap（之前用 item.id 永远匹配不上 → 卡片全被跳过，普通/RP 都不弹）
-    if (!item.div || !item.div.isConnected || !this.state.wordMap.has(item.word)) {
+    // 🔴 v1.2.12：🔴 大小写实锤——wordMap 的 key 是小写，item.word 是词库原词；
+    //   首字母大写的词（如 "Clipboard"）has() 永远 false → 卡片被静默跳过！
+    //   高亮（renderMsgText）用 lower 匹配所以正常，弹卡却用原词查 → 高亮正常但卡片不弹
+    if (!item.div || !item.div.isConnected || !this.state.wordMap.has(String(item.word).toLowerCase())) {
       this.pumpReviewQueue();
       return;
     }
     this.state.reviewActive = true;
-    this.renderReviewCard(item.div, this.state.wordMap.get(item.word));
+    this.renderReviewCard(item.div, this.state.wordMap.get(String(item.word).toLowerCase()));
   },
   renderReviewCard(anchor, w) {
     const card = document.createElement('div');

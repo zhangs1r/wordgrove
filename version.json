@@ -1,6 +1,6 @@
 {
-  "version": "1.2.11",
-  "notes": "1.2.11：1) 修复复习卡不弹的潜在根因——单词表加载失败时静默吞掉且永不重试，导致对话/角色扮演里复习卡永不弹；现在失败 5 秒后自动重试，且每次弹卡检查时发现词表未就绪会主动重新加载；2) 普通对话确认已有忘词榜+随机词（v1.2.9 起生效），缓存结构与 RP 一致（固定前缀+动态词表在末尾）",
-  "apk": "EnglishApp-v1.2.11.apk",
-  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.11/EnglishApp-v1.2.11.apk"
+  "version": "1.2.12",
+  "notes": "1.2.12：修复复习卡不弹的实锤 bug——词库里首字母大写的词（如 Clipboard）在弹卡环节查词表时没转小写，导致匹配失败被静默跳过（高亮正常但卡片不弹）；现在统一小写匹配，所有大小写形态都能弹卡",
+  "apk": "EnglishApp-v1.2.12.apk",
+  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.12/EnglishApp-v1.2.12.apk"
 }

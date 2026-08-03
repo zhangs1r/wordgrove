@@ -75,12 +75,8 @@ const FARM = {
   },
 
   dayKey(d) { return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); },
-  /* 🔴 全局日期源：开发者设置可模拟日期（devDate={y,m,d}），正式版删除此逻辑后自动回真实时间 */
-  now() {
-    const dv = Settings.get('devDate', null);
-    if (dv && dv.y && dv.m && dv.d) return new Date(dv.y, dv.m - 1, dv.d, 12, 0, 0);
-    return new Date();
-  },
+  /* 🔴 v1.1：开发者模拟日期已移除（正式版不携带测试后门），统一真实时间 */
+  now() { return new Date(); },
   seasonOf(month) { return this.MONTH_SEASON[month - 1]; },
   monthCrop(month, day) {
     // 🔴 v0.43 随机种植：每天从当月季节作物池随机选一种（不用固定轮换）；
@@ -103,6 +99,7 @@ const Farm = {
       id: 'garden', year: now.getFullYear(), month: now.getMonth() + 1,
       points: 0, totalEarned: 0, dayPoints: 0, day: FARM.dayKey(now),
       planted: {}, stage: 0, decor: [], owned: [],
+      dayCounts: {}, // 🔴 v1.1：各来源当日发放次数（maxDay 语义修复）
       sealed: false, history: [],
     };
   },
@@ -117,25 +114,27 @@ const Farm = {
     if (!this._state) {
       const s = await this.txGet('garden');
       this._state = s || this.defaultState();
+      this._state.dayCounts = this._state.dayCounts || {}; // 🔴 v1.1 旧数据迁移
       this._migrateDecor(this._state);
     }
-    // 跨月封存
+    // 跨月封存（统一走 sealState，load 与 addPoints 共用同一条路径）
     const st = this._state;
     if (!st.sealed && (st.year !== now.getFullYear() || st.month !== now.getMonth() + 1)) {
-      st.sealed = true;
-      st.history = st.history || [];
-      // 🔴 v0.40 修复：decor 必须深拷贝（否则历史月与当前月共享同一数组，当前月摆装饰历史也跟着变）
-      st.history.unshift({ year: st.year, month: st.month, planted: st.planted, decor: JSON.parse(JSON.stringify(st.decor || [])), owned: (st.owned || []).slice(), stage: st.stage, totalEarned: st.totalEarned, sealedAt: Date.now() });
-      const fresh = this.defaultState();
-      // 🔴 v0.43 积分可累积：当月没花完的积分结转到下个月（可花可不花）
-      fresh.points = st.points || 0;
-      // 🔴 v0.43 已购装饰全局共用：跨月保留 owned（买的装饰永久属于你）
-      fresh.owned = (st.owned || []).slice();
-      fresh.history = st.history.slice(0, 36); // 保留 3 年
-      this._state = fresh;
+      this._state = this.sealState(st);
       await this.save();
     }
     return this._state;
+  },
+  /* 🔴 v1.1：跨月封存统一入口——积分跨月结转 + 已购装饰跨月保留 + 历史深拷贝 + 保留 36 个月 */
+  sealState(st) {
+    st.sealed = true;
+    st.history = st.history || [];
+    st.history.unshift({ year: st.year, month: st.month, planted: st.planted, decor: JSON.parse(JSON.stringify(st.decor || [])), owned: (st.owned || []).slice(), stage: st.stage, totalEarned: st.totalEarned, sealedAt: Date.now() });
+    const fresh = this.defaultState();
+    fresh.points = st.points || 0;
+    fresh.owned = (st.owned || []).slice();
+    fresh.history = st.history.slice(0, 36);
+    return fresh;
   },
   /* 旧装饰数据迁移：{type, day} → {type, x, y}（day 映射到旧 12 锚点）；补 decor id/angle/scale（v0.39 多份+旋转+缩放） */
   _migrateDecor(st) {
@@ -201,104 +200,130 @@ const Farm = {
 
   /* ============ 月积分奖励 ============
    * addPoints(source, { key, pts, maxDay })
-   * 幂等键 + 每日上限 + 单事务原子写入；积分只由学习产出
+   * 幂等键 + 每日次数上限(maxDay) + 全局日上限(50 分) + 单事务原子写入；积分只由学习产出
+   * 🔴 v1.1：maxDay 语义修复——按 source 统计当日发放次数（dayCounts），不再与分值 dayPoints 混用；
+   *          所有读-改-写操作进串行队列（_enqueue），消除与 buyDecor/save 的并发丢更新
    */
+  _queue: Promise.resolve(),
+  _enqueue(fn) {
+    const run = this._queue.then(fn, fn);
+    this._queue = run.catch(() => {});
+    return run;
+  },
   async addPoints(source, opts) {
     const key = (opts.key == null ? '' : String(opts.key));
     const evId = 'ev_' + source + '_' + key;
-    const d = await db();
-    return new Promise((resolve, reject) => {
-      const t = d.transaction('farm', 'readwrite');
-      const store = t.objectStore('farm');
-      const reqEv = store.get(evId);
-      reqEv.onsuccess = () => {
-        if (reqEv.result) { resolve(null); return; }
-        const reqS = store.get('garden');
-        reqS.onsuccess = () => {
-          let st = reqS.result;
-          const now = FARM.now();
-          const today = FARM.dayKey(now);
-          // 跨月重置（封存旧月）
-          if (st && !st.sealed && (st.year !== now.getFullYear() || st.month !== now.getMonth() + 1)) {
-            st.sealed = true;
-            st.history = st.history || [];
-            // 🔴 v0.40 修复：decor 深拷贝（模拟整月封存路径同样问题）
-            st.history.unshift({ year: st.year, month: st.month, planted: st.planted, decor: JSON.parse(JSON.stringify(st.decor || [])), stage: st.stage, totalEarned: st.totalEarned, sealedAt: Date.now() });
-            const fresh = this.defaultState();
-            // 🔴 v0.43 积分可累积：当月没花完的积分结转到下个月（可花可不花）
-            fresh.points = st.points || 0;
-            // 🔴 v0.43 已购装饰全局共用：跨月保留 owned（买的装饰永久属于你）
-            fresh.owned = (st.owned || []).slice();
-            fresh.history = st.history.slice(0, 36);
-            st = fresh;
-          }
-          if (!st) st = this.defaultState();
-          if (st.day !== today) { st.day = today; st.dayPoints = 0; }
-          if (opts.maxDay && st.dayPoints >= opts.maxDay) { resolve(null); return; }
-          let p = opts.pts || 0;
-          if (st.dayPoints + p > FARM.POINT_DAY_LIMIT) p = Math.max(0, FARM.POINT_DAY_LIMIT - st.dayPoints);
-          if (p === 0) { resolve(null); return; }
-          st.points += p;
-          st.totalEarned += p;
-          st.dayPoints += p;
-          // 每日首学：当天格子种下当月作物
-          const dayNum = now.getDate();
-          if (!st.planted[dayNum]) {
-            st.planted[dayNum] = FARM.monthCrop(st.month, dayNum);
-          }
-          // 阶段升级
-          const newStage = Math.min(2, Math.floor(st.totalEarned / FARM.GROW_PER_STAGE));
-          if (newStage !== st.stage) st.stage = newStage;
-          store.put(st);
-          Farm._state = st; // 同步内存缓存
-          store.put({ id: evId, source, key, pts: p, at: Date.now() });
-          resolve({ pts: p, stage: st.stage, planted: st.planted[dayNum] || null });
+    return this._enqueue(() => this._addPointsTx(source, evId, opts));
+  },
+  _addPointsTx(source, evId, opts) {
+    return (async () => {
+      const d = await db();
+      return new Promise((resolve, reject) => {
+        const t = d.transaction('farm', 'readwrite');
+        const store = t.objectStore('farm');
+        const reqEv = store.get(evId);
+        reqEv.onsuccess = () => {
+          if (reqEv.result) { resolve(null); return; }
+          const reqS = store.get('garden');
+          reqS.onsuccess = () => {
+            let st = reqS.result;
+            const now = FARM.now();
+            const today = FARM.dayKey(now);
+            // 跨月封存（统一 sealState）
+            if (st && !st.sealed && (st.year !== now.getFullYear() || st.month !== now.getMonth() + 1)) {
+              st = this.sealState(st);
+            }
+            if (!st) st = this.defaultState();
+            st.dayCounts = st.dayCounts || {};
+            if (st.day !== today) { st.day = today; st.dayPoints = 0; st.dayCounts = {}; }
+            // 🔴 v1.1：maxDay = 当日发放次数上限（按 source 独立统计）
+            if (opts.maxDay && (st.dayCounts[source] || 0) >= opts.maxDay) { resolve(null); return; }
+            let p = opts.pts || 0;
+            if (st.dayPoints + p > FARM.POINT_DAY_LIMIT) p = Math.max(0, FARM.POINT_DAY_LIMIT - st.dayPoints);
+            if (p === 0) { resolve(null); return; }
+            st.points += p;
+            st.totalEarned += p;
+            st.dayPoints += p;
+            st.dayCounts[source] = (st.dayCounts[source] || 0) + 1;
+            // 每日首学：当天格子种下当月作物
+            const dayNum = now.getDate();
+            if (!st.planted[dayNum]) {
+              st.planted[dayNum] = FARM.monthCrop(st.month, dayNum);
+            }
+            // 阶段升级
+            const newStage = Math.min(2, Math.floor(st.totalEarned / FARM.GROW_PER_STAGE));
+            if (newStage !== st.stage) st.stage = newStage;
+            store.put(st);
+            Farm._state = st; // 同步内存缓存
+            store.put({ id: evId, source, key, pts: p, at: Date.now() });
+            resolve({ pts: p, stage: st.stage, planted: st.planted[dayNum] || null });
+          };
+          reqS.onerror = () => reject(reqS.error);
         };
-        reqS.onerror = () => reject(reqS.error);
-      };
-      reqEv.onerror = () => reject(reqEv.error);
-      t.onerror = () => reject(t.error);
-    });
+        reqEv.onerror = () => reject(reqEv.error);
+        t.onerror = () => reject(t.error);
+      });
+    })();
   },
 
   /* ============ 装饰 ============ */
   async buyDecor(type) {
-    const st = await this.load();
-    const def = FARM.DECOR[type] || null;
-    const monthDef = FARM.MONTH_DECOR[st.month] || {};
-    const mdef = monthDef[type] || null;
-    const d = def || mdef;
-    if (!d) return { ok: false, msg: '装饰不存在' };
-    // 🔴 月度限定装饰定义里没有 price 字段（只有 name）——统一 fallback 30
-    const price = d.price != null ? d.price : 30;
-    if (st.points < price) return { ok: false, msg: '积分不够（需 ' + price + '）' };
-    st.points -= price;
-    st.owned.push(type); // v0.37：不限次数，可买多份
-    await this.save();
-    return { ok: true, type };
+    return this._enqueue(async () => {
+      const st = await this.load();
+      const def = FARM.DECOR[type] || null;
+      const monthDef = FARM.MONTH_DECOR[st.month] || {};
+      const mdef = monthDef[type] || null;
+      const d = def || mdef;
+      if (!d) return { ok: false, msg: '装饰不存在' };
+      // 🔴 月度限定装饰定义里没有 price 字段（只有 name）——统一 fallback 30
+      const price = d.price != null ? d.price : 30;
+      if (st.points < price) return { ok: false, msg: '积分不够（需 ' + price + '）' };
+      st.points -= price;
+      st.owned.push(type); // v0.37：不限次数，可买多份
+      await this.save();
+      return { ok: true, type };
+    });
   },
   /* 摆放装饰（坐标制）：x,y 为 1024×1536 画布坐标；同类型可摆多份（各带 id） */
   async placeDecor(type, x, y) {
-    const st = await this.load();
-    if (!st.owned.includes(type)) return { ok: false, msg: '还没有这个装饰，先去商店买' };
-    const id = this.newDecorId();
-    st.decor.push({ id, type, x: Math.round(x), y: Math.round(y) });
-    await this.save();
-    return { ok: true, id };
+    return this._enqueue(async () => {
+      const st = await this.load();
+      if (!st.owned.includes(type)) return { ok: false, msg: '还没有这个装饰，先去商店买' };
+      // 🔴 v1.1：全局库存校验下沉到数据层（可摆 = 总库存 - 全局已摆），UI 层绕过也拦得住
+      const ownedCount = st.owned.filter(t => t === type).length;
+      if (this.placedTotal(type) >= ownedCount) return { ok: false, msg: '这个装饰已经摆满了' };
+      const id = this.newDecorId();
+      st.decor.push({ id, type, x: Math.round(x), y: Math.round(y) });
+      await this.save();
+      return { ok: true, id };
+    });
   },
   /* 收起装饰（按 id 移除，仍在 owned 里可再摆） */
   async removeDecor(id) {
-    const st = await this.load();
-    st.decor = st.decor.filter(d => d.id !== id);
-    await this.save();
-    return { ok: true };
+    return this._enqueue(async () => {
+      const st = await this.load();
+      st.decor = st.decor.filter(d => d.id !== id);
+      await this.save();
+      return { ok: true };
+    });
   },
   /* 保存整体摆放布局（编辑模式点勾时调用，layout 带 id，同类型多份，保留 angle/scale） */
   async saveDecorLayout(layout) {
-    const st = await this.load();
-    st.decor = layout.map(d => ({ id: d.id || this.newDecorId(), type: d.type, x: Math.round(d.x), y: Math.round(d.y), angle: d.angle || 0, scale: d.scale || 1 }));
-    await this.save();
-    return { ok: true };
+    return this._enqueue(async () => {
+      const st = await this.load();
+      st.decor = layout.map(d => ({ id: d.id || this.newDecorId(), type: d.type, x: Math.round(d.x), y: Math.round(d.y), angle: d.angle || 0, scale: d.scale || 1 }));
+      await this.save();
+      return { ok: true };
+    });
+  },
+  /* 全局已摆数（当前月 + 所有历史月）——🔴 v1.1 从 ui.js 下沉，数据层/UI 层共用 */
+  placedTotal(type) {
+    const st = this._state;
+    if (!st) return 0;
+    let n = 0;
+    for (const de of st.decor || []) if (de.type === type) n++;
+    for (const h of st.history || []) for (const de of (h.decor || [])) if (de.type === type) n++;
+    return n;
   },
 
   /* ============ 素材加载 ============ */
@@ -479,23 +504,25 @@ const Farm = {
   },
 };
 
-/* 有效学习时长追踪：有交互且页面可见时累计，每 3 分钟 +1 月积分（幂等段，防挂机刷） */
+/* 有效学习时长追踪：有交互且页面可见时累计，每 3 分钟 +1 月积分（幂等段，防挂机刷）
+   🔴 v1.1：忽略 keydown 自动重复（长按不再刷活跃）、宽限期 10 分钟→3 分钟、时长每日上限 20 分 */
 const FarmActivity = {
   lastActivity: Date.now(),
   _acc: 0,
   _timer: null,
   start() {
+    if (this._timer) return; // 🔴 v1.1 幂等，防重复初始化泄漏定时器
     document.addEventListener('pointerdown', () => { this.lastActivity = Date.now(); }, { passive: true });
-    document.addEventListener('keydown', () => { this.lastActivity = Date.now(); });
+    document.addEventListener('keydown', (e) => { if (!e.repeat) this.lastActivity = Date.now(); });
     this._timer = setInterval(async () => {
       if (document.visibilityState !== 'visible') return;
-      if (Date.now() - this.lastActivity > 10 * 60 * 1000) return;
+      if (Date.now() - this.lastActivity > 3 * 60 * 1000) return;
       this._acc += 30;
       if (this._acc >= 180) {
         this._acc = 0;
         try {
           const seg = Math.floor(Date.now() / 180000);
-          await Farm.addPoints('time', { key: 'seg:' + seg, pts: 1 });
+          await Farm.addPoints('time', { key: 'seg:' + seg, pts: 1, maxDay: 20 });
         } catch (e) {}
       }
     }, 30000);

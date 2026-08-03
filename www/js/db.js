@@ -45,8 +45,17 @@ function tx(storeName, mode, fn) {
 /* ---------- 设置（localStorage） ---------- */
 const Settings = {
   get(key, def) {
-    try { const v = localStorage.getItem('ea_' + key); return v === null ? def : JSON.parse(v); }
-    catch { return def; }
+    try {
+      const v = localStorage.getItem('ea_' + key);
+      if (v === null) return def;
+      const parsed = JSON.parse(v);
+      // 🔴 v1.1：数组字段校验——损坏/旧格式数据返回默认值（避免 .filter/.map 直接抛错，用户"丢会话"无提示）
+      if (Array.isArray(def) && !Array.isArray(parsed)) return def;
+      return parsed;
+    } catch {
+      console.warn('Settings 读取失败:', key); // 🔴 v1.1：不再静默吞（方便排查数据损坏）
+      return def;
+    }
   },
   set(key, val) {
     localStorage.setItem('ea_' + key, JSON.stringify(val));
@@ -71,11 +80,14 @@ const Profile = {
     });
   },
   save(p) { Settings.set('profile', p); },
+  _dayStr(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); },
   touchStreak() {
     const p = this.load();
-    const today = new Date().toISOString().slice(0, 10);
+    // 🔴 v1.1：本地日期判日界（原来 toISOString 是 UTC——北京时间凌晨 0-8 点会被算到"昨天"，连击断裂）
+    const today = this._dayStr(new Date());
+    const yesterday = this._dayStr(new Date(Date.now() - 864e5));
     if (p.lastDay !== today) {
-      p.streak = (p.lastDay === new Date(Date.now() - 864e5).toISOString().slice(0, 10)) ? p.streak + 1 : 1;
+      p.streak = (p.lastDay === yesterday) ? p.streak + 1 : 1;
       p.lastDay = today;
       this.save(p);
     }
@@ -135,14 +147,6 @@ const Words = {
 };
 
 /* ---------- 对话记录 ---------- */
-const Sessions = {
-  async save(s) {
-    await tx('sessions', 'readwrite', st => st.put({ id: Date.now().toString(), at: Date.now(), ...s }));
-  },
-  async recent(limit = 5) {
-    const all = await tx('sessions', 'readonly', st => st.getAll());
-    return all.sort((a, b) => b.at - a.at).slice(0, limit);
-  },
-};
+/* （Sessions store 已弃用：会话保存在 localStorage conversations，v1.1 清理死代码） */
 
 

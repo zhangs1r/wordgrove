@@ -148,15 +148,7 @@ ${this.forgetLine()}
   /* ---------- 核心 agent loop ---------- */
   async run(scene, history) {
     const model = Settings.get('chatModel', 'deepseek-v4-flash');
-    try {
-      return await this._run(scene, history, model);
-    } catch (e) {
-      // mimo 对话网络不稳时自动换 deepseek 重试一次
-      if (model === 'mimo-v2.5') {
-        return await this._run(scene, history, 'deepseek-v4-flash');
-      }
-      throw e;
-    }
+    return await this._run(scene, history, model);
   },
 
   async _run(scene, history, model) {
@@ -331,7 +323,13 @@ Output ONLY JSON: {"name":"角色英文名","gender":"male或female","persona":"
     try {
       const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
       return { narration: j.narration || '', options: (j.options || []).slice(0, 4) };
-    } catch { return { narration: content.slice(0, 300), options: [] }; }
+    } catch {
+      // 🔴 v1.1：解析失败时提取 narration 字段，失败用固定开场文案——绝不把原始 JSON 当旁白展示
+      const narration = (content.match(/"narration"\s*:\s*"((?:[^"\\]|\\.)*)"/) || [])[1] || '';
+      const opts = (content.match(/"options"\s*:\s*\[([^\]]*)\]/) || [])[1] || '';
+      const options = opts ? opts.match(/"([^"]+)"/g).map(s => s.slice(1, -1)).slice(0, 4) : [];
+      return { narration: narration || ('You step into the world of ' + (w.name || 'this story') + ', where your first decision awaits.'), options };
+    }
   },
 
   /* ================= 角色扮演（酒馆 RP）引擎 ================= */
@@ -365,7 +363,7 @@ Output ONLY JSON: {"name":"角色英文名","gender":"male或female","persona":"
   forgetLine() {
     let lines = '';
     if (this._forgetWords.length) {
-      lines += `\n- 学习者最常忘的词（这些词只是可以参考的素材：如果符合当前场景/世界观就自然带进对话帮他巩固；如果明显违和——比如仙侠世界里的现代咖啡——就不要用，宁可错过也不要生硬塞入）：${this._forgetWords.join('、')}`;
+      lines += `\n- 学习者最常忘的词（这些词只是可以参考的素材：如果符合当前场景/世界观就自然带进对话帮他巩固；如果明显违和就不要用，宁可错过也不要生硬塞入）：${this._forgetWords.join('、')}`;
     }
     // 沉淀词：历史忘过但现在已记住 → 约 30% 概率随机带一个，偶尔重现巩固
     if (this._dormantWords && this._dormantWords.length && Math.random() < 0.3) {
@@ -386,7 +384,7 @@ Output ONLY JSON: {"name":"角色英文名","gender":"male或female","persona":"
 2. Stay in character at all times. Never break the fourth wall.
 3. Keep responses concise (under 150 words).
 4. If the user writes in Chinese, gently correct them: first show the correct English way to say what they meant, then continue the story in English.
-5. WORLD CONSISTENCY: everything in the story must fit the world's setting and era. Do NOT introduce modern or out-of-world objects (coffee, phones, cars, computers) unless the world setting actually includes them. Vocabulary reminders below are optional material: use a word only if it fits naturally; never force it.
+5. WORLD CONSISTENCY: everything in the story must fit the world's setting and era as defined by the world card. Only introduce things that plausibly exist in this world — if the world card is modern, modern things are fine; if it is medieval or futuristic, stick to that world. Vocabulary reminders below are optional material: use a word only if it fits naturally; never force it.
 ${this.forgetLine()}
 
 WORLD: ${w.name || 'Unknown world'}
@@ -401,27 +399,43 @@ NARRATION TONE: ${w.tone || 'atmospheric'}`;
     const sys = this.rpSystem(world) + `
 
 You are playing: ${char.name}
-PERSONA: ${char.persona}
-APPEARANCE: ${char.appearance}
-BACKGROUND: ${char.background}
-SPEAKING STYLE: ${char.speakingStyle}
-EXAMPLE DIALOGUE: ${char.exampleDialogue}
+PERSONA: ${char.persona || 'a character in this world'}
+APPEARANCE: ${char.appearance || 'ordinary appearance'}
+BACKGROUND: ${char.background || 'part of this world'}
+SPEAKING STYLE: ${char.speakingStyle || 'natural, in-character'}
+EXAMPLE DIALOGUE: ${char.exampleDialogue || 'none'}
 
 Now think as ${char.name}. Given the conversation so far and the player's latest action, infer this character's inner thoughts, decide their action, and write their spoken line.
 Output ONLY JSON: {"inner":"their inner thoughts in English","action":"what they physically do","speech":"their spoken line in English"}`;
     const msgs = [
       { role: 'system', content: sys },
-      ...history.slice(-10),
+      // 🔴 v1.1：清洗多余字段（voice/options/name 不进请求体）+ 排除刚注入的当前 user 消息（避免同一输入出现两遍）
+      ...this.cleanRpHistory(history, 10),
       { role: 'user', content: 'Latest event: ' + userInput + '\n\nRespond as ' + char.name + '.' },
     ];
-    const resp = await API.chat(msgs, { model, maxTokens: 800 });
+    const resp = await API.chat(msgs, { model, maxTokens: 1200 }); // 🔴 v1.1：800→1200（思考模式下三字段 JSON 更不易截断）
     const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
     try {
       const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
       return { inner: j.inner || '', action: j.action || '', speech: j.speech || '' };
     } catch {
-      return { inner: '', action: '', speech: content.slice(0, 200) };
+      // 🔴 v1.1：解析失败时逐字段提取，绝不把原始 JSON 当台词展示（v0.42 只修了导演层，角色层漏了）
+      const speech = (content.match(/"speech"\s*:\s*"((?:[^"\\]|\\.)*)"/) || [])[1] || '';
+      const inner = (content.match(/"inner"\s*:\s*"((?:[^"\\]|\\.)*)"/) || [])[1] || '';
+      const action = (content.match(/"action"\s*:\s*"((?:[^"\\]|\\.)*)"/) || [])[1] || '';
+      return { inner, action, speech: speech || '(The character pauses, gathering their thoughts.)' };
     }
+  },
+
+  /* 🔴 v1.1：RP 历史送模型前清洗——只留 role/content（voice/options/name 不进请求体），
+   * 并排除最后一条 user 消息（当前输入已单独注入，避免重复） */
+  cleanRpHistory(history, n) {
+    const arr = (history || []).slice(-n);
+    const msgs = arr.map(m => ({ role: m.role, content: typeof m.content === 'string' ? m.content : '' }));
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].role === 'user') { msgs.splice(i, 1); break; }
+    }
+    return msgs;
   },
 
   /* 导演 Agent：汇总所有角色的推理，推进情节 + 给选项 */
@@ -441,7 +455,7 @@ For dialogue: characters from the cast keep their identity; NEW side characters 
     const charBrief = charResults.map((r, i) => `${chars[i].name}: inner="${r.inner}" action="${r.action}" speech="${r.speech}"`).join('\n');
     const msgs = [
       { role: 'system', content: sys },
-      ...history.slice(-8),
+      ...this.cleanRpHistory(history, 8),
       { role: 'user', content: 'Player action: ' + (userInput || '(the player lets the story continue on its own)') + '\n\nCharacter inner states:\n' + charBrief + '\n\nWrite the next beat.' },
     ];
     const resp = await API.chat(msgs, { model, maxTokens: 2200 }); // v0.42：1000 太小，narration+dialogue+options 会被截断→JSON解析失败显示原始JSON
@@ -483,9 +497,13 @@ For dialogue: characters from the cast keep their identity; NEW side characters 
       { role: 'user', content: '我的世界设想：' + desc },
     ], { model, maxTokens: 1200 });
     const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
-    const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
-    if (!Array.isArray(j.roles)) j.roles = [];
-    return j;
+    try {
+      const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
+      if (!Array.isArray(j.roles)) j.roles = [];
+      return j;
+    } catch {
+      return null; // 🔴 v1.1：解析失败返回 null，调用方给出重试提示
+    }
   },
   /* 旧世界卡补齐角色：按世界设定生成 3-5 个角色 */
   async fillWorldRoles(world) {
@@ -498,9 +516,13 @@ For dialogue: characters from the cast keep their identity; NEW side characters 
       { role: 'user', content: `世界：${w.name || ''} — ${w.setting || w.description || ''}` },
     ], { model, maxTokens: 900 });
     const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
-    const a = content.indexOf('['), b = content.lastIndexOf(']');
-    const j = JSON.parse(content.slice(a, b + 1));
-    return Array.isArray(j) ? j : [];
+    try {
+      const a = content.indexOf('['), b = content.lastIndexOf(']');
+      const j = JSON.parse(content.slice(a, b + 1));
+      return Array.isArray(j) ? j : [];
+    } catch {
+      return []; // 🔴 v1.1：解析失败返回空数组（调用方已有兜底提示）
+    }
   },
 
   /* 复盘：语法/表达 + 角色扮演贴合度 */

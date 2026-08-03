@@ -240,11 +240,12 @@ const TTS = {
       if (cached) {
         clearTimeout(this._synthTimer);
         this._pending(false);
-        this.playing = false;
-        this._current = null;
+        // 🔴 v1.1：playing 保持 true 直到播放结束（原来这里提前置 false → 播放中再点不触发打断 → 音频重叠）
         this._currentText = item.text;
         this.playSamples(new Float32Array(cached), 22050, () => {
           this._currentText = null;
+          this.playing = false;
+          this._current = null;
           item.resolve(true); this.pumpQueue();
         });
         return;
@@ -268,17 +269,20 @@ const TTS = {
     if (!this._current) return;
     clearTimeout(this._synthTimer);
     this._pending(false);
-    this.playing = false;
     const item = this._current;
-    this._current = null;
     if (samples && samples.length) {
       AudioCache.put(item.text, item.rate, item.voice, samples); // 存入缓存（不阻塞播放）
+      // 🔴 v1.1：playing 保持 true 直到播放结束（原来合成完成就置 false → 播放中再点不打断 → 音频重叠）
       this._currentText = item.text;
       this.playSamples(samples, sampleRate, () => {
         this._currentText = null;
+        this.playing = false;
+        this._current = null;
         item.resolve(true); this.pumpQueue();
       });
     } else {
+      this.playing = false;
+      this._current = null;
       item.resolve(false);
       this.pumpQueue();
     }
@@ -327,10 +331,13 @@ const TTS = {
       const source = this.audioCtx.createBufferSource();
       source.buffer = buffer;
       source.connect(this.audioCtx.destination);
-      source.onended = () => { if (onDone) onDone(); };
+      source.onended = () => { if (this._source === source) this._source = null; if (onDone) onDone(); };
+      // 🔴 v1.1：保留 source 引用——stop 时 source.stop() 会触发 onended → 播放中的 speak() promise 正常 settle（suspend 不会触发）
+      this._source = source;
       source.start();
     } catch (e) {
       console.log('play fail', e);
+      this._source = null;
       if (onDone) onDone();
     }
   },
@@ -368,7 +375,11 @@ const TTS = {
   },
 
   stopCurrent() {
-    this.queue = [];
+    // 🔴 v1.1：清队列时逐个 resolve（否则未开始项的 promise 永不 settle → 朗读按钮永久卡三点）
+    while (this.queue.length) {
+      const it = this.queue.shift();
+      it.resolve(false);
+    }
     clearTimeout(this._synthTimer);
     this._pending(false);
     if (this.playing) {
@@ -376,6 +387,8 @@ const TTS = {
       if (this._current) { this._current.resolve(false); this._current = null; }
     }
     this._currentText = null;
+    // 🔴 v1.1：source.stop() 触发 onended → 播放中 speak() 的 promise settle（suspend 不会触发 onended）
+    if (this._source) { try { this._source.stop(); } catch {} this._source = null; }
     if (this.audioCtx) { try { this.audioCtx.suspend(); } catch {} }
     if (this.usingNative) {
       try { window.Capacitor.Plugins.TextToSpeech.stop(); } catch {}

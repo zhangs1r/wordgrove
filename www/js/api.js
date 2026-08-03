@@ -64,14 +64,33 @@ const API = {
     let lastErr = '';
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        const res = await fetch(this.base, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(body),
-        });
+        // 🔴 v1.1：fetch 加超时（断网/代理黑洞不再永久卡 typing；对话思考模式给 90s）
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), attempt === 0 ? 90000 : 60000);
+        let res;
+        try {
+          res = await fetch(this.base, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(body),
+            signal: ctrl.signal,
+          });
+        } finally { clearTimeout(timer); }
+        // 🔴 v1.1：参数类错误不重试（重试只会浪费 4.5s）；402 余额不足给中文提示
+        if (res.status === 400 || res.status === 422) {
+          const t = await res.text();
+          let msg = '请求参数错误';
+          try { msg = JSON.parse(t)?.error?.message || msg; } catch {}
+          throw new Error(msg + ' [' + res.status + ']');
+        }
+        if (res.status === 402) {
+          throw new Error('API 余额不足，请去 platform.deepseek.com 充值 [402]');
+        }
         if (res.status === 429 || res.status === 529) {
+          // 🔴 v1.1：尊重 Retry-After
+          const ra = parseInt(res.headers.get('retry-after') || '', 10);
           lastErr = '限流(' + res.status + ')，重试中';
-          await sleep(2000 * (attempt + 1));
+          await sleep((ra && ra > 0 ? ra : 2 * (attempt + 1)) * 1000);
           continue;
         }
         const text = await res.text();
@@ -96,14 +115,20 @@ const API = {
         }
         return data;
       } catch (e) {
-        if (e.message.includes('Key 无效')) throw e;
+        if (e.name === 'AbortError') {
+          lastErr = '请求超时（网络慢或代理问题），已重试';
+          await sleep(1500 * (attempt + 1));
+          continue;
+        }
+        if (e.message.includes('Key 无效') || e.message.includes('余额不足') || e.message.includes('参数错误')) throw e;
         lastErr = e.message || String(e);
         await sleep(1500 * (attempt + 1));
       }
     }
     throw new Error('API 调用失败：' + lastErr);
   },
-  /* 测试连接：发一个最小请求验证 key */
+  /* 测试连接：发一个最小请求验证 key
+     🔴 v1.1：max_tokens 8→200（思考模式会吃光 8 个 token 导致 content 空，假阳性"连接成功"）；校验 content 非空 */
   async test() {
     const res = await fetch(this.base, {
       method: 'POST',
@@ -114,14 +139,16 @@ const API = {
       body: JSON.stringify({
         model: 'deepseek-v4-flash',
         messages: [{ role: 'user', content: 'ping' }],
-        max_tokens: 8,
+        max_tokens: 200,
       }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       throw new Error(data?.error?.message || ('HTTP ' + res.status));
     }
-    return data.choices?.[0]?.message?.content || 'ok';
+    const content = data.choices?.[0]?.message?.content || '';
+    if (!content) throw new Error('响应异常（模型未返回内容，可能是思考链吃光了输出额度）');
+    return content;
   },
 };
 

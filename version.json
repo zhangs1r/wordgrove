@@ -1,6 +1,6 @@
 {
-  "version": "1.2.34",
-  "notes": "1.2.34：修复网页版刷新不更新——根因：sw.js 注册没带 updateViaCache:'none'，GitHub Pages 给 sw.js 默认 10 分钟 HTTP 缓存，浏览器检查更新时用缓存的旧 sw.js 字节对比，永远认为没更新，旧 Service Worker 继续喂旧页面。修复：① 注册加 updateViaCache:'none' 强制每次导航重新拉 sw.js；② 缓存名升 v3 强制换血；③ 网页版加载时静默对比线上 version.json，不一致自动刷新一次（10 分钟节流防循环）",
-  "apk": "EnglishApp-v1.2.34.apk",
-  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.34/EnglishApp-v1.2.34.apk"
+  "version": "1.2.35",
+  "notes": "1.2.35：查单词思考模式直接关闭（thinking: disabled）——medium 档仍慢，用户拍板查词不要思考链直接输出；查词速度最快化，本地缓存 LRU 300 保留（二次点击秒出）",
+  "apk": "EnglishApp-v1.2.35.apk",
+  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.35/EnglishApp-v1.2.35.apk"
 }

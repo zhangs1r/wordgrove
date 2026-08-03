@@ -671,7 +671,9 @@ For dialogue: characters from the cast keep their identity; NEW side characters 
     const sys = { role: 'system', content: `你是英语老师，在教一个${lv.label}水平的学生。为单词 "${word}" 输出讲解，返回 JSON（不要输出其他内容）：\n{\n  "word": "${word}",\n  "phonetic": "英式音标",\n  "pos": "词性，如 v./n./adj.",\n  "meaning": "中文释义（结合语境的主释义 1-2 条；无语境给最常用义）",\n  "usage": "语境中的用法：如果是固定搭配/惯用语的一部分，指出来并解释整个搭配怎么用（英文示例+中文说明）；无语境时给这个单词最常用的搭配",\n  "root": "词根/词缀拆解（用中文说明）",\n  "family": "同根词/词族 2-3 个（英文，简短）",\n  "collocations": "常用搭配 1-2 个（英文，如 take a break）",\n  "synonyms": "同义词 1-2 个",\n  "antonyms": "反义词（如有）",\n  "examples": [{"en":"英文例句","cn":"中文翻译"}],\n  "expand": "举一反三：换个说法/相关表达 1-2 个（英文+中文），让学习者能立刻用出来",\n  "note": "记忆提示（一句话中文，可用词源小故事或联想记忆）"\n}\n要求：例句难度匹配 ${lv.label} 水平（${lv.desc}）；有语境时例句优先贴近语境场景。只输出 JSON。${ctxBlock}` };
     const msgs = [sys, { role: 'user', content: word + (context ? '\n语境：' + String(context).slice(0, 900) : '') }];
     const tryOnce = async () => {
-      const resp = await API.chat(msgs, { model, maxTokens: 4000, reasoningEffort: 'medium' });
+      // 🔴 v1.2.35：查词思考模式直接关闭（thinking: 'disabled'）——medium 档还是慢，
+      //   用户拍板：查词不要思考链，直接输出，最快
+      const resp = await API.chat(msgs, { model, maxTokens: 4000, thinking: 'disabled' });
       const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
       try {
         const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));

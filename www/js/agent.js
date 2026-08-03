@@ -600,21 +600,26 @@ For dialogue: characters from the cast keep their identity; NEW side characters 
   },
 
   /* ---------- 酒馆卡生成 ---------- */
+  /* 🔴 v1.2.28：生成世界卡——maxTokens 1200→2000（思考链截断 JSON 同 queryWord 的坑）+ 解析失败自动重试一次，
+     仍失败返回 { failed: true }（🔴 原来返回 null 而调用方直接 j.name → Cannot read properties of null） */
   async generateWorldCard(desc) {
     const model = Settings.get('buildModel', 'deepseek-v4-flash');
-    const resp = await API.chat([
-      { role: 'system', content: `你是世界卡设计师。根据用户描述生成一个角色扮演世界的世界卡，世界卡内嵌这个世界里已有的角色表（主角/配角/反派等，3-5 个），返回 JSON：
+    const sys = { role: 'system', content: `你是世界卡设计师。根据用户描述生成一个角色扮演世界的世界卡，世界卡内嵌这个世界里已有的角色表（主角/配角/反派等，3-5 个），返回 JSON：
 {"name":"世界名(英文)","title":"中文标题","description":"一句话简介(英文)","setting":"详细世界设定(英文,3-5句)","rules":"世界规则(英文,2-3条,换行分隔)","tone":"叙述风格(英文,如 atmospheric、humorous)","roles":[{"name":"角色英文名","gender":"male或female","persona":"身份与性格(英文,1-2句)","role":"主角/配角/反派等(中文)","speakingStyle":"说话风格(英文,1句)"}]}
-要求：角色要和世界观贴合，性别明确。英文输出，适合英语学习。只输出 JSON。` },
-      { role: 'user', content: '我的世界设想：' + desc },
-    ], { model, maxTokens: 1200 });
-    const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
-    try {
+要求：角色要和世界观贴合，性别明确。英文输出，适合英语学习。只输出 JSON。` };
+    const msgs = [sys, { role: 'user', content: '我的世界设想：' + desc }];
+    const tryOnce = async () => {
+      const resp = await API.chat(msgs, { model, maxTokens: 2000 });
+      const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
       const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
       if (!Array.isArray(j.roles)) j.roles = [];
       return j;
+    };
+    try {
+      return await tryOnce();
     } catch {
-      return null; // 🔴 v1.1：解析失败返回 null，调用方给出重试提示
+      try { return await tryOnce(); } // 自动重试一次
+      catch { return { failed: true }; }
     }
   },
   /* 旧世界卡补齐角色：按世界设定生成 3-5 个角色 */

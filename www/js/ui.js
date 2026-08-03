@@ -2788,6 +2788,8 @@ const UI = {
     this.el('genSubmitBtn').textContent = '生成中…';
     try {
       const j = await Agent.generateWorldCard(desc);
+      // 🔴 v1.2.28：失败兜底——原来 null 直接 j.name 抛 TypeError（Cannot read properties of null）
+      if (!j || j.failed) { this.toast('生成失败（网络或响应问题），再试一次'); return; }
       this.saveWorld({ id: 'w_' + Date.now(), name: j.name || 'World', title: j.title || '', description: j.description || '', setting: j.setting || '', rules: j.rules || '', tone: j.tone || '', roles: j.roles || [], at: Date.now() });
       this.setCurrentWorld(this.listWorlds()[this.listWorlds().length - 1].id);
       this.el('genModal').classList.add('hidden');

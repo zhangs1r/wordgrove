@@ -1,7 +1,7 @@
 /* WordGrove 网页版 Service Worker——离线可用 + 始终最新
-   🔴 v1.2.30：修复旧版缓存永不更新——原 cache-first 策略缓存命中就返回，缓存名固定 v1 永不失效，
-   用户浏览器永远显示第一次访问的旧版（宽屏旧 UI）；改为 network-first：在线永远取最新，失败才用缓存（离线兜底） */
-const CACHE = 'wordgrove-v2';
+   🔴 v1.2.34：缓存名升 v3 强制换血（sw.js 字节变化让已被 HTTP 缓存的旧 sw.js 也检测到更新）；
+   配合 app.js 的 updateViaCache:'none' 注册 + skipWaiting/claim——发版后一次刷新即新版 */
+const CACHE = 'wordgrove-v3';
 const CORE = [
   './',
   './index.html',

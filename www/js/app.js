@@ -4,12 +4,38 @@ document.addEventListener('DOMContentLoaded', () => {
   API.loadConfig();
   UI.init();
   // 🔴 网页版：注册 Service Worker（PWA/离线缓存）——排除 Capacitor 环境（原生 WebView 不需要，避免缓存干扰发版）
+  // 🔴 v1.2.34：updateViaCache: 'none'——绕过 HTTP 缓存强制每次导航重新拉 sw.js 字节。
+  //   修复"刷新不更新"：GitHub Pages 给 sw.js 默认 Cache-Control: max-age=600（10 分钟），
+  //   浏览器检查更新时用 HTTP 缓存的旧 sw.js 做字节对比 → 永远认为没更新 → 旧 SW 不换 → 永远旧版
   if (!window.Capacitor && 'serviceWorker' in navigator && location.protocol === 'https:') {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {});
   }
   // 🔴 v1.2.1：等原生版本号就绪再自动检查更新（否则读 HTML 初始版本号误报"有新版本"）
   // 🔴 网页版：跳过自动更新检查（代码随 push 自动部署，没有"安装更新"概念）
   if (window.Capacitor) initVersion().then(() => UI.checkUpdate(true));
+
+  // 🔴 v1.2.34：网页版静默版本兜底——SW 更新机制万一没生效，靠 version.json 发现新版并自动刷新一次。
+  //   10 分钟节流防死循环（部署延迟/版本一致后即停）
+  if (!window.Capacitor && location.protocol === 'https:') {
+    (async () => {
+      try {
+        const last = Number(localStorage.getItem('ea_force_reload') || 0);
+        if (Date.now() - last < 600000) return;
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 8000);
+        const resp = await fetch('https://raw.githubusercontent.com/zhangs1r/wordgrove/main/version.json', { signal: ctrl.signal, headers: { Accept: 'application/json' } });
+        clearTimeout(timer);
+        if (!resp.ok) return;
+        const latest = String((await resp.json()).version || '').replace(/^v/, '');
+        const el = document.getElementById('versionLabel');
+        const cur = (el ? el.textContent : '').replace(/^v/, '');
+        if (latest && cur && latest !== cur) {
+          localStorage.setItem('ea_force_reload', String(Date.now()));
+          location.reload();
+        }
+      } catch {}
+    })();
+  }
 
   // 复盘按钮
   document.getElementById('chatReviewBtn').addEventListener('click', () => UI.startReview());

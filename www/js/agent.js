@@ -392,32 +392,42 @@ Output ONLY JSON: {"name":"角色英文名","gender":"male或female","persona":"
   },
 
   /* ================= 角色扮演（酒馆 RP）引擎 ================= */
-  // 最常忘词缓存（对话/剧场生成时自然带入，巩固记忆）
+  // 忘词榜缓存（对话/剧场生成时自然带入，巩固记忆）
   // _forgetWords: 当前还在忘（forgot>0）→ 每轮稳定带
   // _dormantWords: 历史忘过但现在记住（peak>0 且 forgot=0）→ 偶尔随机带一个巩固
-  // _dueWords: 今天 SRS 到期该复习的词（v0.44）→ 优先带进对话
   _forgetWords: [],
   _dormantWords: [],
-  _dueWords: [],
   async refreshForgetWords() {
     const n = parseInt(Settings.get('forgetCount', 5), 10) || 5;
     try {
       const list = await Words.list();
       const withPeak = list.map(w => ({ ...w, peak: w.peak || w.forgot || 0 }));
+      this._allWords = withPeak; // 🔴 v1.2.9：缓存全量（随机词池）
       this._forgetWords = withPeak
         .filter(w => (w.forgot || 0) > 0)
         .sort((a, b) => (b.forgot || 0) - (a.forgot || 0))
         .slice(0, n)
         .map(w => w.word);
       this._dormantWords = withPeak.filter(w => (w.peak || 0) > 0 && !(w.forgot || 0) > 0);
-      // 🔴 v0.44：今天按复习规律该复习的词（SRS 到期且已学过），也带进对话上下文
-      const now = Date.now();
-      this._dueWords = withPeak
-        .filter(w => w.srs && w.srs.due > 0 && w.srs.reps > 0 && w.srs.due <= now)
-        .sort((a, b) => (a.srs.due || 0) - (b.srs.due || 0))
-        .slice(0, 8)
-        .map(w => w.word);
-    } catch { this._forgetWords = []; this._dormantWords = []; this._dueWords = []; }
+      // 🔴 v1.2.8：SRS 已移除（用户拍板去掉遗忘曲线），_dueWords 不再计算
+    } catch { this._forgetWords = []; this._dormantWords = []; this._allWords = []; }
+  },
+  /* 🔴 v1.2.9：每轮从生词本随机抽 2 个（排除忘词榜），广覆盖——每次调用都重新随机，
+     所以隔了很久再继续的绘画，提示词里的随机词也是最新的 */
+  _randomReviewWords(count) {
+    try {
+      const n = count || 2;
+      const banned = new Set(this._forgetWords || []);
+      const list = (this._allWords || []).filter(w => !banned.has(w.word));
+      if (!list.length) return [];
+      const out = [];
+      const picked = new Set();
+      while (out.length < n && picked.size < list.length) {
+        const w = list[Math.floor(Math.random() * list.length)];
+        if (!picked.has(w.id)) { picked.add(w.id); out.push(w.word); }
+      }
+      return out;
+    } catch { return []; }
   },
   forgetLine() {
     let lines = '';
@@ -429,9 +439,10 @@ Output ONLY JSON: {"name":"角色英文名","gender":"male或female","persona":"
       const w = this._dormantWords[Math.floor(Math.random() * this._dormantWords.length)];
       lines += `\n- 巩固词（学习者以前忘过这个词，现在记起来了；同样只在符合场景时自然提一次，违和就不用）：${w.word}`;
     }
-    // 🔴 v0.44：今天按复习规律该复习的词（SRS 到期）——优先自然带进对话，帮他在对话里巩固
-    if (this._dueWords && this._dueWords.length) {
-      lines += `\n- 今天复习计划里的词（学习者今天应该复习这些词，请优先在对话中自然使用它们，同样要符合场景、不硬塞）：${this._dueWords.join('、')}`;
+    // 🔴 v1.2.9：随机词每轮动态抽 2 个（广覆盖；与忘词榜互斥）——隔了很久的绘画继续聊也是最新随机
+    const rnd = this._randomReviewWords(2);
+    if (rnd.length) {
+      lines += `\n- 随机巩固词（从生词本随机抽的，帮助他广覆盖复习；同样只在符合场景时自然提一次，违和就不用）：${rnd.join('、')}`;
     }
     return lines;
   },

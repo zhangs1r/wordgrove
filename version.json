@@ -1,6 +1,6 @@
 {
-  "version": "1.2.8",
-  "notes": "1.2.8：复习机制按你的方案重构——去掉 SRS 遗忘曲线：1) 对话/角色扮演里出现生词本单词必弹复习卡（每消息最多 3 个，不再等到期）；2) 评级不再影响下次复习时间，只维护忘次计数（忘了+1、记得-1，进忘词榜）；3) 今日页改「今日重点复习」= 忘词榜前几（常忘的优先）+ 随机挑几个（广覆盖，每天换一批）；4) 修复词形匹配（running→run、studied→study 等变形词现在能识别，之前匹配不到就不弹卡）；5) 大小写验证无问题（词表统一小写匹配）",
-  "apk": "EnglishApp-v1.2.8.apk",
-  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.8/EnglishApp-v1.2.8.apk"
+  "version": "1.2.9",
+  "notes": "1.2.9：提示词里的复习词改为动态更新——忘词榜和随机词不再用绘画创建时的旧快照：1) 启动时刷新忘词榜/随机池；2) 每次发送消息前都重新拉取最新忘词榜 + 每轮重新随机抽 2 个巩固词（排除忘词榜）；3) 隔了很久的旧绘画继续聊，AI 提示词里带的也是当前最新的忘词榜和随机词；4) 清理了残留的 SRS 到期词提示",
+  "apk": "EnglishApp-v1.2.9.apk",
+  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.9/EnglishApp-v1.2.9.apk"
 }

@@ -80,6 +80,7 @@ const UI = {
     FarmActivity.start();
     this.bindFarm();
     this.showOnboarding();   // 🔴 v1.1.1：新手指引（勾"不再提示"后永不显示）
+    Agent.refreshForgetWords(); // 🔴 v1.2.9：启动即刷新忘词榜/随机词池（否则冷启动后旧绘画继续聊，提示词里没有最新复习词）
     // 🔴 v1.2.7：复习卡队列看门狗——卡片被 DOM 重建意外移除（回滚/重生成/切页）时，
     //   3 秒内自动解锁队列继续弹下一张（防队列卡死不显示）
     setInterval(() => {
@@ -1503,6 +1504,8 @@ const UI = {
   },
 
   async sendText(text, opts = {}) {
+    // 🔴 v1.2.9：每轮发送前刷新忘词榜/随机池——提示词里的复习词始终是最新的（隔了很久的会话继续聊也一样）
+    await Agent.refreshForgetWords().catch(() => {});
     let userDiv = null;
     if (!opts.alreadyInHistory) {
       this.state.chatHistory.push({ role: 'user', content: text });
@@ -2662,6 +2665,8 @@ const UI = {
     try {
       const w = this.currentWorld();
       if (!w) { this.toast('先选择或生成一个世界卡'); this.switchTab('tavern'); return; }
+      // 🔴 v1.2.9：开新绘画前刷新忘词榜/随机池（提示词里带最新复习词）
+      await Agent.refreshForgetWords().catch(() => {});
       let roles = w.roles || [];
       if (!roles.length) {
         this.toast('这个世界还没有角色，正在自动补齐…');
@@ -2775,6 +2780,8 @@ const UI = {
     }
     // ---- 游玩阶段 ----
     this.state.rpBusy = true;
+    // 🔴 v1.2.9：每轮发送前刷新忘词榜/随机池——隔了很久的绘画继续聊，提示词也是最新复习词
+    await Agent.refreshForgetWords().catch(() => {});
     let userMsg = text;
     let userDiv = null;
     try {

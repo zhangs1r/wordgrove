@@ -1359,45 +1359,41 @@ const UI = {
     return div;
   },
 
-  /* ============ 🔴 v1.1 对话内嵌复习卡（🔴 v1.2.3 队列模式） ============
-   * AI 回复中出现生词本里"该复习"的词 → 入队，按顺序一张一张展示：
-   * 评级（忘了/模糊/记得）→ 展开释义 → 点"知道了" → 下一张；全部看完自动关闭
-   * 同一会话内同一词最多展示 2 次（第二次出现也可以再弹，再往后防轰炸）；队列内去重 */
+  /* ============ 🔴 v1.1 对话内嵌复习卡（🔴 v1.2.13 复用高亮结果） ============
+   * 🔴 v1.2.13：不再自己跑一遍词形匹配——消息 div 里的 .tap-word.hl（高亮词）就是
+   *   renderMsgText 已经匹配好的生词本词（大小写/词形/不规则全部处理过）：
+   *   "高亮什么就弹什么"，高亮和弹卡永远一致，杜绝"高亮正常但卡片不弹"。
+   * 顺序：评级（忘了/模糊/记得）→ 展开释义 → 点"知道了" → 下一张；全部看完自动关闭
+   * 防骚扰：每消息最多 3 个入队 + 队列内去重（同一时刻不重复弹同一词） */
   maybeEmbedReviewCard(text, div) {
     try {
       if (Settings.get('reviewCard', true) === false) return; // 🔴 v1.1.1：设置里可关
+      if (!div || !div.isConnected) return;
       if (!this.state.wordMap.size) {
         // 🔴 v1.2.11：词表没就绪（加载失败/未完成）→ 触发重载，本次先跳过（避免永不再弹）
         this.loadWordsSet();
         return;
       }
-      const words = String(text || '').match(/[A-Za-z]+(?:['’-][A-Za-z]+)*/g) || [];
-      // 🔴 v1.1：常用不规则动词过去式 → 原形（forgot→forget 这类 matchStem 覆盖不到）
-      const IRREG = { forgot: 'forget', forgotten: 'forget', went: 'go', gone: 'go', been: 'be', was: 'be', were: 'be', did: 'do', done: 'do', had: 'have', has: 'have', made: 'make', took: 'take', taken: 'take', got: 'get', gotten: 'get', found: 'find', knew: 'know', known: 'know', saw: 'see', seen: 'see', said: 'say', told: 'tell', spoke: 'speak', spoken: 'speak', wrote: 'write', written: 'write', ate: 'eat', eaten: 'eat', came: 'come', became: 'become', ran: 'run', met: 'meet', felt: 'feel', left: 'leave', heard: 'hear', lost: 'lose', paid: 'pay', sold: 'sell', stood: 'stand', won: 'win', broke: 'break', broken: 'break', chose: 'choose', chosen: 'choose', drove: 'drive', driven: 'drive', fell: 'fall', fallen: 'fall', flew: 'fly', flown: 'fly', grew: 'grow', grown: 'grow', hid: 'hide', hidden: 'hide', meant: 'mean', rode: 'ride', ridden: 'ride', rang: 'ring', rose: 'rise', sang: 'sing', slept: 'sleep', threw: 'throw', thrown: 'throw', woke: 'wake', woken: 'wake' };
-      const seen = new Set();
       let added = 0;
-      for (const raw of words) {
-        if (added >= 3) break; // 🔴 v1.2.3：每条消息最多入队 3 个，防排队轰炸
-        const lower = raw.toLowerCase();
-        if (seen.has(lower)) continue;
-        seen.add(lower);
-        let w = this.state.wordMap.get(lower) || null;
+      const seen = new Set();
+      div.querySelectorAll('.tap-word.hl').forEach(el => {
+        if (added >= 3) return; // 🔴 v1.2.3：每条消息最多入队 3 个，防排队轰炸
+        const raw = (el.dataset.w || '').toLowerCase();
+        if (!raw || seen.has(raw)) return;
+        seen.add(raw);
+        // 词库原词优先，词形变形（running→run）用 stemCands 兜底找原形
+        let w = this.state.wordMap.get(raw) || null;
         if (!w) {
-          // 🔴 v1.2.8：直接用增强词形表找原形（不再先过 matchStem 判断——原来的判断挡住了部分变形词）
-          for (const c of this.stemCands(lower)) {
+          for (const c of this.stemCands(raw)) {
             w = this.state.wordMap.get(c);
             if (w) break;
           }
         }
-        if (!w && IRREG[lower]) w = this.state.wordMap.get(IRREG[lower]) || null;
-        if (!w) continue;
-        // 队列内去重（同一时刻不重复弹同一词）
-        if (this.state.reviewQueue.some(q => q.id === w.id)) continue;
-        // 🔴 v1.2.8 用户拍板：去掉 SRS 曲线——出现必弹（每消息最多 3 个）；
-        //   频率控制交给"忘词榜 + 随机"（今日重点复习），评级不再重排期
+        if (!w) return;
+        if (this.state.reviewQueue.some(q => q.id === w.id)) return;
         this.state.reviewQueue.push({ id: w.id, word: w.word, div });
         added++;
-      }
+      });
       this.pumpReviewQueue();
     } catch (e) { /* 弹卡失败不影响对话 */ }
   },

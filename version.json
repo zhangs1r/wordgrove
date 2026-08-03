@@ -1,6 +1,6 @@
 {
-  "version": "1.2.18",
-  "notes": "1.2.18：修复对话/角色扮演里点单词查词【只有单词没内容】的问题——AI 的思考链吃掉输出额度导致 JSON 截断，解析失败后静默返回空内容；现在自动重试一次 + 额度加大到 2000，两次都失败会显示【重新查询】按钮（不再静默空白）；普通对话和角色扮演的点词查词都生效",
-  "apk": "EnglishApp-v1.2.18.apk",
-  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.18/EnglishApp-v1.2.18.apk"
+  "version": "1.2.19",
+  "notes": "1.2.19：英语水平设置强化——之前已嵌入普通对话/角色扮演/查词的提示词，但档位描述太笼统（AI 没参照物，CET-6 和雅思感觉差不多）；现在每个档位带具体词汇锚点（如六级：appreciate/remarkable；雅思：sustainable/controversial），并明确要求每次回复自然带 1 个对应水平的词/表达，水平越高句式越丰富；同时去掉基础场景里把难度拉平的 simple 硬约束",
+  "apk": "EnglishApp-v1.2.19.apk",
+  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.19/EnglishApp-v1.2.19.apk"
 }

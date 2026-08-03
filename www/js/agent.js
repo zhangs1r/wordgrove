@@ -1,14 +1,15 @@
 /* agent.js — 简化 agent loop + 本地工具 + 场景 + 复盘 + 摘要压缩
    参考 Pi agent-harness 的核心设计（工具批次执行 / token截断保护 / 上下文压缩） */
 
-/* 🔴 v1.1.1：英语水平档位（设置页选择，注入提示词控制词汇难度） */
+/* 🔴 v1.1.1：英语水平档位（设置页选择，注入提示词控制词汇难度）
+   🔴 v1.2.19：desc 加具体词汇锚点（AI 有参照物，档位差异才明显） */
 const LEVELS = {
-  cet4:  { label: 'CET-4 四级',     desc: '以基础高频词为主，句子简单清晰，避免生僻词' },
-  cet6:  { label: 'CET-6 六级',     desc: '以四级词汇为主，适当带六级词汇，偶尔一个进阶词' },
-  kaoyan:{ label: '考研',           desc: '中高级词汇为主，可带学术表达' },
-  ielts: { label: '雅思',           desc: '话题词汇丰富，口语化与学术表达平衡' },
-  toefl: { label: '托福',           desc: '学术词汇为主，表达正式但自然' },
-  fluent:{ label: '自如交流',       desc: '接近母语者水平，可用俚语习语和复杂句式' },
+  cet4:  { label: 'CET-4 四级',     desc: '只用基础高频词（like / very / big 这类），短句清晰，避免任何生僻词和复杂表达' },
+  cet6:  { label: 'CET-6 六级',     desc: '以四级词汇为主，适当带六级词汇（如 appreciate / remarkable / atmosphere），偶尔一个进阶表达' },
+  kaoyan:{ label: '考研',           desc: '中高级词汇为主（如 significant / inevitable / phenomenon），可带学术表达和复杂句式' },
+  ielts: { label: '雅思',           desc: '话题词汇丰富（如 sustainable / controversial / eventually），口语化与学术表达平衡，用词地道自然' },
+  toefl: { label: '托福',           desc: '学术词汇为主（如 hypothesis / empirical / considerably），表达正式但自然' },
+  fluent:{ label: '自如交流',       desc: '接近母语者水平，可用俚语习语（hit the sack / off the top of my head）和复杂句式' },
 };
 function levelCfg() {
   const lv = Settings.get('level', 'cet6');
@@ -16,12 +17,13 @@ function levelCfg() {
 }
 function levelLine() {
   const c = levelCfg();
-  return `- 词汇水平：${c.label}（${c.desc}）——你的回复词汇量要匹配这个水平：以该水平词汇为主，可带 1-2 个稍高阶的词帮他拓展，但不要大段超出他的水平`;
+  // 🔴 v1.2.19：强化——每次回复自然带 1 个对应水平词/表达（让档位差异可感知），水平越高句式越丰富
+  return `- 词汇水平：${c.label}（${c.desc}）。严格执行：大部分词汇在这个水平范围内；每次回复自然带 1 个该水平或稍高阶的词汇/地道表达（帮他拓宽词汇，但每句最多 1 个，别堆砌）；水平越高，句子结构可以越丰富自然`;
 }
 
 const DEFAULT_SCENE = { id: 'default', name: '日常对话', level: 'B1',
   system: `You are a friendly English conversation partner. The user is practicing spoken English.
-Keep replies to 1-2 short sentences. Use simple, natural spoken English. If the user makes a mistake or hesitates, naturally model the correct way to say it in your reply, do not give lectures. Ask one natural follow-up question to keep the conversation going.` };
+Keep replies to 1-2 short sentences. Use natural spoken English matching the learner's vocabulary level below (higher level = richer sentences). If the user makes a mistake or hesitates, naturally model the correct way to say it in your reply, do not give lectures. Ask one natural follow-up question to keep the conversation going.` };
 
 const Agent = {
   /* ---------- 工具定义（OpenAI function calling） ---------- */

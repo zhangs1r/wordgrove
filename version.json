@@ -1,6 +1,6 @@
 {
-  "version": "1.2.1",
-  "notes": "1.2.1 修复：1) 新手指引弹窗居中（原左下角窄条）；2) 修复启动检查更新误报——版本号读取顺序问题（之前读到 HTML 初始版本号导致明明最新却提示更新）；3) 小院 tab 图标改为房子 SVG（今日页植被大图已还原为原样）；4) 自动检查更新等原生版本号就绪后再比较",
-  "apk": "EnglishApp-v1.2.1.apk",
-  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.1/EnglishApp-v1.2.1.apk"
+  "version": "1.2.2",
+  "notes": "1.2.2：1) 新词进生词本默认记忘记1次（立即进入易忘词机制，对话/剧场自动带出巩固）；2) 角色扮演台词纠正卡——语法/表达/不符合角色身份都会出小卡片（可采纳/忽略）；3) 角色扮演里 AI 台词出现生词也会弹复习卡（忘了/模糊/记得）；4) 输入框上方显示当前扮演角色（🎭 扮演 XX）；5) 今日页新增「今日待复习」区块（SRS 到期词，点击查词）",
+  "apk": "EnglishApp-v1.2.2.apk",
+  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.2/EnglishApp-v1.2.2.apk"
 }

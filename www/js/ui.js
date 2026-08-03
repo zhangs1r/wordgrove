@@ -894,6 +894,18 @@ const UI = {
 
     // 排行榜：忘词 / 表达 / 常犯错
     const words = await Words.list();
+    // 🔴 v1.2.2：今日待复习（SRS 到期词，前 8 个）——这些词会出现在对话/剧场里帮你巩固
+    const reviewWrap = this.el('todayReviewList');
+    if (reviewWrap) {
+      const dueWords = words.filter(w => w.srs && w.srs.reps > 0 && w.srs.due <= Date.now())
+        .sort((a, b) => (a.srs.due || 0) - (b.srs.due || 0)).slice(0, 8);
+      const cntEl = this.el('todayReviewCount');
+      if (cntEl) cntEl.textContent = dueWords.length ? dueWords.length + ' 个' : '';
+      reviewWrap.innerHTML = dueWords.length
+        ? dueWords.map(w => `<button class="tag-chip rank" data-rw2="${this.esc(w.word)}">${this.esc(w.word)}</button>`).join('')
+        : '<p class="rank-empty">还没有到期的复习词——聊着聊着，复习卡就来了</p>';
+      reviewWrap.querySelectorAll('[data-rw2]').forEach(b => b.addEventListener('click', () => this.showWordQuery(b.dataset.rw2, '')));
+    }
     const forgotTop = words.filter(w => (w.forgot || 0) > 0).sort((a, b) => (b.forgot || 0) - (a.forgot || 0)).slice(0, 5);
     const exps = Settings.get('expressions', []);
     const expTop = exps.slice(-5).reverse(); // 🔴 v1.1：取最新 5 条（原来 slice(0,5) 取最旧，与看板不一致）
@@ -1010,6 +1022,7 @@ const UI = {
         this.state.convId = conv.id;
         this.state.convTitle = conv.title || '剧场（世界卡已删除）';
         this.state.chatHistory = conv.history || [];
+        this.updateRpRoleTag(); // 🔴 v1.2.2
         this.renderConvTitle();
         this.renderChatHistory();
         this.closeConvModal();
@@ -1035,6 +1048,7 @@ const UI = {
       this.state.convId = conv.id;
       this.state.convTitle = conv.title || (w ? w.name : '剧场');
       this.state.autoTurn = 0;
+      this.updateRpRoleTag(); // 🔴 v1.2.2：恢复 RP 会话后显示扮演角色
       this.renderConvTitle();
       this.renderChatHistory();
       this.closeConvModal();
@@ -1220,9 +1234,10 @@ const UI = {
       this.state.rpHistory.forEach((m, i) => {
         if (m.role === 'user') this.appendMsg('user', m.content, { idx: i });
         // 🔴 v1.1：恢复时优先用消息里存的 voice（角色消息 v1.1 起也带 voice），否则走 dialogueVoice 推断
-        else if (m.name) this.appendRpChar(m.name, m.content, m.voice || this.dialogueVoice({ name: m.name }), i);
+        // 🔴 v1.2.2：恢复历史不弹复习卡（noReview）
+        else if (m.name) this.appendRpChar(m.name, m.content, m.voice || this.dialogueVoice({ name: m.name }), i, true);
         // 🔴 v0.41：旁白用保存的 voice（默认取设置里的旁白音色），否则切回会话会变默认女声
-        else this.appendMsg('assistant', m.content, { idx: i, voice: m.voice || Settings.get('narratorVoice', 'f') });
+        else this.appendMsg('assistant', m.content, { idx: i, voice: m.voice || Settings.get('narratorVoice', 'f'), noReview: true });
       });
       // 🔴 v0.41：恢复最后一条 assistant 的选项（继续/分支按钮）
       const lastOpts = [...this.state.rpHistory].reverse().find(m => m.options && m.options.length);
@@ -1235,7 +1250,7 @@ const UI = {
       return;
     }
     this.state.chatHistory.forEach((m, i) => {
-      this.appendMsg(m.role === 'user' ? 'user' : 'assistant', m.content, { idx: i });
+      this.appendMsg(m.role === 'user' ? 'user' : 'assistant', m.content, { idx: i, noReview: true });
     });
     area.scrollTop = area.scrollHeight;
   },
@@ -1307,8 +1322,9 @@ const UI = {
     }
     area.appendChild(div);
     area.scrollTop = area.scrollHeight;
-    // 🔴 v1.1：对话内嵌复习卡——AI 回复里出现该复习的词时，消息下方自动弹卡（普通对话模式）
-    if (role === 'assistant' && !opts.typing && !this.state.rpMode) {
+    // 🔴 v1.1：对话内嵌复习卡——AI 回复里出现该复习的词时，消息下方自动弹卡
+    // 🔴 v1.2.2：普通对话 + RP 旁白都弹；恢复历史（noReview）不弹，防切会话时旧消息刷卡
+    if (role === 'assistant' && !opts.typing && !opts.noReview) {
       this.maybeEmbedReviewCard(text, div);
     }
     return div;
@@ -1524,6 +1540,15 @@ const UI = {
       if (sug) this.renderSuggestion(userDiv, sug, 'auto');
     } catch {}
   },
+  /* 🔴 v1.2.2：RP 台词纠正卡（语法/表达/角色契合）——挂到最近一条用户消息上 */
+  async maybeSuggestRp(line) {
+    try {
+      const sug = await Agent.suggestRp(line, this.state.rpWorld, this.state.rpPlayer, this.state.rpHistory);
+      if (!sug) return;
+      const userDiv = this.el('chatArea').querySelector('.msg-me:last-of-type');
+      if (userDiv && userDiv.isConnected) this.renderSuggestion(userDiv, sug, 'rp');
+    } catch {}
+  },
   renderSuggestion(userDiv, sug, mode) {
     let box = userDiv.querySelector('.suggest-box');
     if (!box) {
@@ -1532,20 +1557,17 @@ const UI = {
       userDiv.appendChild(box);
     }
     box.innerHTML = `
-      <div class="sg-head">${Icons.bulb} 可以这样说</div>
+      <div class="sg-head">${Icons.bulb} ${mode === 'rp' ? '台词可以这样说（更符合你的角色）' : '可以这样说'}</div>
       <div class="sg-better">${this.esc(sug.better || '')}</div>
       ${sug.reason ? `<div class="sg-reason">${this.esc(sug.reason)}</div>` : ''}
       <div class="sg-actions">
         <button class="msg-chip-btn sg-ok">采纳 ✓</button>
-        <button class="msg-chip-btn sg-no">${mode === 'hint' ? '再写一次' : '不采纳，写中文'}</button>
+        <button class="msg-chip-btn sg-no">${mode === 'rp' ? '忽略' : '不采纳，写中文'}</button>
       </div>`;
     box.querySelector('.sg-ok').addEventListener('click', () => this.adoptSuggestion(sug.better, box));
     box.querySelector('.sg-no').addEventListener('click', () => {
-      if (mode === 'hint') {
-        this.enterHintMode(box);
-      } else {
-        this.enterHintMode(box);
-      }
+      if (mode === 'rp') { box.remove(); return; } // 🔴 v1.2.2：RP 里"忽略"只关卡片
+      this.enterHintMode(box);
     });
   },
   async adoptSuggestion(better, box) {
@@ -1561,7 +1583,7 @@ const UI = {
     } catch (e) {}
     box.innerHTML = `<div class="sg-done">✓ 已记入表达积累：${this.esc(better)}</div>`;
     TTS.speak(better);
-    this.exitHintMode();
+    if (this.state.hintMode) this.exitHintMode(); // 🔴 v1.2.2：RP 模式没进 hintMode，不重置输入框
     this.toast('已加入表达积累');
   },
   enterHintMode(box) {
@@ -2579,6 +2601,7 @@ const UI = {
       if (sameTitle > 0) rpTitle = rpTitle + ' (' + (sameTitle + 1) + ')';
       this.state.convTitle = rpTitle;
       this.renderConvTitle();
+      this.updateRpRoleTag(); // 🔴 v1.2.2：选角阶段显示"世界：XX（选角中…）"
       this.el('chatInput').placeholder = '选一个角色，或输入"自定义"描述你想扮演的人';
       this.switchTab('chat');
       this.renderChatHistory();
@@ -2628,6 +2651,7 @@ const UI = {
         if (!player || !player.name) throw new Error('角色卡为空');
         this.state.rpPlayer = player;
         this.state.rpRoster[player.name] = player.gender === 'male' ? 'm' : 'f';
+        this.updateRpRoleTag(); // 🔴 v1.2.2：选角完成，输入区显示扮演角色
         this.state.rpStep = 'intro';
         this.el('chatInput').placeholder = 'Say something… 或输入"继续"';
         const intro = await Agent.rpOpenIntro(w, player, this.state.rpRoster);
@@ -2682,6 +2706,10 @@ const UI = {
       //          continue 不入历史（不污染上下文/积分轮次计数）
       if (!isContinueInput) this.state.rpHistory.push({ role: 'user', content: userMsg });
       await this.rpRound(userMsg, { pushed: true });
+      // 🔴 v1.2.2：RP 台词检查（语法/表达/角色契合）——异步出纠正卡，不阻塞剧情
+      if (!isContinueInput && userMsg && /[a-zA-Z]/.test(userMsg) && (userMsg.match(/[a-zA-Z]+/g) || []).length >= 4) {
+        this.maybeSuggestRp(userMsg);
+      }
     } finally {
       this.state.rpBusy = false; // 🔴 v1.1：任何异常都复位，防永久锁死
     }
@@ -2745,7 +2773,7 @@ const UI = {
       }
     }
   },
-  appendRpChar(name, line, voice, idxArg) {
+  appendRpChar(name, line, voice, idxArg, noReview) {
     const area = this.el('chatArea');
     const ph = this.el('chatPlaceholder'); if (ph) ph.remove();
     const div = document.createElement('div');
@@ -2768,6 +2796,8 @@ const UI = {
     });
     area.appendChild(div);
     area.scrollTop = area.scrollHeight;
+    // 🔴 v1.2.2：RP 角色消息也弹对话复习卡（忘了/模糊/记得）；恢复历史（noReview）不弹
+    if (!noReview) this.maybeEmbedReviewCard(line, div);
     return div;
   },
   /* 角色 → 音色 */
@@ -2804,6 +2834,21 @@ const UI = {
     area.appendChild(div);
     area.scrollTop = area.scrollHeight;
   },
+  /* 🔴 v1.2.2：输入区显示当前扮演角色（话题多了分不清自己在 RP 里是谁） */
+  updateRpRoleTag() {
+    const tag = this.el('rpRoleTag');
+    if (!tag) return;
+    if (this.state.rpMode && this.state.rpPlayer && this.state.rpPlayer.name) {
+      tag.textContent = '🎭 扮演 ' + this.state.rpPlayer.name;
+      tag.classList.remove('hidden');
+    } else if (this.state.rpMode && this.state.rpWorld) {
+      tag.textContent = '🎭 世界：' + this.state.rpWorld.name + '（选角中…）';
+      tag.classList.remove('hidden');
+    } else {
+      tag.classList.add('hidden');
+    }
+  },
+
   /* 退出 RP：回到普通场景对话 */
   exitRp() {
     if (this.state.rpBusy) { this.toast('正在生成中，稍等…'); return; } // 🔴 v1.1：回合中禁止退出
@@ -2824,6 +2869,7 @@ const UI = {
     this.state.reviewedThisConv = new Set();
     this.el('chatInput').placeholder = '输入英文…';
     this.renderConvTitle();
+    this.updateRpRoleTag(); // 🔴 v1.2.2：退出 RP 隐藏角色标签
     this.saveChatState();
     this.renderChatHistory();
     this.toast('已退出角色扮演');

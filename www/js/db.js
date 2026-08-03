@@ -105,8 +105,10 @@ const Words = {
       meaning: w.meaning || '', example: w.example || '', exampleCn: w.exampleCn || '',
       source: w.source || 'manual', created: now,
       ctx: w.ctx || '',
-      forgot: w.forgot || 0,
-      peak: w.peak || w.forgot || 0,
+      // 🔴 v1.2.2：进入生词本的单词默认"忘记 1 次"（能进本说明是没记住的词）——立即进入易忘词机制，
+      //   对话/剧场里 AI 会自然带出来巩固；peak 同步
+      forgot: (w.forgot != null ? w.forgot : 1),
+      peak: (w.peak != null ? w.peak : (w.forgot != null ? w.forgot : 1)),
       tags: w.tags || [],
       root: w.root || '', collocations: w.collocations || '', synonyms: w.synonyms || '', antonyms: w.antonyms || '', note: w.note || '',
       usage: w.usage || '', family: w.family || '', expand: w.expand || '',

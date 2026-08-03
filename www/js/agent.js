@@ -254,7 +254,7 @@ ${this.forgetLine()}
     }
   },
 
-  /* ---------- 表达建议：检查用户最后一条英文，给更地道的说法 ---------- */
+  /* 表达建议：检查用户最后一条英文，给更地道的说法 */
   async suggestBetter(history) {
     const model = Settings.get('chatModel', 'deepseek-v4-flash');
     const lastUser = [...history].reverse().find(m => m.role === 'user');
@@ -268,6 +268,32 @@ ${this.forgetLine()}
 如果表达没问题，返回：{"needFix":false}
 要求：better 要贴合对话上下文语境，口语化地道。只输出 JSON，不要其他内容。` },
         { role: 'user', content: ctx },
+      ], { model, maxTokens: 300 });
+      const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
+      const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
+      return j && j.needFix ? j : null;
+    } catch {
+      return null;
+    }
+  },
+
+  /* 🔴 v1.2.2：RP 台词检查——语法/表达 + 是否符合扮演角色的身份/语气（出纠正小卡片） */
+  async suggestRp(line, world, player, history) {
+    const model = Settings.get('chatModel', 'deepseek-v4-flash');
+    const w = world || {};
+    const p = player || {};
+    const ctx = (history || []).slice(-4).map(m => `${m.role}${m.name ? ' (' + m.name + ')' : ''}: ${(m.content || '').slice(0, 150)}`).join('\n');
+    try {
+      const resp = await API.chat([
+        { role: 'system', content: `你是英语口语教练 + 表演指导。学习者在角色扮演中扮演「${p.name || '主角'}」（身份：${p.persona || '未知'}），世界：${w.name || ''}（${w.setting || ''}）。
+检查他最新这句英文台词，从两个维度：
+1) 语法/表达是否准确地道（有错误/不地道就给更自然的说法）
+2) 是否符合他扮演角色的身份/语气/时代背景（像现代人说出古代人的话、或语气完全不符合人设，要指出来）
+如果明显有问题，返回 JSON：
+{"needFix":true,"better":"更地道且符合角色的英文说法","reason":"一句话中文解释哪里不对、为什么这样更好"}
+如果没问题，返回：{"needFix":false}
+要求：better 口语化、贴合剧情语境。只输出 JSON，不要其他内容。` },
+        { role: 'user', content: '最近剧情：\n' + ctx + '\n\n学习者的台词：' + line },
       ], { model, maxTokens: 300 });
       const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
       const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));

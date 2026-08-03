@@ -734,3 +734,18 @@ body {
 .upd-notes-body { background: rgba(0, 0, 0, 0.04); border-radius: 10px; padding: 10px; max-height: 40vh; overflow-y: auto; white-space: pre-wrap; line-height: 1.6; color: var(--text, #262B24); }
 .wd-ctx { background: rgba(17, 124, 13, 0.06); border-left: 3px solid var(--primary, #117C0D); border-radius: 6px; padding: 8px 10px; font-size: 12.5px; color: var(--muted, #666); margin-bottom: 10px; line-height: 1.6; }
 .wd-ctx-hl { color: var(--text, #262B24); }
+
+/* ============ 🔴 v1.2.2 今日待复习 / RP 角色标签 ============ */
+.today-review-title { font-size: 13px; font-weight: 700; margin: 14px 2px 8px; display: flex; align-items: baseline; gap: 6px; }
+.today-review-count { font-size: 11px; color: var(--muted, #888); font-weight: 400; }
+.today-review-list { display: flex; flex-wrap: wrap; gap: 8px; background: var(--card, #FFFDF7); border-radius: 14px; padding: 10px; box-shadow: var(--shadow); }
+.today-review-list .rank-empty { width: 100%; text-align: center; color: var(--muted, #888); font-size: 12px; margin: 4px 0; }
+.rp-role-tag {
+  display: inline-block; align-self: flex-start;
+  margin: 2px 0 6px 2px; padding: 5px 12px; border-radius: 999px;
+  background: var(--primary, #117C0D); color: #fff;
+  font-size: 12px; font-weight: 600;
+}
+@media (prefers-color-scheme: dark) {
+  .rp-role-tag { background: #43A047; }
+}

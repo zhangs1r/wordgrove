@@ -206,7 +206,7 @@ ${this.forgetLine()}
     let turns = 0;
     while (turns < 8) {
       turns++;
-      const resp = await API.chat(msgs, { model, tools: this.toolDefs, maxTokens: 2000 });
+      const resp = await API.chat(msgs, { model, tools: this.toolDefs, maxTokens: 4000 });
       const choices = resp.choices || [];
       if (!choices.length || !choices[0].message) {
         throw new Error('模型返回异常(空响应) [' + model + ']');
@@ -251,7 +251,7 @@ ${this.forgetLine()}
 - roleplay：仅当这段对话是角色扮演时检查（学习者有扮演身份），检查他的台词是否符合角色身份/语气；普通对话时 roleplay 返回空数组
 - 如果学习者中文提问了某个词的意思，那个词一定要放进 newWords` },
       { role: 'user', content: brief },
-    ], { model, maxTokens: 1500 });
+    ], { model, maxTokens: 4000 });
     const content = resp.choices[0].message.content || '';
     try {
       const json = content.replace(/```json|```/g, '').trim();
@@ -272,7 +272,7 @@ ${this.forgetLine()}
 {"words":[{"word":"单词或短语","phonetic":"英式音标","meaning":"中文释义","example":"从原文中截取或改写一个短例句","exampleCn":"例句中文翻译"}]}
 要求：优先选影响理解的核心词，跳过太简单或太生僻的词。` },
       { role: 'user', content: text.slice(0, 4000) },
-    ], { model, maxTokens: 2000 });
+    ], { model, maxTokens: 4000 });
     const content = resp.choices[0].message.content || '';
     try {
       const json = content.replace(/```json|```/g, '').trim();
@@ -298,7 +298,7 @@ ${this.forgetLine()}
 如果表达没问题，返回：{"needFix":false}
 要求：better 要贴合对话上下文语境，口语化地道。只输出 JSON，不要其他内容。` },
         { role: 'user', content: ctx },
-      ], { model, maxTokens: 2000 }); // 🔴 v1.2.5：恢复思考模式（质量优先）+ maxTokens 2000（思考链不再吃光输出）
+      ], { model, maxTokens: 4000 }); // 🔴 v1.2.5：恢复思考模式（质量优先）+ maxTokens 2000（思考链不再吃光输出）
       const msg = resp.choices?.[0]?.message || {};
       let content = (msg.content || '').replace(/```json|```/g, '').trim();
       if (!content && msg.reasoning_content) {
@@ -333,7 +333,7 @@ ${this.forgetLine()}
 完全没问题才返回：{"needFix":false}
 要求：better 口语化、贴合剧情语境。只输出 JSON，不要其他内容。` },
         { role: 'user', content: '最近剧情：\n' + ctx + '\n\n学习者的台词：' + line },
-      ], { model, maxTokens: 2000 }); // 🔴 v1.2.5：恢复思考 + maxTokens 2000（同 suggestBetter）
+      ], { model, maxTokens: 4000 }); // 🔴 v1.2.5：恢复思考 + maxTokens 2000（同 suggestBetter）
       const msg = resp.choices?.[0]?.message || {};
       let content = (msg.content || '').replace(/```json|```/g, '').trim();
       if (!content && msg.reasoning_content) {
@@ -370,7 +370,7 @@ ${this.forgetLine()}
     const resp = await API.chat([
       { role: 'system', content: `You are casting the player in an English roleplay story.\nWorld: ${w.name} — ${w.setting || w.description || ''}\nCast already in this world: ${rolesDesc || 'none'}\n\nOffer 3-4 distinct roles the PLAYER could play in this world. They can be a character from the cast, an outsider, or a fresh arrival. Each must fit the world.\nYou MUST reply with ONLY a JSON array, no explanation, no markdown fences, no trailing text:\n[{"name":"角色英文名","gender":"male或female","desc":"一句话身份介绍(英文)","persona":"性格要点(英文,1句)"}]` },
       { role: 'user', content: 'Give me 3-4 role options.' },
-    ], { model, maxTokens: 2000 });
+    ], { model, maxTokens: 4000 });
     const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
     try {
       const a = content.indexOf('['), b = content.lastIndexOf(']');
@@ -525,7 +525,7 @@ Output ONLY JSON: {"inner":"their inner thoughts in English","action":"what they
       ...this.cleanRpHistory(history, 10),
       { role: 'user', content: 'Latest event: ' + userInput + '\n\nRespond as ' + char.name + '.' },
     ];
-    const resp = await API.chat(msgs, { model, maxTokens: 1200 }); // 🔴 v1.1：800→1200（思考模式下三字段 JSON 更不易截断）
+    const resp = await API.chat(msgs, { model, maxTokens: 4000 }); // 🔴 v1.1：800→1200（思考模式下三字段 JSON 更不易截断）
     const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
     try {
       const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
@@ -570,7 +570,7 @@ For dialogue: characters from the cast keep their identity; NEW side characters 
       ...this.cleanRpHistory(history, 8),
       { role: 'user', content: 'Player action: ' + (userInput || '(the player lets the story continue on its own)') + '\n\nCharacter inner states:\n' + charBrief + '\n\nWrite the next beat.' },
     ];
-    const resp = await API.chat(msgs, { model, maxTokens: 2200 }); // v0.42：1000 太小，narration+dialogue+options 会被截断→JSON解析失败显示原始JSON
+    const resp = await API.chat(msgs, { model, maxTokens: 4000 }); // v0.42：1000 太小，narration+dialogue+options 会被截断→JSON解析失败显示原始JSON
     const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
     try {
       const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
@@ -609,7 +609,7 @@ For dialogue: characters from the cast keep their identity; NEW side characters 
 要求：角色要和世界观贴合，性别明确。英文输出，适合英语学习。只输出 JSON。` };
     const msgs = [sys, { role: 'user', content: '我的世界设想：' + desc }];
     const tryOnce = async () => {
-      const resp = await API.chat(msgs, { model, maxTokens: 2000 });
+      const resp = await API.chat(msgs, { model, maxTokens: 4000 });
       const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
       const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
       if (!Array.isArray(j.roles)) j.roles = [];
@@ -631,7 +631,7 @@ For dialogue: characters from the cast keep their identity; NEW side characters 
 [{"name":"角色英文名","gender":"male或female","persona":"身份与性格(英文,1-2句)","role":"主角/配角/反派等(中文)","speakingStyle":"说话风格(英文,1句)"}]
 要求：角色贴合世界观，性别明确。英文输出。只输出 JSON 数组。` },
       { role: 'user', content: `世界：${w.name || ''} — ${w.setting || w.description || ''}` },
-    ], { model, maxTokens: 900 });
+    ], { model, maxTokens: 4000 });
     const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
     try {
       const a = content.indexOf('['), b = content.lastIndexOf(']');
@@ -653,7 +653,7 @@ For dialogue: characters from the cast keep their identity; NEW side characters 
     const sys = { role: 'system', content: `你是英语老师，在教一个${lv.label}水平的学生。为单词 "${word}" 输出讲解，返回 JSON（不要输出其他内容）：\n{\n  "word": "${word}",\n  "phonetic": "英式音标",\n  "pos": "词性，如 v./n./adj.",\n  "meaning": "中文释义（结合语境的主释义 1-2 条；无语境给最常用义）",\n  "usage": "语境中的用法：如果是固定搭配/惯用语的一部分，指出来并解释整个搭配怎么用（英文示例+中文说明）；无语境时给这个单词最常用的搭配",\n  "root": "词根/词缀拆解（用中文说明）",\n  "family": "同根词/词族 2-3 个（英文，简短）",\n  "collocations": "常用搭配 1-2 个（英文，如 take a break）",\n  "synonyms": "同义词 1-2 个",\n  "antonyms": "反义词（如有）",\n  "examples": [{"en":"英文例句","cn":"中文翻译"}],\n  "expand": "举一反三：换个说法/相关表达 1-2 个（英文+中文），让学习者能立刻用出来",\n  "note": "记忆提示（一句话中文，可用词源小故事或联想记忆）"\n}\n要求：例句难度匹配 ${lv.label} 水平（${lv.desc}）；有语境时例句优先贴近语境场景。只输出 JSON。${ctxBlock}` };
     const msgs = [sys, { role: 'user', content: word + (context ? '\n语境：' + String(context).slice(0, 900) : '') }];
     const tryOnce = async () => {
-      const resp = await API.chat(msgs, { model, maxTokens: 2000 });
+      const resp = await API.chat(msgs, { model, maxTokens: 4000 });
       const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
       try {
         const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));

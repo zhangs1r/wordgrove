@@ -1,6 +1,6 @@
 {
-  "version": "1.2.28",
-  "notes": "1.2.28：修复 AI 生成世界卡报错 Cannot read properties of null (reading 'name')——生成世界卡解析失败时原来返回 null 而界面直接读 j.name 抛错；现在额度加大到 2000 + 解析失败自动重试一次，仍失败显示友好提示（不再报英文 TypeError）",
-  "apk": "EnglishApp-v1.2.28.apk",
-  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.28/EnglishApp-v1.2.28.apk"
+  "version": "1.2.29",
+  "notes": "1.2.29：maxTokens 统一 4000（用户拍板）——对话/复盘/查词/剧场/世界卡/补角色/表达建议等 11 处大调用全部提到 4000，思考链+长内容输出不再截断；翻译/复述等短输出小调用保持原额度（无必要加大）。费用不受影响（按实际输出计费，maxTokens 只是上限）",
+  "apk": "EnglishApp-v1.2.29.apk",
+  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.29/EnglishApp-v1.2.29.apk"
 }

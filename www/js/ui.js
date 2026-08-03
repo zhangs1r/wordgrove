@@ -2223,25 +2223,6 @@ const UI = {
   matchStem(base, set) {
     return this.stemCands(base).some(c => set.has(c));
   },
-  /* 🔴 v1.2.20：超纲词判断（CEFR 词表扫描）——生词本词（hit）不算；专有名词/缩写/太短放行；档位切换自动重建集合 */
-  isAboveLevel(part, lower) {
-    try {
-      if (typeof CEFR_VOCAB === 'undefined') return false;
-      const cfg = levelCfg();
-      if (!this._cefrKey || this._cefrKey !== cfg.cefr) {
-        const range = cefrRange(cfg);
-        this._cefrSet = range ? new Set() : null;
-        if (range) for (const L of range) for (const w of (CEFR_VOCAB[L] || [])) this._cefrSet.add(w);
-        this._cefrKey = cfg.cefr;
-      }
-      if (!this._cefrSet) return false; // 自如交流：不限制
-      if (/^[A-Z]/.test(part) && lower.length > 1) return false; // 专有名词/句首人名
-      if (lower.length < 3) return false;
-      if (this._cefrSet.has(lower)) return false;
-      for (const c of this.stemCands(lower)) { if (this._cefrSet.has(c)) return false; }
-      return true;
-    } catch { return false; }
-  },
   /* 渲染消息文本：生词高亮 + 单词可点击查询（先切词再转义，避免 HTML 实体被误当单词） */
   renderMsgText(text) {
     const set = this.state.wordSet || new Set();
@@ -2252,9 +2233,7 @@ const UI = {
         //   否则带撇号的词高亮不上、弹卡也没有
         const lower = part.toLowerCase().replace(/['’]s$/, '').replace(/['’]$/, '');
         const hit = set.has(lower) || this.matchStem(lower, set);
-        // 🔴 v1.2.20：超出用户水平的词标记（橙色，可点查）
-        const above = (!hit && this.isAboveLevel(part, lower)) ? ' above-level' : '';
-        return `<span class="tap-word${hit ? ' hl' : ''}${above}" data-w="${this.esc(part)}">${this.esc(part)}</span>`;
+        return `<span class="tap-word${hit ? ' hl' : ''}" data-w="${this.esc(part)}">${this.esc(part)}</span>`;
       }
       return this.esc(part);
     }).join('');

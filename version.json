@@ -1,6 +1,6 @@
 {
-  "version": "1.2.20",
-  "notes": "1.2.20：词汇难度控制升级（调研后采用 CEFR 词表方案）——内置 8648 词 CEFR 分级词表（A1-C1）；档位映射：CET-4≈B1、CET-6/考研≈B2、雅思/托福≈C1、自如交流不限；1) 提示词注入词表统计+80 个代表词（AI 有真实词表参照，非凭印象锚点词）；2) AI 回复渲染时用词表扫描，超出水平的词自动橙色标记（点击可查词讲解），无论 AI 自觉不自觉，超纲词一定可见",
-  "apk": "EnglishApp-v1.2.20.apk",
-  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.20/EnglishApp-v1.2.20.apk"
+  "version": "1.2.21",
+  "notes": "1.2.21：移除超纲词橙色标记（用户觉得没必要）；提示词里的词表注入保留（AI 输出仍按 CEFR 词表控制词汇难度）；另外网页版移植准备工作完成（PWA+GitHub Pages 流水线），等待部署切换",
+  "apk": "EnglishApp-v1.2.21.apk",
+  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.21/EnglishApp-v1.2.21.apk"
 }

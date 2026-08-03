@@ -781,8 +781,10 @@ body {
 /* ============ 🔴 网页版桌面适配（和手机同宽 430px 居中，不拉宽） ============ */
 @media (min-width: 900px) {
   body { background: #E9E5D9; }
-  .app-header { max-width: 430px; margin: 0 auto; }
-  #main { max-width: 430px; margin: 0 auto; }
+  /* 🔴 v1.2.24：header 必须 width:100%——body 是 flex column，flex item 默认宽度=内容宽度
+     （max-width 只是上限），不加 width:100% 时 header 只有内容宽（~250px）居中，比 main 短一截 */
+  .app-header { width: 100%; max-width: 430px; margin: 0 auto; }
+  #main { width: 100%; max-width: 430px; margin: 0 auto; }
   .tab-bar { left: 50%; right: auto; width: 430px; transform: translateX(-50%); border-radius: 16px 16px 0 0; }
   @media (prefers-color-scheme: dark) { body { background: #16181C; } }
 }

@@ -220,17 +220,48 @@ const UI = {
     if (tab === 'settings') this.renderProfile();
   },
 
-  /* ---------- 主题 ---------- */
+  /* ---------- 主题（🔴 v1.2.24：三态——system 跟随系统/light/dark 手动固定，默认跟随系统） ---------- */
   bindTheme() {
-    const saved = Settings.get('theme', 'light');
-    document.documentElement.dataset.theme = saved;
-    this.el('themeToggle').textContent = saved === 'dark' ? '☀️' : '🌙';
+    const saved = Settings.get('theme', '');
+    // 🔴 v1.2.24：'light' 是旧版本默认值（用户没主动设置过也会存 light）→ 也视为跟随系统，
+    //   否则老用户升级后永远不跟随系统
+    const follow = !saved || saved === 'system' || saved === 'light';
+    const isDark = () => (document.documentElement.dataset.theme === 'dark'
+      || (!document.documentElement.dataset.theme && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches));
+    // 🔴 v1.2.24：跟随系统时**不设置 data-theme**（CSS 的 prefers-color-scheme 自然生效）；
+    //   原来默认强制 'light' 覆盖了系统深色 → 电脑深色下网页版却是浅色
+    if (!follow) document.documentElement.dataset.theme = saved;
+    else delete document.documentElement.dataset.theme;
+    const updateBtn = () => { this.el('themeToggle').textContent = isDark() ? '☀️' : '🌙'; };
+    updateBtn();
     this.el('themeToggle').addEventListener('click', () => {
-      const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+      // 从当前实际状态反转到手动固定（跟随系统时先取系统当前值再反）
+      const next = isDark() ? 'light' : 'dark';
       document.documentElement.dataset.theme = next;
       Settings.set('theme', next);
-      this.el('themeToggle').textContent = next === 'dark' ? '☀️' : '🌙';
+      const followBox = this.el('themeFollow');
+      if (followBox) followBox.checked = false;
+      updateBtn();
     });
+    // 设置页"跟随系统"开关
+    const followBox = this.el('themeFollow');
+    if (followBox) {
+      followBox.checked = follow;
+      followBox.addEventListener('change', () => {
+        if (followBox.checked) {
+          delete document.documentElement.dataset.theme;
+          Settings.set('theme', 'system');
+        } else {
+          document.documentElement.dataset.theme = isDark() ? 'dark' : 'light';
+          Settings.set('theme', document.documentElement.dataset.theme);
+        }
+        updateBtn();
+      });
+      // 跟随系统时监听系统变化，按钮图标实时同步
+      if (follow && window.matchMedia) {
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', updateBtn);
+      }
+    }
   },
 
   /* ---------- 今日复习 ---------- */

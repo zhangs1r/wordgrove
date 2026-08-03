@@ -1,6 +1,6 @@
 {
-  "version": "1.2.23",
-  "notes": "1.2.23：网页版电脑端布局修正——和手机同样大小（430px 宽居中），不再拉宽成横屏样式；手机与电脑比例一致",
-  "apk": "EnglishApp-v1.2.23.apk",
-  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.23/EnglishApp-v1.2.23.apk"
+  "version": "1.2.24",
+  "notes": "1.2.24：1) 网页版电脑端顶部栏宽度修复——header 之前只有内容宽度（比主体短一截、标题月亮挤中间），现在撑满 430px；2) 深色模式跟随系统——默认随电脑/手机系统深浅色自动切换（原来强制浅色覆盖了系统深色）；设置-外观可开关跟随系统，关闭后可用右上角月/日按钮手动固定",
+  "apk": "EnglishApp-v1.2.24.apk",
+  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.24/EnglishApp-v1.2.24.apk"
 }

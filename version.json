@@ -1,6 +1,6 @@
 {
-  "version": "1.2.31",
-  "notes": "1.2.31：修复句子翻译一直失败——查句翻译 maxTokens 只有 500，思考链吃掉输出额度导致 JSON 截断解析失败；所有小额度 JSON 调用统一加大（查句/中文求助/选角/开演 300-700→2000，中译英 300→1000）+ 解析失败自动重试一次。教训：小调用只是内容少，思考链开销是固定的，额度不能小",
-  "apk": "EnglishApp-v1.2.31.apk",
-  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.31/EnglishApp-v1.2.31.apk"
+  "version": "1.2.32",
+  "notes": "1.2.32：单词查词提速三件套——① 查词/句子翻译/中文求助改用 medium 推理档位（原来默认 high，思考链过长；对话/剧场保持 high 保质量）；② 单词讲解本地缓存（LRU 300 条，同一词再次点秒出）；③ 查词超时 90s→25s、翻译 20s（不干等）；400 参数错误自动去掉 reasoning_effort 重试（兼容性兜底）",
+  "apk": "EnglishApp-v1.2.32.apk",
+  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.32/EnglishApp-v1.2.32.apk"
 }

@@ -39,6 +39,8 @@ const API = {
       maxTokens = 2000,
       temperature,
       thinking,
+      reasoningEffort,
+      timeout,
     } = opts;
 
     const body = { model, messages, max_tokens: maxTokens };
@@ -46,6 +48,9 @@ const API = {
     if (temperature !== undefined) body.temperature = temperature;
     // DeepSeek 思考模式开关（对话传 'disabled' 提速；建卡/复盘不传=默认思考）
     if (thinking) body.thinking = { type: thinking };
+    // 🔴 v1.2.32：推理档位（low/medium/high/xhigh/ultra）——简单任务（查词/翻译）用 medium 提速，
+    //   对话/剧场保持默认 high 保质量
+    if (reasoningEffort) body.reasoning_effort = reasoningEffort;
 
     const headers = {
       'User-Agent': 'Mozilla/5.0 (Linux; Android 14; 23127PN0CC) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36',
@@ -65,8 +70,10 @@ const API = {
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         // 🔴 v1.1：fetch 加超时（断网/代理黑洞不再永久卡 typing；对话思考模式给 90s）
+        // 🔴 v1.2.32：支持按调用自定义超时（查词/翻译收紧到 20-25s，不干等）
         const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), attempt === 0 ? 90000 : 60000);
+        const t = timeout || (attempt === 0 ? 90000 : 60000);
+        const timer = setTimeout(() => ctrl.abort(), t);
         let res;
         try {
           res = await fetch(this.base, {
@@ -77,8 +84,14 @@ const API = {
           });
         } finally { clearTimeout(timer); }
         // 🔴 v1.1：参数类错误不重试（重试只会浪费 4.5s）；402 余额不足给中文提示
+        // 🔴 v1.2.32：400 时若带 reasoning_effort，去掉后重试一次（兼容不支持该参数的端点）
         if (res.status === 400 || res.status === 422) {
           const t = await res.text();
+          if (body.reasoning_effort && attempt === 0) {
+            delete body.reasoning_effort;
+            attempt--;
+            continue;
+          }
           let msg = '请求参数错误';
           try { msg = JSON.parse(t)?.error?.message || msg; } catch {}
           throw new Error(msg + ' [' + res.status + ']');

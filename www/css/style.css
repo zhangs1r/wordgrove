@@ -726,6 +726,22 @@ body {
 .today-veggie-wrap svg { display: block; width: 100%; height: auto; }
 /* 🔴 v1.2.1：新手指引也用全宽底部抽屉（max-width 会把它挤成左下角窄条） */
 .onboard-panel { max-width: none; }
+/* 🔴 v1.2.16：5 页轮播引导 */
+.onboard-slides { overflow: hidden; }
+.onboard-slide { display: none; }
+.onboard-slide.on { display: block; animation: obFade 0.25s ease; }
+@keyframes obFade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.ob-emoji { font-size: 34px; text-align: center; margin: 6px 0 8px; }
+.ob-title { font-size: 16.5px; font-weight: 700; color: var(--text, #262B24); text-align: center; margin-bottom: 4px; }
+.ob-desc { font-size: 12.5px; color: var(--muted, #888); text-align: center; margin-bottom: 12px; }
+.ob-feats { display: flex; flex-direction: column; gap: 8px; }
+.ob-feat { font-size: 13.5px; line-height: 1.6; color: var(--text, #262B24); background: rgba(17, 124, 13, 0.05); border-radius: 10px; padding: 8px 12px; }
+.ob-feat b { color: var(--primary, #117C0D); }
+.onboard-dots { display: flex; justify-content: center; gap: 6px; margin: 12px 0 8px; }
+.ob-dot { width: 7px; height: 7px; border-radius: 50%; background: rgba(0, 0, 0, 0.18); transition: all 0.2s; }
+.ob-dot.on { background: var(--primary, #117C0D); width: 18px; border-radius: 4px; }
+.onboard-nav { display: flex; gap: 10px; margin-bottom: 6px; }
+.onboard-nav .btn { flex: 1; }
 .onboard-body { font-size: 13.5px; line-height: 1.75; color: var(--text, #262B24); }
 .onboard-body p { margin: 6px 0; }
 .onboard-open { margin-top: 10px; font-size: 12px; color: var(--muted, #888); word-break: break-all; }

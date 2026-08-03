@@ -1,6 +1,6 @@
 {
-  "version": "1.2.15",
-  "notes": "1.2.15：修复回滚/重新生成机制——1) 角色扮演里最新一条输入现在正确显示【重新生成】按钮（之前显示成回滚，因为用户消息渲染时还没入历史，判定错位）；2) 修复选选项后只显示继续按钮的幽灵回合（网络中断导致响应为空时不再静默渲染，提示重新生成）；3) 回滚后提示下一步操作",
-  "apk": "EnglishApp-v1.2.15.apk",
-  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.15/EnglishApp-v1.2.15.apk"
+  "version": "1.2.16",
+  "notes": "1.2.16：1) 新手指引改为 5 页轮播（欢迎/对话/复习卡/剧场/笔记本+小院），每个亮点讲清楚怎么用；设置页可随时重看；2) 剧场选项改为第一人称台词（之前是第二人称指令，点了选项会把「Call after Sophia...」这种导演指令当你的话发出去）；3) 选项截断保护（「grab a」这种残缺选项自动过滤）",
+  "apk": "EnglishApp-v1.2.16.apk",
+  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.16/EnglishApp-v1.2.16.apk"
 }

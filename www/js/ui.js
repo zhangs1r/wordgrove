@@ -109,22 +109,46 @@ const UI = {
     this._toastTimer = setTimeout(() => t.classList.add('hidden'), 2200);
   },
 
-  /* 🔴 v1.1.1：新手指引——勾"不再提示"后永不显示；没勾则每次打开 APP 都显示 */
-  showOnboarding() {
+  /* 🔴 v1.1.1：新手指引（🔴 v1.2.16 改为 5 页轮播；force=true 时设置页可随时重看，不改变"不再提示"） */
+  showOnboarding(force) {
     const modal = this.el('onboardModal');
-    if (!modal || Settings.get('onboardDone', false)) return;
+    if (!modal) return;
+    if (!force && Settings.get('onboardDone', false)) return;
     const noMore = this.el('onboardNoMore');
-    const done = this.el('onboardDone');
-    if (!noMore || !done) return;
-    noMore.checked = false;
+    if (noMore) noMore.checked = false;
+    this._onboardInit();
     modal.classList.remove('hidden');
-    const close = () => {
-      if (noMore.checked) Settings.set('onboardDone', true);
-      modal.classList.add('hidden');
-    };
-    done.onclick = close;
     const mask = modal.querySelector('.modal-mask');
-    if (mask) mask.onclick = close;
+    if (mask) mask.onclick = () => this._onboardClose();
+  },
+  _onboardInit() {
+    const slides = document.querySelectorAll('#onboardSlides .onboard-slide');
+    const dots = this.el('onboardDots');
+    const prev = this.el('onboardPrev');
+    const next = this.el('onboardNext');
+    const start = this.el('onboardStart');
+    if (!slides.length || !dots || !prev || !next || !start) return;
+    if (this._obBound) return; // 已初始化过（设置页重看时不重复绑定）
+    this._obBound = true;
+    dots.innerHTML = Array.from(slides).map((_, i) => `<span class="ob-dot${i === 0 ? ' on' : ''}" data-i="${i}"></span>`).join('');
+    const show = (i) => {
+      const cur = Math.max(0, Math.min(slides.length - 1, i));
+      slides.forEach((s, k) => s.classList.toggle('on', k === cur));
+      dots.querySelectorAll('.ob-dot').forEach((d, k) => d.classList.toggle('on', k === cur));
+      prev.classList.toggle('hidden', cur === 0);
+      next.classList.toggle('hidden', cur === slides.length - 1);
+      start.classList.toggle('hidden', cur !== slides.length - 1);
+    };
+    prev.onclick = () => show([...slides].findIndex(s => s.classList.contains('on')) - 1);
+    next.onclick = () => show([...slides].findIndex(s => s.classList.contains('on')) + 1);
+    dots.querySelectorAll('.ob-dot').forEach(d => d.addEventListener('click', () => show(parseInt(d.dataset.i, 10))));
+    start.onclick = () => this._onboardClose();
+  },
+  _onboardClose() {
+    const modal = this.el('onboardModal');
+    const noMore = this.el('onboardNoMore');
+    if (noMore && noMore.checked) Settings.set('onboardDone', true);
+    if (modal) modal.classList.add('hidden');
   },
 
   el(id) { return document.getElementById(id); },
@@ -2567,6 +2591,9 @@ const UI = {
     });
 
     this.el('exportBtn').addEventListener('click', () => this.exportData());
+    // 🔴 v1.2.16：设置页随时重看新手指引（force=true 不改变"不再提示"）
+    const reopen = this.el('onboardReopen');
+    if (reopen) reopen.addEventListener('click', () => this.showOnboarding(true));
     this.el('importBtn').addEventListener('click', () => this.el('importFile').click());
     const updBtn = this.el('checkUpdateBtn');
     if (updBtn) updBtn.addEventListener('click', () => this.checkUpdate());

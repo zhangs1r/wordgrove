@@ -286,6 +286,11 @@
       <button id="importBtn" class="btn btn-ghost">导入数据</button>
       <input id="importFile" type="file" accept=".json" class="hidden">
     </div>
+    <div class="settings-group">
+      <h3>关于</h3>
+      <!-- 🔴 v1.2.16：随时可以重新看新手指引 -->
+      <button id="onboardReopen" class="btn btn-ghost">🌱 查看新手指引</button>
+    </div>
     <p class="footnote">数据全在本地 · 自用版本 · <span id="versionLabel">v1.2</span></p>
   </section>
 
@@ -340,28 +345,82 @@
   </div>
 </div>
 
-<!-- 🔴 v1.1.1 新手指引 modal -->
+<!-- 🔴 v1.1.1 新手指引 modal（🔴 v1.2.16 改为 5 页轮播） -->
 <div id="onboardModal" class="modal hidden">
   <div class="modal-mask"></div>
   <div class="modal-panel onboard-panel">
     <div class="modal-head">
       <span>🌱 欢迎来到 WordGrove 言木</span>
     </div>
-    <div class="onboard-body">
-      <p><b>聊着练口语，顺手收生词，学完种小院。</b></p>
-      <p>· <b>对话</b>：AI 陪练英语（词汇难度按你的水平调节），聊完自动复盘收生词</p>
-      <p>· <b>剧场</b>：用世界卡角色扮演，沉浸式练英语</p>
-      <p>· <b>复习卡</b>：AI 回复里出现该复习的词，消息下方自动弹卡（忘了/模糊/记得）</p>
-      <p>· <b>笔记本</b>：生词本 + 句子本，点单词查"老师式讲解"（带语境/搭配/举一反三）</p>
-      <p>· <b>小院</b>：每天学习积分种作物、买装饰，把院子打扮起来</p>
-      <p>· <b>设置</b>：填 API Key（platform.deepseek.com）、选英语水平、备份数据</p>
-      <p class="onboard-open">开源地址：<a href="https://github.com/zhangs1r/wordgrove" target="_blank" rel="noopener">github.com/zhangs1r/wordgrove</a></p>
+    <div class="onboard-slides" id="onboardSlides">
+      <!-- 第 1 页：欢迎 -->
+      <div class="onboard-slide on">
+        <div class="ob-emoji">🌱</div>
+        <div class="ob-title">聊着练口语，顺手收生词，学完种小院</div>
+        <div class="ob-desc">三个动作循环起来，英语像种树一样慢慢长大</div>
+        <div class="ob-feats">
+          <div class="ob-feat">💬 <b>对话</b>：AI 陪练，难度跟你的水平走</div>
+          <div class="ob-feat">🎭 <b>剧场</b>：世界卡角色扮演，沉浸式练</div>
+          <div class="ob-feat">🃏 <b>复习卡</b>：生词出现就弹卡巩固</div>
+          <div class="ob-feat">🌻 <b>小院</b>：学习积分种作物、买装饰</div>
+        </div>
+      </div>
+      <!-- 第 2 页：对话 -->
+      <div class="onboard-slide">
+        <div class="ob-emoji">💬</div>
+        <div class="ob-title">对话：直接聊就对了</div>
+        <div class="ob-feats">
+          <div class="ob-feat">发<b>英文</b>聊天，AI 按你的水平调节，一次回 1-2 句</div>
+          <div class="ob-feat">说<b>中文</b>也行——自动翻译成英文再继续</div>
+          <div class="ob-feat">点消息里<b>绿色单词</b> → AI 老师式讲解（带语境、搭配、举一反三）</div>
+          <div class="ob-feat">说错了 → 弹<b>表达建议</b>，一键采纳进表达积累</div>
+          <div class="ob-feat">🔊 消息可朗读；聊完点"结束"自动<b>复盘</b>收生词</div>
+        </div>
+      </div>
+      <!-- 第 3 页：复习卡 -->
+      <div class="onboard-slide">
+        <div class="ob-emoji">🃏</div>
+        <div class="ob-title">复习卡：出现即巩固</div>
+        <div class="ob-feats">
+          <div class="ob-feat">对话/剧场里<b>出现你生词本里的词</b> → 自动弹卡</div>
+          <div class="ob-feat">点 <b>忘了 / 模糊 / 记得</b>，多个词排队一张张来</div>
+          <div class="ob-feat">今日页「<b>今日重点复习</b>」= 常忘的词 + 随机抽的</div>
+          <div class="ob-feat">AI 还会<b>自然带出</b>你常忘的词，在剧情里帮你巩固</div>
+        </div>
+      </div>
+      <!-- 第 4 页：剧场 -->
+      <div class="onboard-slide">
+        <div class="ob-emoji">🎭</div>
+        <div class="ob-title">剧场：边演边学</div>
+        <div class="ob-feats">
+          <div class="ob-feat">选/生成<b>世界卡</b> → AI 自动补角色 → <b>选一个扮演</b></div>
+          <div class="ob-feat">AI 当导演：旁白 + 角色台词 + <b>选项</b>推进剧情</div>
+          <div class="ob-feat">台词里也能<b>点词查、弹复习卡</b>，角色有专属音色</div>
+          <div class="ob-feat">你的英文会被检查：语法/表达/<b>像不像你的角色</b> → 弹纠正卡</div>
+        </div>
+      </div>
+      <!-- 第 5 页：笔记本 + 小院 -->
+      <div class="onboard-slide">
+        <div class="ob-emoji">📒</div>
+        <div class="ob-title">笔记本 & 小院</div>
+        <div class="ob-feats">
+          <div class="ob-feat">笔记本：生词本/句子本/忘词榜/表达积累，<b>任意单词无限嵌套点查</b></div>
+          <div class="ob-feat">小院：学习赚积分 → 种作物、买装饰、<b>本月限定</b>、历史院子</div>
+          <div class="ob-feat">设置里可<b>导出备份</b>，换手机不怕丢</div>
+          <div class="ob-feat">开源地址：github.com/zhangs1r/wordgrove</div>
+        </div>
+      </div>
+    </div>
+    <div class="onboard-dots" id="onboardDots"></div>
+    <div class="onboard-nav">
+      <button id="onboardPrev" class="btn btn-ghost">上一步</button>
+      <button id="onboardNext" class="btn btn-primary">下一步</button>
+      <button id="onboardStart" class="btn btn-primary hidden">开始使用</button>
     </div>
     <label class="field toggle onboard-toggle">
       <span>不再提示</span>
       <input id="onboardNoMore" type="checkbox">
     </label>
-    <button id="onboardDone" class="btn btn-primary btn-block">我已阅读</button>
   </div>
 </div>
 

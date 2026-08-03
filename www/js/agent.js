@@ -465,6 +465,16 @@ WORLD RULES: ${w.rules || 'None'}
 NARRATION TONE: ${w.tone || 'atmospheric'}`;
   },
 
+  /* 🔴 v1.2.16：选项清洗——过滤截断/残缺的选项（"grab a" 这种以虚词结尾的半句），
+     最多保留 4 条；JSON 兜底提取路径同样走这里 */
+  cleanOptions(list) {
+    try {
+      if (!Array.isArray(list)) return [];
+      return list.map(o => String(o || '').trim())
+        .filter(o => o.length >= 4 && !/ (a|an|the|to|and|but|or|then|so|with|from|for|of)$/i.test(o) && !/\.\.\.?$/.test(o))
+        .slice(0, 4);
+    } catch { return []; }
+  },
   /* 角色子 Agent：推理一个角色的内心活动 → 行动 → 台词（每轮每个角色单独调用） */
   async rpInferChar(char, world, history, userInput) {
     const model = Settings.get('chatModel', 'deepseek-v4-flash');
@@ -520,7 +530,7 @@ You are the GAME MASTER / narrator of this story. Characters present: ${chars.ma
 Given the conversation history, the player's latest action, and each character's inner thoughts and actions, write the next beat of the story:
 - A short vivid narration of the scene (2-4 sentences)
 - Each character's spoken line (from their speech; adjust if needed)
-- 3-4 English choices for the player's next move (second-person, actionable, short)
+- 3-4 English choices for the player's next move (write them as the PLAYER CHARACTER's own first-person action or spoken line, e.g. "I walk over to Sophia" or "Hey Sophia, about the booth…" — short, actionable, complete sentences; NEVER write second-person instructions like "Call after Sophia")
 
 Output ONLY JSON: {"narration":"...","dialogue":[{"name":"CharacterName","line":"...","gender":"male或female"}],"options":["Choice 1","Choice 2","Choice 3"]}
 For dialogue: characters from the cast keep their identity; NEW side characters may appear (e.g. a waiter, a guard) — for ANY character first appearing in this beat, MUST include "gender" ("male" or "female"). For already-known characters you may omit it.` + this.forgetLine(); // 🔴 v1.2.10：词表段放 system 最末尾（前缀缓存稳定）
@@ -534,7 +544,7 @@ For dialogue: characters from the cast keep their identity; NEW side characters 
     const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
     try {
       const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
-      return { narration: j.narration || '', dialogue: j.dialogue || [], options: (j.options || []).slice(0, 4) };
+      return { narration: j.narration || '', dialogue: j.dialogue || [], options: this.cleanOptions(j.options) };
     } catch {
       // JSON 解析失败（可能被截断）：逐字段兜底提取，绝不把原始 JSON 当旁白显示
       const dlg = [];
@@ -544,7 +554,7 @@ For dialogue: characters from the cast keep their identity; NEW side characters 
       });
       const narration = (content.match(/"narration"\s*:\s*"([^"]*)"/) || [])[1] || '';
       const opts = (content.match(/"options"\s*:\s*\[([^\]]*)\]/) || [])[1] || '';
-      const options = opts ? opts.match(/"([^"]+)"/g).map(s => s.slice(1, -1)).slice(0, 4) : [];
+      const options = this.cleanOptions(opts ? opts.match(/"([^"]+)"/g).map(s => s.slice(1, -1)) : []);
       return { narration: narration || content.slice(0, 300), dialogue: dlg, options };
     }
   },

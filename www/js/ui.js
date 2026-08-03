@@ -2263,6 +2263,14 @@ const UI = {
       this.el('wordModalTitle').textContent = '查词';
       this.el('wordModal').classList.remove('hidden');
       const d = await Agent.queryWord(word, ctx);
+      // 🔴 v1.2.18：AI 两次都没解析出结果（思考截断/网络）→ 显示重试按钮，不再静默"只有单词"
+      if (d && d.failed) {
+        body.innerHTML = `<div class="wd-word">${this.esc(word)}</div>
+          <div class="wd-result">这次没查出来（可能是网络波动）。<br><button id="wdRetry" class="btn btn-primary btn-sm" style="margin-top:10px">↻ 重新查询</button></div>`;
+        const retry = body.querySelector('#wdRetry');
+        if (retry) retry.addEventListener('click', () => { this._queryBusy = false; this.showWordQuery(word, ctx); });
+        return;
+      }
       const existing = await Words.list();
       const exist = existing.find(w => (w.word || '').toLowerCase() === word.toLowerCase());
       const inSet = !!exist;
@@ -2329,7 +2337,7 @@ const UI = {
       <div class="wd-word">${this.esc(d.word)} ${d.phonetic ? `<span class="wi-phon">${this.esc(d.phonetic)}</span>` : ''}<button class="wi-say wd-say" data-say="${this.esc(d.word)}">${this.sayIcon()}</button></div>
       ${d.pos ? `<div class="wd-pos">${this.esc(d.pos)}</div>` : ''}
       ${savedNote ? `<div class="wd-meta" style="color:var(--primary)">${savedNote}</div>` : ''}
-      <div class="wd-meaning">${this.esc(d.meaning || '')}</div>
+      <div class="wd-meaning">${this.esc(d.meaning || '（暂无释义）')}</div>
       ${row('📌 语境用法', d.usage)}
       ${row('🌱 词族', d.family)}
       ${row('🔁 举一反三', d.expand)}

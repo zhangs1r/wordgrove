@@ -606,42 +606,31 @@ For dialogue: characters from the cast keep their identity; NEW side characters 
       return []; // 🔴 v1.1：解析失败返回空数组（调用方已有兜底提示）
     }
   },
-
   /* 复盘：语法/表达 + 角色扮演贴合度 */
   /* 🔴 v1.1.1：查词升级——带整句语境（固定搭配识别）+ 老师式讲解（用法/举一反三/词族/记忆提示）+ 例句难度匹配英语水平 */
+  /* 🔴 v1.2.18：解析失败自动重试一次（思考链吃 token 截断 JSON 的兜底），仍失败返回 failed 标记（UI 显示重试按钮） */
   async queryWord(word, context) {
     const model = Settings.get('chatModel', 'deepseek-v4-flash');
     const lv = levelCfg();
     const ctxBlock = context
       ? `\n【这个词出现的语境】\n"""${String(context).slice(0, 900)}"""\n先仔细读语境再回答：这个词在语境中是什么意思？它是不是某个固定搭配/惯用语的一部分（搭配的另一部分可能离它很远，要仔细找）？`
       : '\n（没有语境，按最常用义讲解即可）';
-    const resp = await API.chat([
-      { role: 'system', content: `你是英语老师，在教一个${lv.label}水平的学生。为单词 "${word}" 输出讲解，返回 JSON（不要输出其他内容）：
-{
-  "word": "${word}",
-  "phonetic": "英式音标",
-  "pos": "词性，如 v./n./adj.",
-  "meaning": "中文释义（结合语境的主释义 1-2 条；无语境给最常用义）",
-  "usage": "语境中的用法：如果是固定搭配/惯用语的一部分，指出来并解释整个搭配怎么用（英文示例+中文说明）；无语境时给这个单词最常用的搭配",
-  "root": "词根/词缀拆解（用中文说明）",
-  "family": "同根词/词族 2-3 个（英文，简短）",
-  "collocations": "常用搭配 1-2 个（英文，如 take a break）",
-  "synonyms": "同义词 1-2 个",
-  "antonyms": "反义词（如有）",
-  "examples": [{"en":"英文例句","cn":"中文翻译"}],
-  "expand": "举一反三：换个说法/相关表达 1-2 个（英文+中文），让学习者能立刻用出来",
-  "note": "记忆提示（一句话中文，可用词源小故事或联想记忆）"
-}
-要求：例句难度匹配 ${lv.label} 水平（${lv.desc}）；有语境时例句优先贴近语境场景。只输出 JSON。${ctxBlock}` },
-      { role: 'user', content: word + (context ? '\n语境：' + String(context).slice(0, 900) : '') },
-    ], { model, maxTokens: 1500 });
-    const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
-    try {
-      const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
-      return { ...j, word: word };
-    } catch {
-      return { word, phonetic: '', pos: '', meaning: '', usage: '', root: '', family: '', collocations: '', synonyms: '', antonyms: '', examples: [], expand: '', note: '' };
+    const sys = { role: 'system', content: `你是英语老师，在教一个${lv.label}水平的学生。为单词 "${word}" 输出讲解，返回 JSON（不要输出其他内容）：\n{\n  "word": "${word}",\n  "phonetic": "英式音标",\n  "pos": "词性，如 v./n./adj.",\n  "meaning": "中文释义（结合语境的主释义 1-2 条；无语境给最常用义）",\n  "usage": "语境中的用法：如果是固定搭配/惯用语的一部分，指出来并解释整个搭配怎么用（英文示例+中文说明）；无语境时给这个单词最常用的搭配",\n  "root": "词根/词缀拆解（用中文说明）",\n  "family": "同根词/词族 2-3 个（英文，简短）",\n  "collocations": "常用搭配 1-2 个（英文，如 take a break）",\n  "synonyms": "同义词 1-2 个",\n  "antonyms": "反义词（如有）",\n  "examples": [{"en":"英文例句","cn":"中文翻译"}],\n  "expand": "举一反三：换个说法/相关表达 1-2 个（英文+中文），让学习者能立刻用出来",\n  "note": "记忆提示（一句话中文，可用词源小故事或联想记忆）"\n}\n要求：例句难度匹配 ${lv.label} 水平（${lv.desc}）；有语境时例句优先贴近语境场景。只输出 JSON。${ctxBlock}` };
+    const msgs = [sys, { role: 'user', content: word + (context ? '\n语境：' + String(context).slice(0, 900) : '') }];
+    const tryOnce = async () => {
+      const resp = await API.chat(msgs, { model, maxTokens: 2000 });
+      const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
+      try {
+        const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
+        return { ...j, word: word };
+      } catch { return null; }
+    };
+    let d = await tryOnce();
+    if (!d) { await new Promise(r => setTimeout(r, 1200)); d = await tryOnce(); }
+    if (!d) {
+      return { word, phonetic: '', pos: '', meaning: '', usage: '', root: '', family: '', collocations: '', synonyms: '', antonyms: '', examples: [], expand: '', note: '', failed: true };
     }
+    return d;
   },
 
   /* 句子/词组翻译解释（查询后入句子本）

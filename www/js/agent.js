@@ -447,6 +447,8 @@ Output ONLY JSON: {"name":"角色英文名","gender":"male或female","persona":"
     return lines;
   },
   // 基础提示词前缀（保持稳定 → DeepSeek 硬盘缓存命中）
+  // 🔴 v1.2.10：forgetLine（忘词榜/随机词，每轮变化）已从中间移到各调用方 system 的最末尾——
+  //   固定前缀（规则+WORLD卡+角色卡/导演指令）完全稳定，前缀缓存命中率不受词表变化影响
   rpSystem(world) {
     const w = world || {};
     return `You are the engine of an immersive English roleplay game. RULES:
@@ -456,7 +458,6 @@ Output ONLY JSON: {"name":"角色英文名","gender":"male或female","persona":"
 4. If the user writes in Chinese, gently correct them: first show the correct English way to say what they meant, then continue the story in English.
 5. WORLD CONSISTENCY: everything in the story must fit the world's setting and era as defined by the world card. Only introduce things that plausibly exist in this world — if the world card is modern, modern things are fine; if it is medieval or futuristic, stick to that world. Vocabulary reminders below are optional material: use a word only if it fits naturally; never force it.
 6. VOCABULARY LEVEL: ${levelLine()} — apply this to narration, dialogue, and choices; keep the story understandable at this level while naturally including 1-2 slightly advanced words per beat.
-${this.forgetLine()}
 
 WORLD: ${w.name || 'Unknown world'}
 SETTING: ${w.setting || ''}
@@ -477,7 +478,7 @@ SPEAKING STYLE: ${char.speakingStyle || 'natural, in-character'}
 EXAMPLE DIALOGUE: ${char.exampleDialogue || 'none'}
 
 Now think as ${char.name}. Given the conversation so far and the player's latest action, infer this character's inner thoughts, decide their action, and write their spoken line.
-Output ONLY JSON: {"inner":"their inner thoughts in English","action":"what they physically do","speech":"their spoken line in English"}`;
+Output ONLY JSON: {"inner":"their inner thoughts in English","action":"what they physically do","speech":"their spoken line in English"}` + this.forgetLine(); // 🔴 v1.2.10：词表段放 system 最末尾（前缀缓存稳定）
     const msgs = [
       { role: 'system', content: sys },
       // 🔴 v1.1：清洗多余字段（voice/options/name 不进请求体）+ 排除刚注入的当前 user 消息（避免同一输入出现两遍）
@@ -522,7 +523,7 @@ Given the conversation history, the player's latest action, and each character's
 - 3-4 English choices for the player's next move (second-person, actionable, short)
 
 Output ONLY JSON: {"narration":"...","dialogue":[{"name":"CharacterName","line":"...","gender":"male或female"}],"options":["Choice 1","Choice 2","Choice 3"]}
-For dialogue: characters from the cast keep their identity; NEW side characters may appear (e.g. a waiter, a guard) — for ANY character first appearing in this beat, MUST include "gender" ("male" or "female"). For already-known characters you may omit it.`;
+For dialogue: characters from the cast keep their identity; NEW side characters may appear (e.g. a waiter, a guard) — for ANY character first appearing in this beat, MUST include "gender" ("male" or "female"). For already-known characters you may omit it.` + this.forgetLine(); // 🔴 v1.2.10：词表段放 system 最末尾（前缀缓存稳定）
     const charBrief = charResults.map((r, i) => `${chars[i].name}: inner="${r.inner}" action="${r.action}" speech="${r.speech}"`).join('\n');
     const msgs = [
       { role: 'system', content: sys },

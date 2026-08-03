@@ -1,6 +1,6 @@
 {
-  "version": "1.2.9",
-  "notes": "1.2.9：提示词里的复习词改为动态更新——忘词榜和随机词不再用绘画创建时的旧快照：1) 启动时刷新忘词榜/随机池；2) 每次发送消息前都重新拉取最新忘词榜 + 每轮重新随机抽 2 个巩固词（排除忘词榜）；3) 隔了很久的旧绘画继续聊，AI 提示词里带的也是当前最新的忘词榜和随机词；4) 清理了残留的 SRS 到期词提示",
-  "apk": "EnglishApp-v1.2.9.apk",
-  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.9/EnglishApp-v1.2.9.apk"
+  "version": "1.2.10",
+  "notes": "1.2.10：缓存命中率优化——忘词榜/随机词（每轮变化的词表段）从提示词中间移到最末尾，固定前缀（规则+世界卡+角色卡+导演指令）完全稳定，DeepSeek 前缀缓存命中率不受词表动态更新影响；词表动态更新（v1.2.9）保留",
+  "apk": "EnglishApp-v1.2.10.apk",
+  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.10/EnglishApp-v1.2.10.apk"
 }

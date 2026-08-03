@@ -1,6 +1,6 @@
 {
-  "version": "1.2.19",
-  "notes": "1.2.19：英语水平设置强化——之前已嵌入普通对话/角色扮演/查词的提示词，但档位描述太笼统（AI 没参照物，CET-6 和雅思感觉差不多）；现在每个档位带具体词汇锚点（如六级：appreciate/remarkable；雅思：sustainable/controversial），并明确要求每次回复自然带 1 个对应水平的词/表达，水平越高句式越丰富；同时去掉基础场景里把难度拉平的 simple 硬约束",
-  "apk": "EnglishApp-v1.2.19.apk",
-  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.19/EnglishApp-v1.2.19.apk"
+  "version": "1.2.20",
+  "notes": "1.2.20：词汇难度控制升级（调研后采用 CEFR 词表方案）——内置 8648 词 CEFR 分级词表（A1-C1）；档位映射：CET-4≈B1、CET-6/考研≈B2、雅思/托福≈C1、自如交流不限；1) 提示词注入词表统计+80 个代表词（AI 有真实词表参照，非凭印象锚点词）；2) AI 回复渲染时用词表扫描，超出水平的词自动橙色标记（点击可查词讲解），无论 AI 自觉不自觉，超纲词一定可见",
+  "apk": "EnglishApp-v1.2.20.apk",
+  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.20/EnglishApp-v1.2.20.apk"
 }

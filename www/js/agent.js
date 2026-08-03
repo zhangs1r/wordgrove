@@ -2,23 +2,51 @@
    参考 Pi agent-harness 的核心设计（工具批次执行 / token截断保护 / 上下文压缩） */
 
 /* 🔴 v1.1.1：英语水平档位（设置页选择，注入提示词控制词汇难度）
-   🔴 v1.2.19：desc 加具体词汇锚点（AI 有参照物，档位差异才明显） */
+   🔴 v1.2.20：CEFR 词表方案——每个档位映射 CEFR 级别（CET-4≈B1、CET-6≈B2、考研≈B2、雅思/托福≈C1、自如交流≈不限），
+   levelLine 注入词表统计 + 随机采样代表词（AI 有真实词表参照）；回复渲染时用词表扫描标记超纲词（ui.js） */
 const LEVELS = {
-  cet4:  { label: 'CET-4 四级',     desc: '只用基础高频词（like / very / big 这类），短句清晰，避免任何生僻词和复杂表达' },
-  cet6:  { label: 'CET-6 六级',     desc: '以四级词汇为主，适当带六级词汇（如 appreciate / remarkable / atmosphere），偶尔一个进阶表达' },
-  kaoyan:{ label: '考研',           desc: '中高级词汇为主（如 significant / inevitable / phenomenon），可带学术表达和复杂句式' },
-  ielts: { label: '雅思',           desc: '话题词汇丰富（如 sustainable / controversial / eventually），口语化与学术表达平衡，用词地道自然' },
-  toefl: { label: '托福',           desc: '学术词汇为主（如 hypothesis / empirical / considerably），表达正式但自然' },
-  fluent:{ label: '自如交流',       desc: '接近母语者水平，可用俚语习语（hit the sack / off the top of my head）和复杂句式' },
+  cet4:  { label: 'CET-4 四级', cefr: 'B1', desc: '基础高频词为主，短句清晰' },
+  cet6:  { label: 'CET-6 六级', cefr: 'B2', desc: '以四级词汇为主，适当带六级词汇' },
+  kaoyan:{ label: '考研',       cefr: 'B2', desc: '中高级词汇为主，可带学术表达' },
+  ielts: { label: '雅思',       cefr: 'C1', desc: '话题词汇丰富，口语化与学术表达平衡' },
+  toefl: { label: '托福',       cefr: 'C1', desc: '学术词汇为主，表达正式但自然' },
+  fluent:{ label: '自如交流',   cefr: 'C2', desc: '接近母语者水平，不限词汇' },
 };
 function levelCfg() {
   const lv = Settings.get('level', 'cet6');
   return LEVELS[lv] || LEVELS.cet6;
 }
+/* CEFR 级别顺序（用于范围判断与词表统计） */
+const CEFR_ORDER = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
+function cefrRange(cfg) {
+  // 返回该档位覆盖的级别列表（含以内所有级别）
+  const idx = CEFR_ORDER.indexOf(cfg.cefr);
+  if (idx < 0 || idx >= 5) return null; // C2/未知 → 不限
+  return CEFR_ORDER.slice(0, idx + 1);
+}
+/* 🔴 v1.2.20：提示词注入——词表统计 + 随机采样 80 个代表词（采样每次会话固定，不每轮变，缓存友好） */
 function levelLine() {
   const c = levelCfg();
-  // 🔴 v1.2.19：强化——每次回复自然带 1 个对应水平词/表达（让档位差异可感知），水平越高句式越丰富
-  return `- 词汇水平：${c.label}（${c.desc}）。严格执行：大部分词汇在这个水平范围内；每次回复自然带 1 个该水平或稍高阶的词汇/地道表达（帮他拓宽词汇，但每句最多 1 个，别堆砌）；水平越高，句子结构可以越丰富自然`;
+  const range = cefrRange(c);
+  if (!range || typeof CEFR_VOCAB === 'undefined') {
+    return `- 词汇水平：${c.label}（${c.desc}）。大部分词汇在这个水平范围内；每次回复自然带 1 个该水平或稍高阶的词汇/地道表达（帮他拓宽词汇，但每句最多 1 个）；水平越高，句子结构可以越丰富自然`;
+  }
+  if (!Agent._levelSamples || Agent._levelSampleKey !== c.cefr) {
+    const pool = [];
+    for (const L of range) pool.push(...(CEFR_VOCAB[L] || []));
+    // 采样：均匀抽样 80 个（先固定种子式均匀取，避免每轮随机破坏缓存前缀稳定性）
+    const step = Math.max(1, Math.floor(pool.length / 80));
+    const picked = [];
+    for (let i = 0; i < pool.length && picked.length < 80; i += step) picked.push(pool[i]);
+    // 混入少量下一级词（拓展参照）
+    const next = CEFR_ORDER[CEFR_ORDER.indexOf(c.cefr) + 1];
+    const nextPool = (next && CEFR_VOCAB[next]) || [];
+    for (let i = 0; i < nextPool.length && picked.length < 88; i += Math.max(1, Math.floor(nextPool.length / 8))) picked.push(nextPool[i]);
+    Agent._levelSamples = picked;
+    Agent._levelSampleKey = c.cefr;
+  }
+  const sample = Agent._levelSamples.slice(0, 80).join(', ');
+  return `- 词汇水平：${c.label}（CEFR ${c.cefr}，词表覆盖 ${range.reduce((n, L) => n + (CEFR_VOCAB[L] || []).length, 0)} 词）。严格执行：回复里 95% 的词汇应落在该水平词表范围内（参照词表：${sample}）；每次回复自然带 1 个稍高阶的词汇/地道表达帮他拓宽（每句最多 1 个）；水平越高，句子结构可以越丰富自然`;
 }
 
 const DEFAULT_SCENE = { id: 'default', name: '日常对话', level: 'B1',

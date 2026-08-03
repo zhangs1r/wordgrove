@@ -1,6 +1,6 @@
 {
-  "version": "1.2.4",
-  "notes": "1.2.4：1) 修复复习卡完全不弹的 bug——队列用错 key（拿 id 查单词表）导致所有卡片被跳过，普通对话和角色扮演都不弹；2) 修复 RP 台词纠正卡——结构化输出关闭思考模式（思考链吃光 token 导致输出被截断、JSON 解析失败），纠正卡这次应该真能出来了；3) 角色标签改为标题下方单独一行显示（并列会两个都省略），只显示【扮演 XX】，不显示世界名",
-  "apk": "EnglishApp-v1.2.4.apk",
-  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.4/EnglishApp-v1.2.4.apk"
+  "version": "1.2.5",
+  "notes": "1.2.5：1) 修复复习卡完全不弹的 bug——队列用错 key（拿 id 查单词表）导致所有卡片被跳过；2) RP 台词纠正卡——按你的意见恢复思考模式（质量优先），输出额度调大到 2000，解析时只取输出结果过滤思考链，输出为空时从思考链兜底提取；3) 角色标签改为标题下方单独一行，只显示【扮演 XX】",
+  "apk": "EnglishApp-v1.2.5.apk",
+  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.5/EnglishApp-v1.2.5.apk"
 }

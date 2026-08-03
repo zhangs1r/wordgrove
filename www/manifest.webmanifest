@@ -1,0 +1,14 @@
+{
+  "name": "WordGrove 言木",
+  "short_name": "言木",
+  "description": "聊着练口语，顺手收生词，学完种小院——英语学习伴侣",
+  "start_url": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F7F4EC",
+  "theme_color": "#117C0D",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

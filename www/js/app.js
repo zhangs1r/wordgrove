@@ -3,8 +3,13 @@ document.addEventListener('DOMContentLoaded', () => {
   TTS.init();
   API.loadConfig();
   UI.init();
+  // 🔴 网页版：注册 Service Worker（PWA/离线缓存）——排除 Capacitor 环境（原生 WebView 不需要，避免缓存干扰发版）
+  if (!window.Capacitor && 'serviceWorker' in navigator && location.protocol === 'https:') {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
   // 🔴 v1.2.1：等原生版本号就绪再自动检查更新（否则读 HTML 初始版本号误报"有新版本"）
-  initVersion().then(() => UI.checkUpdate(true));
+  // 🔴 网页版：跳过自动更新检查（代码随 push 自动部署，没有"安装更新"概念）
+  if (window.Capacitor) initVersion().then(() => UI.checkUpdate(true));
 
   // 复盘按钮
   document.getElementById('chatReviewBtn').addEventListener('click', () => UI.startReview());

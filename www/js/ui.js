@@ -76,6 +76,8 @@ const UI = {
     this.loadChatState(); // 启动时加载最近会话（仅此一次；之后会话状态由 newConv/switchConv/startRp 管理）
     FarmActivity.start();
     this.bindFarm();
+    this.showOnboarding();   // 🔴 v1.1.1：新手指引（勾"不再提示"后永不显示）
+    this.checkUpdate(true);  // 🔴 v1.1.1：启动自动检查更新（有新版本弹窗 + 更新日志）
 
     if (!API.configured()) {
       setTimeout(() => {
@@ -92,6 +94,24 @@ const UI = {
     t.classList.remove('hidden');
     clearTimeout(this._toastTimer);
     this._toastTimer = setTimeout(() => t.classList.add('hidden'), 2200);
+  },
+
+  /* 🔴 v1.1.1：新手指引——勾"不再提示"后永不显示；没勾则每次打开 APP 都显示 */
+  showOnboarding() {
+    const modal = this.el('onboardModal');
+    if (!modal || Settings.get('onboardDone', false)) return;
+    const noMore = this.el('onboardNoMore');
+    const done = this.el('onboardDone');
+    if (!noMore || !done) return;
+    noMore.checked = false;
+    modal.classList.remove('hidden');
+    const close = () => {
+      if (noMore.checked) Settings.set('onboardDone', true);
+      modal.classList.add('hidden');
+    };
+    done.onclick = close;
+    const mask = modal.querySelector('.modal-mask');
+    if (mask) mask.onclick = close;
   },
 
   el(id) { return document.getElementById(id); },
@@ -210,49 +230,59 @@ const UI = {
     this.renderMonthDecor(st);
     this.renderDashboards();
   },
-  /* 今日植被大图：作物成熟帧放大 + 季节草地底 */
+  /* 今日家园大图（🔴 v1.1.1：SVG 小房子替代 canvas 作物大图——家园感）
+   * 房子随「当天积分进度」变化：门前小树 种子→发芽→长成（dayStage），旁边显示进度 */
   paintTodayVeggie(st) {
-    const cv = this.el('todayVeggieCanvas');
-    if (!cv) return;
-    const ctx = cv.getContext('2d');
-    const C = 220;
+    const wrap = this.el('todayVeggieWrap');
+    if (!wrap) return;
     const now = FARM.now();
     const today = now.getDate();
     const season = FARM.seasonOf(now.getMonth() + 1);
-    ctx.clearRect(0, 0, C, C);
-    ctx.imageSmoothingEnabled = false;
-    // 季节草地底
-    const grass = Farm._imgs['grass_' + season] || null;
-    if (grass) {
-      ctx.drawImage(grass, 0, 0, 32, 32, 0, 0, C, C);
-    } else {
-      ctx.fillStyle = season === 'winter' ? '#E8EDE8' : '#9CCC65';
-      ctx.fillRect(0, 0, C, C);
-    }
-    // 今天高亮描边
-    ctx.strokeStyle = '#FAC75E';
-    ctx.lineWidth = 6;
-    ctx.strokeRect(4, 4, C - 8, C - 8);
-    // 今日作物（成熟帧 = 第三帧）
+    const ratio = Math.min(1, ((st && st.dayPoints) || 0) / FARM.POINT_DAY_LIMIT);
+    const stage = Farm.dayStage(st);
     const crop = st.planted[today];
     const nameEl = this.el('todayVeggieName');
     const subEl = this.el('todayVeggieSub');
-    if (crop && Farm._imgs.crops && FARM.CROP_DEFS[crop]) {
-      const def = FARM.CROP_DEFS[crop];
-      const sx = def.x * 96 + 64; // 成熟帧
-      const size = 190;
-      ctx.drawImage(Farm._imgs.crops, sx, 0, 32, 32, (C - size) / 2, (C - size) / 2, size, size);
-      nameEl.textContent = def.name;
-      subEl.textContent = '今日已种下 · 学习就能收获';
-    } else {
-      // 未学习：画一个小种子 + 提示
-      nameEl.textContent = FARM.CROP_DEFS[FARM.monthCrop(st.month, today)].name;
-      subEl.textContent = '今天还没学习——学一点就种下';
-      ctx.fillStyle = 'rgba(0,0,0,0.25)';
-      ctx.font = 'bold 15px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('待播种', C / 2, C / 2 + 5);
-      ctx.textAlign = 'left';
+    const cropName = crop && FARM.CROP_DEFS[crop] ? FARM.CROP_DEFS[crop].name : FARM.CROP_DEFS[FARM.monthCrop(st.month, today)].name;
+    // 季节背景色
+    const bg = season === 'winter' ? '#E8EDE8' : season === 'summer' ? '#C9E7A8' : '#DCEFC2';
+    const grass = season === 'winter' ? '#DFE8DF' : '#8BC34A';
+    // 门前小树随生长阶段变化（0=小芽 1=小树 2=大树冠）
+    const treeR = [16, 26, 38][stage];
+    const treeC = ['#9CCC65', '#66BB6A', '#43A047'][stage];
+    const treeTrunk = stage === 0 ? '' : '<rect x="107" y="148" width="6" height="18" rx="2" fill="#8D6E63"/>';
+    const treeY = [164, 156, 146][stage];
+    wrap.innerHTML = `<svg viewBox="0 0 220 220" width="220" height="220" role="img" aria-label="今日家园">
+  <rect width="220" height="220" rx="12" fill="${bg}"/>
+  <ellipse cx="110" cy="196" rx="100" ry="26" fill="${grass}"/>
+  <!-- 房子主体 -->
+  <rect x="56" y="100" width="108" height="82" rx="5" fill="#F1ECE0" stroke="#0A5D08" stroke-width="2"/>
+  <!-- 屋顶 -->
+  <polygon points="46,102 110,48 174,102" fill="#117C0D" stroke="#0A5D08" stroke-width="2" stroke-linejoin="round"/>
+  <!-- 烟囱 -->
+  <rect x="140" y="58" width="17" height="28" rx="2" fill="#8D6E63" stroke="#0A5D08" stroke-width="1.5"/>
+  <!-- 窗户（暖黄灯） -->
+  <rect x="70" y="118" width="30" height="25" rx="3" fill="#FAC75E" stroke="#0A5D08" stroke-width="1.5"/>
+  <line x1="85" y1="118" x2="85" y2="143" stroke="#0A5D08" stroke-width="1.5"/>
+  <line x1="70" y1="130.5" x2="100" y2="130.5" stroke="#0A5D08" stroke-width="1.5"/>
+  <!-- 门 -->
+  <path d="M 118 182 v -25 a 13 13 0 0 1 26 0 v 25 z" fill="#8D6E63" stroke="#0A5D08" stroke-width="1.5"/>
+  <circle cx="139" cy="162" r="2" fill="#FAC75E"/>
+  <!-- 门前小树（随积分进度生长） -->
+  ${treeTrunk}
+  <circle cx="110" cy="${treeY}" r="${treeR}" fill="${treeC}" stroke="#0A5D08" stroke-width="1.5"/>
+  <circle cx="${110 - treeR * 0.4}" cy="${treeY - treeR * 0.3}" r="${treeR * 0.55}" fill="${treeC}" opacity="0.85"/>
+  <!-- 高亮框 -->
+  <rect x="4" y="4" width="212" height="212" rx="14" fill="none" stroke="#FAC75E" stroke-width="6"/>
+</svg>`;
+    if (nameEl) nameEl.textContent = cropName;
+    if (subEl) {
+      if (crop) {
+        const stageNames = ['种子 · 再学学就发芽', '发芽 · 学过半就长成', '长成 · 今天学满了！'];
+        subEl.textContent = '今日已种下 · 积分进度 ' + Math.round(ratio * 100) + '%（' + stageNames[stage] + '）';
+      } else {
+        subEl.textContent = '今天还没学习——学一点就种下';
+      }
     }
   },
   /* 本月限定装饰：当月 sprite + 名称 + 已购标记 */
@@ -933,8 +963,13 @@ const UI = {
     Settings.set('conversations', this.listConversations().filter(c => c.id !== id));
   },
   currentConv() {
+    // 🔴 v1.1.1：convId 为空时生成并固化到 state（原来每次调用生成新 id → 同段对话可分裂成多条）
+    if (!this.state.convId) {
+      this.state.convId = 'c_' + Date.now();
+      this.state.convTitle = '';
+    }
     return {
-      id: this.state.convId || ('c_' + Date.now()),
+      id: this.state.convId,
       title: this.state.convTitle || '',
       history: this.state.chatHistory,
       updated: Date.now(),
@@ -948,6 +983,7 @@ const UI = {
     this.state.convTitle = '';
     this.state.chatHistory = [];
     this.state.autoTurn = 0;
+    this.state.reviewedThisConv = new Set(); // 🔴 v1.1.1：新会话可重新弹卡（每会话每词一次）
     this.renderConvTitle();
     this.renderChatHistory();
     this.el('reviewPanel').classList.add('hidden');
@@ -1017,6 +1053,7 @@ const UI = {
     this.state.convTitle = conv.title || '';
     this.state.chatHistory = conv.history || [];
     this.state.autoTurn = 0;
+    this.state.reviewedThisConv = new Set(); // 🔴 v1.1.1：切会话重置复习卡去重
     this.renderConvTitle();
     this.renderChatHistory();
     this.closeConvModal();
@@ -1291,6 +1328,7 @@ const UI = {
    * 防骚扰：每轮最多 2 张；同一词本会话只弹一次；不显示释义（先回忆），评级后展开释义巩固 */
   maybeEmbedReviewCard(text, div) {
     try {
+      if (Settings.get('reviewCard', true) === false) return; // 🔴 v1.1.1：设置里可关
       if (!this.state.wordMap.size) return;
       const set = new Set(this.state.wordMap.keys());
       const words = String(text || '').match(/[A-Za-z]+(?:['’-][A-Za-z]+)*/g) || [];
@@ -1825,6 +1863,7 @@ const UI = {
       <div class="wd-ex">${this.renderMsgText(s.text)}</div>
       <div class="wd-meaning">${this.esc(s.cn || '')}</div>
       ${s.note ? `<div class="wd-note">${this.esc(s.note)}</div>` : ''}
+      ${s.expand ? `<div class="wd-row"><span class="wd-key">🔁 类似说法</span> ${this.esc(s.expand)}</div>` : ''}
       ${s.ctx ? `<div class="si-ctx">场景：${this.esc(s.ctx)}</div>` : ''}
       ${this.tagEditorHtml(s.tags)}
     `;
@@ -1961,6 +2000,18 @@ const UI = {
       fc.value = String(Settings.get('forgetCount', 5));
       fc.addEventListener('change', () => { Settings.set('forgetCount', fc.value); Agent.refreshForgetWords(); });
     }
+    // 🔴 v1.1.1：英语水平选择（注入提示词控制词汇难度）
+    const lv = this.el('setLevel');
+    if (lv) {
+      lv.value = Settings.get('level', 'cet6');
+      lv.addEventListener('change', () => Settings.set('level', lv.value));
+    }
+    // 🔴 v1.1.1：对话内嵌复习卡开关
+    const rc = this.el('setReviewCard');
+    if (rc) {
+      rc.checked = Settings.get('reviewCard', true) !== false;
+      rc.addEventListener('change', () => Settings.set('reviewCard', rc.checked));
+    }
     const btn = this.el('audioCacheClearBtn');
     if (btn) btn.addEventListener('click', async () => {
       await AudioCache.clear();
@@ -2030,12 +2081,17 @@ const UI = {
     container.querySelectorAll('.tap-word').forEach(el => {
       el.addEventListener('click', (e) => {
         e.stopPropagation();
-        this.showWordQuery(el.dataset.w);
+        // 🔴 v1.1.1：查词带整句语境（AI 识别固定搭配/惯用法，即使搭配另一部分离得远）
+        const msgEl = el.closest('.msg');
+        const ctx = msgEl ? ((msgEl.querySelector('.msg-en') || msgEl).textContent || '') : '';
+        this.showWordQuery(el.dataset.w, ctx);
       });
     });
   },
   /* 查词：AI 详细释义 + 自动入生词本 */
-  async showWordQuery(word) {
+  /* 查词：AI 老师式讲解（带整句语境 → 识别固定搭配/用法）+ 自动入生词本
+     🔴 v1.1.1：ctx = 单词所在的整条消息（语境），AI 结合语境讲用法/举一反三 */
+  async showWordQuery(word, ctx) {
     if (this._queryBusy) return;
     this._queryBusy = true;
     try {
@@ -2044,7 +2100,7 @@ const UI = {
       body.innerHTML = `<div class="wd-word">${this.esc(word)}</div><div class="wd-result" style="margin-top:10px">查询中…</div>`;
       this.el('wordModalTitle').textContent = '查词';
       this.el('wordModal').classList.remove('hidden');
-      const d = await Agent.queryWord(word);
+      const d = await Agent.queryWord(word, ctx);
       const existing = await Words.list();
       const exist = existing.find(w => (w.word || '').toLowerCase() === word.toLowerCase());
       const inSet = !!exist;
@@ -2055,11 +2111,15 @@ const UI = {
         } catch (e) {}
       }
       if (inSet) {
-        // 又忘了 → 合并本次上下文 + 忘记次数 +1 + 历史最高值更新
+        // 又忘了 → 合并本次上下文 + 忘记次数 +1 + 历史最高值更新；补全新字段
         const ctxNow = this.currentCtx();
         const ctxNew = exist.ctx ? exist.ctx + '\n▸ 又忘了（' + this.fmtDate(Date.now()) + '）：' + ctxNow : ctxNow;
         const nextForgot = (exist.forgot || 0) + 1;
-        await Words.update(exist.id, { ctx: ctxNew.slice(0, 600), forgot: nextForgot, peak: Math.max(exist.peak || exist.forgot || 0, nextForgot) });
+        const upd = { ctx: ctxNew.slice(0, 600), forgot: nextForgot, peak: Math.max(exist.peak || exist.forgot || 0, nextForgot) };
+        if (!exist.usage && d.usage) upd.usage = d.usage;
+        if (!exist.family && d.family) upd.family = d.family;
+        if (!exist.expand && d.expand) upd.expand = d.expand;
+        await Words.update(exist.id, upd);
         this.refreshWordsSet();
       } else {
         await Words.add({
@@ -2068,10 +2128,12 @@ const UI = {
           exampleCn: (d.examples && d.examples[0] ? d.examples[0].cn : '') || '',
           source: 'query', ctx: this.currentCtx(), tags: ['查词'],
           root: d.root || '', collocations: d.collocations || '', synonyms: d.synonyms || '', antonyms: d.antonyms || '', note: d.note || '',
+          usage: d.usage || '', family: d.family || '', expand: d.expand || '',
         });
         this.refreshWordsSet();
       }
-      body.innerHTML = this.renderWordDetail(d, inSet ? '已在生词本（忘了 ' + ((exist.forgot || 0) + 1) + ' 次）' : '已加入生词本')
+      const ctxBlock = ctx ? `<div class="wd-ctx">📖 语境：<span class="wd-ctx-hl">${this.esc(String(ctx).slice(0, 160))}${String(ctx).length > 160 ? '…' : ''}</span></div>` : '';
+      body.innerHTML = ctxBlock + this.renderWordDetail(d, inSet ? '已在生词本（忘了 ' + ((exist.forgot || 0) + 1) + ' 次）' : '已加入生词本')
         + (inSet ? `<button id="wdRemember" class="btn btn-ghost btn-sm btn-block" style="margin-top:10px">✓ 这次记住了（忘次 -1）</button>` : '');
       if (inSet) {
         const rb = body.querySelector('#wdRemember');
@@ -2100,6 +2162,9 @@ const UI = {
       ${d.pos ? `<div class="wd-pos">${this.esc(d.pos)}</div>` : ''}
       ${savedNote ? `<div class="wd-meta" style="color:var(--primary)">${savedNote}</div>` : ''}
       <div class="wd-meaning">${this.esc(d.meaning || '')}</div>
+      ${row('📌 语境用法', d.usage)}
+      ${row('🌱 词族', d.family)}
+      ${row('🔁 举一反三', d.expand)}
       ${row('词根', d.root)}${row('搭配', d.collocations)}${row('同义', d.synonyms)}${row('反义', d.antonyms)}
       ${exs}
       ${d.note ? `<div class="wd-note">${this.esc(d.note)}</div>` : ''}
@@ -2219,7 +2284,7 @@ const UI = {
     document.addEventListener('scroll', () => this.exitSelectMode(), true);
   },
 
-  /* 选句翻译：点卡片菜单查询 → 入句子本 */
+  /* 选句翻译：点卡片菜单查询 → 入句子本（🔴 v1.1.1：输出加 expand 类似说法） */
   async translateSelection(text) {
     const body = this.el('wordModalBody');
     body.innerHTML = `<div class="wd-ex">${this.esc(text)}</div><div class="wd-result" style="margin-top:10px">翻译中…</div>`;
@@ -2232,12 +2297,13 @@ const UI = {
         body.innerHTML = `<div class="wd-ex">${this.esc(text)}</div><div class="wd-result" style="color:var(--danger)">翻译失败，请重试</div>`;
         return;
       }
-      const s = { id: 's_' + Date.now(), text, cn: r.cn, note: r.note, source: 'query', ctx: this.currentCtx(), tags: ['查句'], at: Date.now() };
+      const s = { id: 's_' + Date.now(), text, cn: r.cn, note: r.note, expand: r.expand || '', source: 'query', ctx: this.currentCtx(), tags: ['查句'], at: Date.now() };
       this.saveSentence(s);
       body.innerHTML = `
         <div class="wd-ex">${this.esc(text)}</div>
         <div class="wd-meaning">${this.esc(r.cn || '')}</div>
         ${r.note ? `<div class="wd-note">${this.esc(r.note)}</div>` : ''}
+        ${r.expand ? `<div class="wd-row"><span class="wd-key">🔁 类似说法</span> ${this.esc(r.expand)}</div>` : ''}
         <div class="wd-meta" style="color:var(--primary)">已加入句子本</div>
       `;
     } catch (e) {
@@ -2480,6 +2546,8 @@ const UI = {
   /* ============ 角色扮演对话（RP） ============ */
   async startRp() {
     if (this.state.rpBusy) { this.toast('正在生成中，稍等…'); return; } // 🔴 v1.1：防双开
+    // 🔴 v1.1.1：已在 RP 中再开新 RP → 先保存当前绘画（原来直接覆盖，旧会话丢最后一轮）
+    if (this.state.rpMode && this.state.rpHistory.length) this.saveChatState();
     this.state.rpBusy = true; // 🔴 v1.1：选角阶段也占用（rpOfferRoles 期间用户输入会并发竞态）
     try {
       const w = this.currentWorld();
@@ -2514,7 +2582,11 @@ const UI = {
       this.state.rpHistory = [];
       this.state.reviewedThisConv = new Set(); // 🔴 v1.1：新会话重置复习卡去重
       this.state.convId = 'c_' + Date.now() + '_rp';
-      this.state.convTitle = w.name + ' · ' + new Date().toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
+      // 🔴 v1.1.1：RP 话题命名去重——同一天同一世界卡开多次 → "世界名 · 8/3"、"世界名 · 8/3 (2)"、"世界名 · 8/3 (3)"
+      let rpTitle = w.name + ' · ' + new Date().toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
+      const sameTitle = this.listConversations().filter(c => c.isRp && c.title === rpTitle).length;
+      if (sameTitle > 0) rpTitle = rpTitle + ' (' + (sameTitle + 1) + ')';
+      this.state.convTitle = rpTitle;
       this.renderConvTitle();
       this.el('chatInput').placeholder = '选一个角色，或输入"自定义"描述你想扮演的人';
       this.switchTab('chat');
@@ -2750,8 +2822,16 @@ const UI = {
     this.state.rpWorld = null;
     this.state.rpChars = [];
     this.state.rpHistory = [];
-    this.el('chatInput').placeholder = '输入英文…';
+    // 🔴 v1.1.1：退出后清空会话身份（原来残留 RP 的 convId → 退出后不点"新话题"直接普通对话，
+    //            saveChatState 会以 RP id 保存普通对话，把 RP 记录覆盖成普通对话内容——用户"话题记录串了"的根因）
+    this.state.convId = null;
     this.state.convTitle = '';
+    this.state.rpPlayer = null;
+    this.state.rpRoster = {};
+    this.state.rpActiveChars = [];
+    this.state.rpStep = '';
+    this.state.reviewedThisConv = new Set();
+    this.el('chatInput').placeholder = '输入英文…';
     this.renderConvTitle();
     this.saveChatState();
     this.renderChatHistory();
@@ -2789,42 +2869,67 @@ const UI = {
   },
 
   /* 检查更新：优先读仓库 version.json（raw CDN 国内可达），失败回退 GitHub API；下载走加速镜像 */
-  async checkUpdate() {
-    const info = this.el('updateInfo');
-    if (!info) return;
-    info.classList.remove('hidden');
-    info.textContent = '检查中…';
+  /* 检查版本更新
+     🔴 v1.1.1：auto=true（启动自动检查）→ 有新版本弹 updateModal 显示更新日志 + 确认下载；
+                auto=false（设置页手动）→ 保持内联显示 */
+  async checkUpdate(auto) {
     const cur = (this.el('versionLabel').textContent || '').replace(/^v/, '');
-    const showNew = (latest, notes, dlUrl) => {
-      info.innerHTML = `发现新版本 <b>v${this.esc(latest)}</b>（当前 v${this.esc(cur)}）<br><span style="opacity:.75;font-size:11px;line-height:1.5">${this.esc(notes || '')}</span><br><button id="dlApkBtn" class="btn btn-primary btn-sm" style="margin-top:8px">下载安装包</button>`;
-      const dl = info.querySelector('#dlApkBtn');
-      if (dl) dl.addEventListener('click', () => {
-        if (!dlUrl) { this.toast('暂无下载链接，请到 GitHub release 页'); return; }
-        try { location.href = 'https://ghproxy.net/' + dlUrl; }
-        catch (e) { try { location.href = dlUrl; } catch (e2) { this.toast('请在浏览器打开链接下载'); } }
-      });
-    };
-    try {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 8000);
-      const resp = await fetch('https://raw.githubusercontent.com/zhangs1r/wordgrove/main/version.json', { signal: ctrl.signal, headers: { Accept: 'application/json' } });
-      clearTimeout(timer);
-      if (!resp.ok) throw new Error('http ' + resp.status);
-      const j = await resp.json();
-      const latest = String(j.version || '').replace(/^v/, '');
-      if (latest && latest !== cur) showNew(latest, j.notes || '', j.url || '');
-      else info.innerHTML = `已是最新版（v${this.esc(cur)}）`;
-    } catch (e) {
+    const fetchLatest = async () => {
       try {
+        // 优先仓库根 version.json（raw CDN 国内可达，8s 超时）
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 8000);
+        const resp = await fetch('https://raw.githubusercontent.com/zhangs1r/wordgrove/main/version.json', { signal: ctrl.signal, headers: { Accept: 'application/json' } });
+        clearTimeout(timer);
+        if (!resp.ok) throw new Error('http ' + resp.status);
+        const j = await resp.json();
+        return { latest: String(j.version || '').replace(/^v/, ''), notes: j.notes || '', url: j.url || '' };
+      } catch (e) {
+        // 回退 GitHub API
         const resp = await fetch('https://api.github.com/repos/zhangs1r/wordgrove/releases/latest', { headers: { Accept: 'application/vnd.github+json' } });
         if (!resp.ok) throw new Error('github ' + resp.status);
         const j = await resp.json();
-        const latest = (j.tag_name || '').replace(/^v/, '');
         const apk = (j.assets || []).find(a => a.name.endsWith('.apk'));
-        if (latest && latest !== cur) showNew(latest, (j.body || '').replace(/^##\s*.*\n?/, '').slice(0, 220), apk ? apk.browser_download_url : '');
-        else info.innerHTML = `已是最新版（v${this.esc(cur)}）`;
-      } catch (e2) {
-        info.textContent = '检查失败：网络无法访问更新源';
+        return { latest: (j.tag_name || '').replace(/^v/, ''), notes: (j.body || '').replace(/^##\s*.*\n?/, '').slice(0, 400), url: apk ? apk.browser_download_url : '' };
+      }
+    };
+    try {
+      const { latest, notes, url } = await fetchLatest();
+      if (!latest || latest === cur) {
+        if (!auto) {
+          const info = this.el('updateInfo');
+          if (info) { info.classList.remove('hidden'); info.innerHTML = `已是最新版（v${this.esc(cur)}）`; }
+        }
+        return;
+      }
+      const download = () => {
+        if (!url) { this.toast('暂无下载链接，请到 GitHub release 页'); return; }
+        try { location.href = 'https://ghproxy.net/' + url; }
+        catch (e) { try { location.href = url; } catch (e2) { this.toast('请在浏览器打开链接下载'); } }
+      };
+      if (auto) {
+        // 启动自动检查：弹窗显示更新日志 + 确认下载
+        const modal = this.el('updateModal');
+        const notesEl = this.el('updateNotes');
+        if (!modal || !notesEl) return;
+        notesEl.innerHTML = `<div class="upd-title">新版本 <b>v${this.esc(latest)}</b>（当前 v${this.esc(cur)}）</div><div class="upd-notes-body">${this.esc(notes || '（无更新日志）')}</div>`;
+        modal.classList.remove('hidden');
+        this.el('updateGoBtn').onclick = () => { modal.classList.add('hidden'); download(); };
+        this.el('updateCancelBtn').onclick = () => modal.classList.add('hidden');
+        const mask = modal.querySelector('.modal-mask');
+        if (mask) mask.onclick = () => modal.classList.add('hidden');
+        return;
+      }
+      const info = this.el('updateInfo');
+      if (!info) return;
+      info.classList.remove('hidden');
+      info.innerHTML = `发现新版本 <b>v${this.esc(latest)}</b>（当前 v${this.esc(cur)}）<br><span style="opacity:.75;font-size:11px;line-height:1.5">${this.esc(notes || '')}</span><br><button id="dlApkBtn" class="btn btn-primary btn-sm" style="margin-top:8px">下载安装包</button>`;
+      const dl = info.querySelector('#dlApkBtn');
+      if (dl) dl.addEventListener('click', download);
+    } catch (e) {
+      if (!auto) {
+        const info = this.el('updateInfo');
+        if (info) { info.classList.remove('hidden'); info.textContent = '检查失败：网络无法访问更新源'; }
       }
     }
   },

@@ -325,6 +325,12 @@ const Farm = {
     for (const h of st.history || []) for (const de of (h.decor || [])) if (de.type === type) n++;
     return n;
   },
+  /* 🔴 v1.1.1：当天植物的生长状态 = 当天积分进度（dayPoints / 50 上限）
+   *   <1/3 → 种子(0)，<2/3 → 发芽(1)，≥2/3 → 长成(2)——今天学得多，院子就茂盛 */
+  dayStage(st) {
+    const ratio = ((st && st.dayPoints) || 0) / FARM.POINT_DAY_LIMIT;
+    return ratio >= 2 / 3 ? 2 : ratio >= 1 / 3 ? 1 : 0;
+  },
 
   /* ============ 素材加载 ============ */
   async ensureImgs() {

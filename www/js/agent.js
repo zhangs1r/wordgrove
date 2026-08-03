@@ -1,6 +1,24 @@
 /* agent.js — 简化 agent loop + 本地工具 + 场景 + 复盘 + 摘要压缩
    参考 Pi agent-harness 的核心设计（工具批次执行 / token截断保护 / 上下文压缩） */
 
+/* 🔴 v1.1.1：英语水平档位（设置页选择，注入提示词控制词汇难度） */
+const LEVELS = {
+  cet4:  { label: 'CET-4 四级',     desc: '以基础高频词为主，句子简单清晰，避免生僻词' },
+  cet6:  { label: 'CET-6 六级',     desc: '以四级词汇为主，适当带六级词汇，偶尔一个进阶词' },
+  kaoyan:{ label: '考研',           desc: '中高级词汇为主，可带学术表达' },
+  ielts: { label: '雅思',           desc: '话题词汇丰富，口语化与学术表达平衡' },
+  toefl: { label: '托福',           desc: '学术词汇为主，表达正式但自然' },
+  fluent:{ label: '自如交流',       desc: '接近母语者水平，可用俚语习语和复杂句式' },
+};
+function levelCfg() {
+  const lv = Settings.get('level', 'cet6');
+  return LEVELS[lv] || LEVELS.cet6;
+}
+function levelLine() {
+  const c = levelCfg();
+  return `- 词汇水平：${c.label}（${c.desc}）——你的回复词汇量要匹配这个水平：以该水平词汇为主，可带 1-2 个稍高阶的词帮他拓展，但不要大段超出他的水平`;
+}
+
 const DEFAULT_SCENE = { id: 'default', name: '日常对话', level: 'B1',
   system: `You are a friendly English conversation partner. The user is practicing spoken English.
 Keep replies to 1-2 short sentences. Use simple, natural spoken English. If the user makes a mistake or hesitates, naturally model the correct way to say it in your reply, do not give lectures. Ask one natural follow-up question to keep the conversation going.` };
@@ -132,6 +150,7 @@ const Agent = {
 
 【学习者档案】
 - 水平：${p.level}（中国研究生，约四级词汇量，能读但口语输出卡顿）
+- 词汇水平：${levelLine()}
 - 常犯错误：${mistakes}
 - 已掌握（别再用太基础的词考他）：${mastered}
 - 累计对话 ${p.sessions || 0} 局
@@ -385,6 +404,7 @@ Output ONLY JSON: {"name":"角色英文名","gender":"male或female","persona":"
 3. Keep responses concise (under 150 words).
 4. If the user writes in Chinese, gently correct them: first show the correct English way to say what they meant, then continue the story in English.
 5. WORLD CONSISTENCY: everything in the story must fit the world's setting and era as defined by the world card. Only introduce things that plausibly exist in this world — if the world card is modern, modern things are fine; if it is medieval or futuristic, stick to that world. Vocabulary reminders below are optional material: use a word only if it fits naturally; never force it.
+6. VOCABULARY LEVEL: ${levelLine()} — apply this to narration, dialogue, and choices; keep the story understandable at this level while naturally including 1-2 slightly advanced words per beat.
 ${this.forgetLine()}
 
 WORLD: ${w.name || 'Unknown world'}
@@ -526,48 +546,58 @@ For dialogue: characters from the cast keep their identity; NEW side characters 
   },
 
   /* 复盘：语法/表达 + 角色扮演贴合度 */
-  async queryWord(word) {
+  /* 🔴 v1.1.1：查词升级——带整句语境（固定搭配识别）+ 老师式讲解（用法/举一反三/词族/记忆提示）+ 例句难度匹配英语水平 */
+  async queryWord(word, context) {
     const model = Settings.get('chatModel', 'deepseek-v4-flash');
+    const lv = levelCfg();
+    const ctxBlock = context
+      ? `\n【这个词出现的语境】\n"""${String(context).slice(0, 900)}"""\n先仔细读语境再回答：这个词在语境中是什么意思？它是不是某个固定搭配/惯用语的一部分（搭配的另一部分可能离它很远，要仔细找）？`
+      : '\n（没有语境，按最常用义讲解即可）';
     const resp = await API.chat([
-      { role: 'system', content: `你是英语词典。为单词 "${word}" 输出详细解释，返回 JSON（不要输出其他内容）：
+      { role: 'system', content: `你是英语老师，在教一个${lv.label}水平的学生。为单词 "${word}" 输出讲解，返回 JSON（不要输出其他内容）：
 {
   "word": "${word}",
   "phonetic": "英式音标",
   "pos": "词性，如 v./n./adj.",
-  "meaning": "中文释义（含词性标注，1-2 条最常用）",
-  "root": "词根/词缀拆解（如 auto=self + bio=life，用中文说明）",
+  "meaning": "中文释义（结合语境的主释义 1-2 条；无语境给最常用义）",
+  "usage": "语境中的用法：如果是固定搭配/惯用语的一部分，指出来并解释整个搭配怎么用（英文示例+中文说明）；无语境时给这个单词最常用的搭配",
+  "root": "词根/词缀拆解（用中文说明）",
+  "family": "同根词/词族 2-3 个（英文，简短）",
   "collocations": "常用搭配 1-2 个（英文，如 take a break）",
   "synonyms": "同义词 1-2 个",
   "antonyms": "反义词（如有）",
   "examples": [{"en":"英文例句","cn":"中文翻译"}],
-  "note": "学习提示（一句话，中文）"
+  "expand": "举一反三：换个说法/相关表达 1-2 个（英文+中文），让学习者能立刻用出来",
+  "note": "记忆提示（一句话中文，可用词源小故事或联想记忆）"
 }
-要求：例句简单实用，适合口语。只输出 JSON。` },
-      { role: 'user', content: word },
-    ], { model, maxTokens: 1200 });
+要求：例句难度匹配 ${lv.label} 水平（${lv.desc}）；有语境时例句优先贴近语境场景。只输出 JSON。${ctxBlock}` },
+      { role: 'user', content: word + (context ? '\n语境：' + String(context).slice(0, 900) : '') },
+    ], { model, maxTokens: 1500 });
     const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
     try {
       const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
       return { ...j, word: word };
     } catch {
-      return { word, phonetic: '', pos: '', meaning: '', root: '', collocations: '', synonyms: '', antonyms: '', examples: [], note: '' };
+      return { word, phonetic: '', pos: '', meaning: '', usage: '', root: '', family: '', collocations: '', synonyms: '', antonyms: '', examples: [], expand: '', note: '' };
     }
   },
 
-  /* 句子/词组翻译解释（查询后入句子本） */
+  /* 句子/词组翻译解释（查询后入句子本）
+     🔴 v1.1.1：输出加 expand（关键表达+类似说法），讲解更完整 */
   async queryText(text) {
     const model = Settings.get('chatModel', 'deepseek-v4-flash');
+    const lv = levelCfg();
     const resp = await API.chat([
-      { role: 'system', content: `你是英语翻译。翻译下面这句英文（或词组），返回 JSON（不要输出其他内容）：
-{"cn":"自然的中文翻译","note":"关键表达/语法点的一句话中文说明（如有）"}` },
+      { role: 'system', content: `你是英语老师，在教一个${lv.label}水平的学生。翻译下面这句英文（或词组），返回 JSON（不要输出其他内容）：
+{"cn":"自然的中文翻译","note":"关键表达/语法点的一句话中文说明（如有）","expand":"这句话里的关键表达或搭配，以及 1 个类似说法（英文+中文）"}` },
       { role: 'user', content: text },
     ], { model, maxTokens: 500 });
     const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
     try {
       const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
-      return { cn: j.cn || '', note: j.note || '' };
+      return { cn: j.cn || '', note: j.note || '', expand: j.expand || '' };
     } catch {
-      return { cn: '', note: '' };
+      return { cn: '', note: '', expand: '' };
     }
   },
 

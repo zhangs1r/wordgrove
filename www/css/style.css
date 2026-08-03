@@ -719,3 +719,17 @@ body {
   .rc-word { color: #F1ECE0; }
   .rc-meaning { color: #F1ECE0; }
 }
+
+/* ============ 🔴 v1.1.1 今日家园 SVG / 新手指引 / 更新弹窗 / 查词语境 ============ */
+.today-veggie-wrap svg { display: block; width: 100%; height: auto; }
+.onboard-panel { max-width: 340px; }
+.onboard-body { font-size: 13.5px; line-height: 1.75; color: var(--text, #262B24); }
+.onboard-body p { margin: 6px 0; }
+.onboard-open { margin-top: 10px; font-size: 12px; color: var(--muted, #888); word-break: break-all; }
+.onboard-open a { color: var(--primary, #117C0D); }
+.onboard-toggle { margin: 8px 0 10px; }
+.update-notes { font-size: 13px; }
+.upd-title { font-weight: 700; margin-bottom: 6px; }
+.upd-notes-body { background: rgba(0, 0, 0, 0.04); border-radius: 10px; padding: 10px; max-height: 40vh; overflow-y: auto; white-space: pre-wrap; line-height: 1.6; color: var(--text, #262B24); }
+.wd-ctx { background: rgba(17, 124, 13, 0.06); border-left: 3px solid var(--primary, #117C0D); border-radius: 6px; padding: 8px 10px; font-size: 12.5px; color: var(--muted, #666); margin-bottom: 10px; line-height: 1.6; }
+.wd-ctx-hl { color: var(--text, #262B24); }

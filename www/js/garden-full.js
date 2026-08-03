@@ -70,7 +70,7 @@ const GardenFull = {
     const now = FARM.now();
     const isCurrentMonth = !readonly && year === st.year && month === st.month;
 
-    // 作物画在坐标格中心（🔴 v1.0：格子独立生长——按「今天 − 种植日」的年龄选阶段，不再整月统一 stage）
+    // 作物画在坐标格中心（🔴 v1.1.1：当前月生长 = 当天积分进度——学得多长得快；历史月按封存时年龄定格）
     if (map && map.cells) {
       const today = now.getDate();
       for (const c of map.cells) {
@@ -78,13 +78,14 @@ const GardenFull = {
         const crop = planted[d];
         if (crop && Farm._imgs.crops && FARM.CROP_DEFS[crop]) {
           const def = FARM.CROP_DEFS[crop];
-          // 格子年龄：今天 − 种植日；0=种子 1=发芽 2=长成 3+=结果（历史月按封存时的年龄定格）
-          let age = today - d;
+          let gStage;
           if (readonly) {
             // 历史月：用该月封存时的「当日」近似（用当月最后一天算，视觉稳定）
-            age = FARM.daysInMonth(year, month) - d;
+            gStage = Math.max(0, Math.min(2, FARM.daysInMonth(year, month) - d));
+          } else {
+            // 🔴 v1.1.1：当前月所有已种格子统一按「当天积分进度」生长（0种子/1发芽/2成熟）
+            gStage = Farm.dayStage(st);
           }
-          const gStage = Math.max(0, Math.min(2, age)); // 3 帧 sprite：0种子/1发芽/2成熟
           const sx = def.x * 96 + gStage * 32;
           const size = 84; // 放大绘制保持像素感（留出高亮框空间）
           ctx.drawImage(Farm._imgs.crops, sx, 0, 32, 32, c.cx - size / 2, c.cy - size / 2, size, size);

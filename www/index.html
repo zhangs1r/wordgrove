@@ -37,7 +37,7 @@
     <!-- 今日植被大图（v0.35 替代丑月历格子） -->
     <div class="today-veggie">
       <div class="today-veggie-frame">
-        <canvas id="todayVeggieCanvas" width="220" height="220"></canvas>
+        <div id="todayVeggieWrap" class="today-veggie-wrap"><!-- 🔴 v1.1.1：SVG 小房子（替代 canvas 作物大图） --></div>
         <div class="today-veggie-name" id="todayVeggieName">—</div>
         <div class="today-veggie-sub" id="todayVeggieSub"></div>
       </div>
@@ -248,6 +248,26 @@
       </label>
     </div>
     <div class="settings-group">
+      <h3>对话</h3>
+      <label class="field">
+        <span>我的英语水平（AI 按此调节词汇难度）</span>
+        <select id="setLevel">
+          <option value="cet4">CET-4 四级</option>
+          <option value="cet6" selected>CET-6 六级</option>
+          <option value="kaoyan">考研</option>
+          <option value="ielts">雅思</option>
+          <option value="toefl">托福</option>
+          <option value="fluent">自如交流</option>
+        </select>
+      </label>
+      <p class="footnote">对话/剧场/查词讲解都会参考这个水平：以该水平词汇为主，偶尔带一两个进阶词</p>
+      <label class="field toggle">
+        <span>对话中弹出生词复习卡</span>
+        <input id="setReviewCard" type="checkbox" checked>
+      </label>
+      <p class="footnote">AI 回复里出现该复习的词时，消息下方自动弹卡（忘了/模糊/记得）</p>
+    </div>
+    <div class="settings-group">
       <h3>学习画像</h3>
       <div id="profileView" class="profile-view">还没开始学习，聊一局就有画像了</div>
     </div>
@@ -310,6 +330,46 @@
       <button id="convClose" class="icon-btn-sm">✕</button>
     </div>
     <div id="convList" class="conv-list"></div>
+  </div>
+</div>
+
+<!-- 🔴 v1.1.1 新手指引 modal -->
+<div id="onboardModal" class="modal hidden">
+  <div class="modal-mask"></div>
+  <div class="modal-panel onboard-panel">
+    <div class="modal-head">
+      <span>🌱 欢迎来到 WordGrove 言木</span>
+    </div>
+    <div class="onboard-body">
+      <p><b>聊着练口语，顺手收生词，学完种小院。</b></p>
+      <p>· <b>对话</b>：AI 陪练英语（词汇难度按你的水平调节），聊完自动复盘收生词</p>
+      <p>· <b>剧场</b>：用世界卡角色扮演，沉浸式练英语</p>
+      <p>· <b>复习卡</b>：AI 回复里出现该复习的词，消息下方自动弹卡（忘了/模糊/记得）</p>
+      <p>· <b>笔记本</b>：生词本 + 句子本，点单词查"老师式讲解"（带语境/搭配/举一反三）</p>
+      <p>· <b>小院</b>：每天学习积分种作物、买装饰，把院子打扮起来</p>
+      <p>· <b>设置</b>：填 API Key（platform.deepseek.com）、选英语水平、备份数据</p>
+      <p class="onboard-open">开源地址：<a href="https://github.com/zhangs1r/wordgrove" target="_blank" rel="noopener">github.com/zhangs1r/wordgrove</a></p>
+    </div>
+    <label class="field toggle onboard-toggle">
+      <span>不再提示</span>
+      <input id="onboardNoMore" type="checkbox">
+    </label>
+    <button id="onboardDone" class="btn btn-primary btn-block">我已阅读</button>
+  </div>
+</div>
+
+<!-- 🔴 v1.1.1 更新提示 modal -->
+<div id="updateModal" class="modal hidden">
+  <div class="modal-mask"></div>
+  <div class="modal-panel">
+    <div class="modal-head">
+      <span>🔄 发现新版本</span>
+    </div>
+    <div class="update-notes" id="updateNotes"></div>
+    <div class="field-btns" style="margin-top:12px">
+      <button id="updateCancelBtn" class="btn btn-ghost">稍后再说</button>
+      <button id="updateGoBtn" class="btn btn-primary">下载更新</button>
+    </div>
   </div>
 </div>
 

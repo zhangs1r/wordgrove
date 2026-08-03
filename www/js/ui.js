@@ -1475,15 +1475,23 @@ const UI = {
     card.dataset.done = '1';
     card.querySelectorAll('.rc-btn').forEach(b => b.disabled = true);
     // 🔴 v1.2.8 用户拍板去掉 SRS：评级只维护忘次计数（忘词榜的依据），不再重排期
+    // 🔴 v1.2.17：评级后刷新词表 + 单词本重渲染（原来只改库不刷新 UI，界面显示旧忘次像没生效）
+    let newForgot = null;
     try {
       const fresh = await Words.get(w.id);
       if (fresh) {
         if (grade === 0) {
-          await Words.update(w.id, { forgot: (fresh.forgot || 0) + 1, peak: Math.max(fresh.peak || 0, (fresh.forgot || 0) + 1) });
+          newForgot = (fresh.forgot || 0) + 1;
+          await Words.update(w.id, { forgot: newForgot, peak: Math.max(fresh.peak || 0, newForgot) });
         } else if (grade === 2 && (fresh.forgot || 0) > 0) {
-          await Words.update(w.id, { forgot: (fresh.forgot || 0) - 1 });
+          newForgot = (fresh.forgot || 0) - 1;
+          await Words.update(w.id, { forgot: newForgot });
         }
       }
+    } catch (e) { console.warn('评级忘次更新失败', e); }
+    try {
+      this.refreshWordsSet(); // 刷新 UI 词表（wordMap/wordSet），忘词榜/今日重点复习即时生效
+      if (this.state.tab === 'words') this.renderWords(this.el('wordSearch').value.trim());
     } catch (e) {}
     try { Agent.refreshForgetWords(); } catch (e) {}
     try { Profile.touchStreak(); } catch (e) {}
@@ -1493,7 +1501,11 @@ const UI = {
     } catch (e) {}
     // 反馈态：展开释义 + "知道了"按钮（🔴 v1.2.3：点它切下一张）
     const mark = grade === 0 ? '😕' : grade === 1 ? '🤔' : '✓';
-    const msg = grade === 0 ? '忘了——它会进忘词榜，多见面几次就记住了' : grade === 1 ? '模糊——有点印象，继续多见面' : '记得——记牢了，继续保持';
+    const baseForgot = (w.forgot || 0);
+    const msg = grade === 0 ? `忘了——忘次 ${baseForgot}→${newForgot ?? baseForgot + 1}，会进忘词榜多见面`
+      : grade === 1 ? '模糊——有点印象，继续多见面'
+      : newForgot != null && newForgot < baseForgot ? `记得——忘次 ${baseForgot}→${newForgot}，继续保持`
+      : '记得——记牢了，继续保持';
     card.querySelector('.rc-body').classList.remove('hidden');
     const actions = card.querySelector('.rc-actions');
     actions.innerHTML = `<span class="rc-done">${mark} ${msg}</span><button class="rc-btn rc-ok rc-know">知道了</button>`;
@@ -1931,6 +1943,7 @@ const UI = {
         <div class="wi-main">
           <div class="wi-word">${this.esc(w.word)}${w.phonetic ? `<span class="wi-phon">${this.esc(w.phonetic)}</span>` : ''}</div>
           <div class="wi-meaning">${this.esc(w.meaning)}${w.source === 'review' ? ' <span class="wi-state">· 对话</span>' : w.source === 'build' ? ' <span class="wi-state">· 建卡</span>' : ''}</div>
+          ${w.ctx ? `<div class="wi-ctx">📎 ${this.esc(String(w.ctx).replace(/\n/g, ' ').slice(0, 60))}${String(w.ctx).length > 60 ? '…' : ''}</div>` : ''}
         </div>
         <button class="wi-say" data-say="${this.esc(w.word)}">${this.sayIcon()}</button>
         <button class="wi-del" data-del="${w.id}">✕</button>
@@ -2261,7 +2274,8 @@ const UI = {
       }
       if (inSet) {
         // 又忘了 → 合并本次上下文 + 忘记次数 +1 + 历史最高值更新；补全新字段
-        const ctxNow = this.currentCtx();
+        // 🔴 v1.2.17：优先用词所在的消息/句子（传入 ctx）作上下文，不再只记话题名
+        const ctxNow = (ctx || this.currentCtx()).trim();
         const ctxNew = exist.ctx ? exist.ctx + '\n▸ 又忘了（' + this.fmtDate(Date.now()) + '）：' + ctxNow : ctxNow;
         const nextForgot = (exist.forgot || 0) + 1;
         const upd = { ctx: ctxNew.slice(0, 600), forgot: nextForgot, peak: Math.max(exist.peak || exist.forgot || 0, nextForgot) };
@@ -2275,7 +2289,7 @@ const UI = {
           word: d.word, phonetic: d.phonetic || '', meaning: d.meaning || '',
           example: (d.examples && d.examples[0] ? d.examples[0].en : '') || '',
           exampleCn: (d.examples && d.examples[0] ? d.examples[0].cn : '') || '',
-          source: 'query', ctx: this.currentCtx(), tags: ['查词'],
+          source: 'query', ctx: (ctx || this.currentCtx()).slice(0, 600), tags: ['查词'], // 🔴 v1.2.17：上下文 = 词所在句子/消息
           root: d.root || '', collocations: d.collocations || '', synonyms: d.synonyms || '', antonyms: d.antonyms || '', note: d.note || '',
           usage: d.usage || '', family: d.family || '', expand: d.expand || '',
         });
@@ -2380,7 +2394,12 @@ const UI = {
     try {
       if (isRp) {
         const lastUser = this.state.rpHistory[this.state.rpHistory.length - 1];
-        await this.rpRound(lastUser && lastUser.role === 'user' ? lastUser.content : 'continue', { regen: true });
+        // 🔴 v1.2.17：选角输入（cast 标记）→ 重新生成 player 卡 + 开场旁白（不走剧情轮）
+        if (lastUser && lastUser.role === 'user' && lastUser.cast) {
+          await this.rerunCast(lastUser);
+        } else {
+          await this.rpRound(lastUser && lastUser.role === 'user' ? lastUser.content : 'continue', { regen: true });
+        }
       } else {
         const lastUser = [...this.state.chatHistory].reverse().find(m => m.role === 'user');
         if (lastUser) await this.sendText(lastUser.content, { alreadyInHistory: true, skipSuggest: true });
@@ -2392,6 +2411,38 @@ const UI = {
       else this.state.chatHistory = this.state.chatHistory.concat(removed);
       this.renderChatHistory();
       this.toast('重新生成失败：' + (e.message || e).slice(0, 60));
+    }
+  },
+
+  /* 🔴 v1.2.17：重新生成选角（player 卡 + 开场旁白）——regenerateMsg 对 cast 标记输入的专用路径 */
+  async rerunCast(lastUser) {
+    const w = this.state.rpWorld;
+    const pending = this.state.rpPendingRoles || [];
+    let desc = (lastUser && lastUser.content) || '';
+    const hit = pending.find(o => desc.includes(o.name));
+    if (hit) desc = `I want to play ${hit.name} (${hit.desc}). ${hit.persona || ''}`;
+    this.state.rpBusy = true;
+    try {
+      const player = await Agent.rpPlayerCard(desc, w);
+      if (!player || !player.name) throw new Error('角色卡为空');
+      this.state.rpPlayer = player;
+      this.state.rpRoster[player.name] = player.gender === 'male' ? 'm' : 'f';
+      this.updateRpRoleTag();
+      this.state.rpStep = 'play';
+      this.el('chatInput').placeholder = 'Say something… 或输入"继续"';
+      const intro = await Agent.rpOpenIntro(w, player, this.state.rpRoster);
+      if (intro.narration) {
+        const nv = Settings.get('narratorVoice', 'f');
+        this.appendMsg('assistant', intro.narration, { voice: nv });
+        this.state.rpHistory.push({ role: 'assistant', name: '', content: intro.narration, voice: nv, options: intro.options || null });
+      }
+      this.appendRpOptions(intro.options && intro.options.length ? intro.options : ['继续']);
+      this.saveChatState();
+      this.toast('选角重新生成完成');
+    } catch (e) {
+      this.toast('重新生成选角失败：' + (e.message || e).slice(0, 60));
+    } finally {
+      this.state.rpBusy = false;
     }
   },
 
@@ -2779,13 +2830,17 @@ const UI = {
     if (this.state.rpStep === 'choose' || this.state.rpStep === 'custom') {
       // 🔴 v1.1：选角阶段点"继续"是无效操作（没有角色描述），拦截并提示
       if (isContinueInput) { this.toast('请先选择角色或描述你想扮演的人'); return; }
+      // 🔴 v1.2.17：选角输入也入历史（带 cast 标记）——否则保存/切回后选角记录丢失，
+      //   且按钮判定错乱显示"回滚"而不是"重新生成"
       if (this.state.rpStep === 'choose' && /自定义/.test(text)) {
+        this.state.rpHistory.push({ role: 'user', content: text, cast: true });
         this.appendMsg('user', text);
         this.state.rpStep = 'custom';
         this.el('chatInput').placeholder = '描述你想扮演的角色（身份/性格，中文英文都行）';
         this.appendMsg('assistant', '好，描述一下你想扮演的角色（身份、性格，中英文都行）：', { voice: Settings.get('narratorVoice', 'f') });
         return;
       }
+      this.state.rpHistory.push({ role: 'user', content: text, cast: true });
       this.appendMsg('user', text);
       this.state.rpBusy = true;
       try {

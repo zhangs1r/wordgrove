@@ -1,6 +1,6 @@
 {
-  "version": "1.2.16",
-  "notes": "1.2.16：1) 新手指引改为 5 页轮播（欢迎/对话/复习卡/剧场/笔记本+小院），每个亮点讲清楚怎么用；设置页可随时重看；2) 剧场选项改为第一人称台词（之前是第二人称指令，点了选项会把「Call after Sophia...」这种导演指令当你的话发出去）；3) 选项截断保护（「grab a」这种残缺选项自动过滤）",
-  "apk": "EnglishApp-v1.2.16.apk",
-  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.16/EnglishApp-v1.2.16.apk"
+  "version": "1.2.17",
+  "notes": "1.2.17：1) 选角输入入历史（带标记）——切走切回不再丢开头的选角记录，选角输入正确显示【重新生成】（重跑选角+开场）；2) 复习卡评级后忘次即时生效并显示变化（忘了 ×N→×N+1 / 记得 ×N→×N-1），界面同步刷新；3) 查词加入生词本时保存词所在句子/段落作为上下文（不再只记话题名），生词本列表直接显示来源句子；4) 朗读按钮统一样式（查词卡片/词详情/单词本一致圆形样式）",
+  "apk": "EnglishApp-v1.2.17.apk",
+  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.17/EnglishApp-v1.2.17.apk"
 }

@@ -1366,7 +1366,11 @@ const UI = {
   maybeEmbedReviewCard(text, div) {
     try {
       if (Settings.get('reviewCard', true) === false) return; // 🔴 v1.1.1：设置里可关
-      if (!this.state.wordMap.size) return;
+      if (!this.state.wordMap.size) {
+        // 🔴 v1.2.11：词表没就绪（加载失败/未完成）→ 触发重载，本次先跳过（避免永不再弹）
+        this.loadWordsSet();
+        return;
+      }
       const words = String(text || '').match(/[A-Za-z]+(?:['’-][A-Za-z]+)*/g) || [];
       // 🔴 v1.1：常用不规则动词过去式 → 原形（forgot→forget 这类 matchStem 覆盖不到）
       const IRREG = { forgot: 'forget', forgotten: 'forget', went: 'go', gone: 'go', been: 'be', was: 'be', were: 'be', did: 'do', done: 'do', had: 'have', has: 'have', made: 'make', took: 'take', taken: 'take', got: 'get', gotten: 'get', found: 'find', knew: 'know', known: 'know', saw: 'see', seen: 'see', said: 'say', told: 'tell', spoke: 'speak', spoken: 'speak', wrote: 'write', written: 'write', ate: 'eat', eaten: 'eat', came: 'come', became: 'become', ran: 'run', met: 'meet', felt: 'feel', left: 'leave', heard: 'hear', lost: 'lose', paid: 'pay', sold: 'sell', stood: 'stand', won: 'win', broke: 'break', broken: 'break', chose: 'choose', chosen: 'choose', drove: 'drive', driven: 'drive', fell: 'fall', fallen: 'fall', flew: 'fly', flown: 'fly', grew: 'grow', grown: 'grow', hid: 'hide', hidden: 'hide', meant: 'mean', rode: 'ride', ridden: 'ride', rang: 'ring', rose: 'rise', sang: 'sing', slept: 'sleep', threw: 'throw', thrown: 'throw', woke: 'wake', woken: 'wake' };
@@ -2147,7 +2151,12 @@ const UI = {
       const map = new Map();
       for (const w of list) map.set((w.word || '').toLowerCase(), w);
       this.state.wordMap = map;
-    } catch {}
+    } catch (e) {
+      // 🔴 v1.2.11：加载失败（IndexedDB 偶发错误）→ 5 秒后自动重试，否则 wordMap 永远为空，
+      //   对话/RP 里复习卡永不弹（静默失败的坑——之前失败后没有任何恢复机制）
+      console.warn('loadWordsSet 失败，5 秒后重试', e);
+      setTimeout(() => this.loadWordsSet(), 5000);
+    }
   },
   refreshWordsSet() { this.loadWordsSet(); },
   /* 🔴 v1.2.8：增强词形还原——studies→study, studied→study, running→run, making→make,

@@ -19,6 +19,7 @@ const Icons = {
   earth: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18z"/></svg>',
   user: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>',
   pen: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>',
+  house: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11.5 12 3l9 8.5"/><path d="M5 10v11h14V10"/><path d="M9.5 21v-6h5v6"/></svg>',
   };
 
 const UI = {
@@ -77,7 +78,7 @@ const UI = {
     FarmActivity.start();
     this.bindFarm();
     this.showOnboarding();   // 🔴 v1.1.1：新手指引（勾"不再提示"后永不显示）
-    this.checkUpdate(true);  // 🔴 v1.1.1：启动自动检查更新（有新版本弹窗 + 更新日志）
+    // 🔴 v1.2.1：自动检查更新移到 app.js（等原生版本号就绪后再比较，防止误报）
 
     if (!API.configured()) {
       setTimeout(() => {
@@ -142,7 +143,7 @@ const UI = {
 
   /* 静态 SVG 图标注入（tab/标题/关闭按钮） */
   injectIcons() {
-    const tabMap = { today: Icons.sprout, garden: Icons.tree, chat: Icons.chat, tavern: Icons.mug, words: Icons.book, settings: Icons.gear };
+    const tabMap = { today: Icons.sprout, garden: Icons.house, chat: Icons.chat, tavern: Icons.mug, words: Icons.book, settings: Icons.gear }; // 🔴 v1.2.1：小院 tab 图标 树→房子
     document.querySelectorAll('.tab-btn').forEach(btn => {
       const icon = tabMap[btn.dataset.tab];
       if (icon) {
@@ -230,59 +231,49 @@ const UI = {
     this.renderMonthDecor(st);
     this.renderDashboards();
   },
-  /* 今日家园大图（🔴 v1.1.1：SVG 小房子替代 canvas 作物大图——家园感）
-   * 房子随「当天积分进度」变化：门前小树 种子→发芽→长成（dayStage），旁边显示进度 */
+  /* 今日植被大图：作物成熟帧放大 + 季节草地底（🔴 v1.2.1：恢复 v1.2 之前的 canvas 版——房子 SVG 是给 tab 栏小院图标的，改错位置已还原） */
   paintTodayVeggie(st) {
-    const wrap = this.el('todayVeggieWrap');
-    if (!wrap) return;
+    const cv = this.el('todayVeggieCanvas');
+    if (!cv) return;
+    const ctx = cv.getContext('2d');
+    const C = 220;
     const now = FARM.now();
     const today = now.getDate();
     const season = FARM.seasonOf(now.getMonth() + 1);
-    const ratio = Math.min(1, ((st && st.dayPoints) || 0) / FARM.POINT_DAY_LIMIT);
-    const stage = Farm.dayStage(st);
+    ctx.clearRect(0, 0, C, C);
+    ctx.imageSmoothingEnabled = false;
+    // 季节草地底
+    const grass = Farm._imgs['grass_' + season] || null;
+    if (grass) {
+      ctx.drawImage(grass, 0, 0, 32, 32, 0, 0, C, C);
+    } else {
+      ctx.fillStyle = season === 'winter' ? '#E8EDE8' : '#9CCC65';
+      ctx.fillRect(0, 0, C, C);
+    }
+    // 今天高亮描边
+    ctx.strokeStyle = '#FAC75E';
+    ctx.lineWidth = 6;
+    ctx.strokeRect(4, 4, C - 8, C - 8);
+    // 今日作物（成熟帧 = 第三帧）
     const crop = st.planted[today];
     const nameEl = this.el('todayVeggieName');
     const subEl = this.el('todayVeggieSub');
-    const cropName = crop && FARM.CROP_DEFS[crop] ? FARM.CROP_DEFS[crop].name : FARM.CROP_DEFS[FARM.monthCrop(st.month, today)].name;
-    // 季节背景色
-    const bg = season === 'winter' ? '#E8EDE8' : season === 'summer' ? '#C9E7A8' : '#DCEFC2';
-    const grass = season === 'winter' ? '#DFE8DF' : '#8BC34A';
-    // 门前小树随生长阶段变化（0=小芽 1=小树 2=大树冠）
-    const treeR = [16, 26, 38][stage];
-    const treeC = ['#9CCC65', '#66BB6A', '#43A047'][stage];
-    const treeTrunk = stage === 0 ? '' : '<rect x="107" y="148" width="6" height="18" rx="2" fill="#8D6E63"/>';
-    const treeY = [164, 156, 146][stage];
-    wrap.innerHTML = `<svg viewBox="0 0 220 220" width="220" height="220" role="img" aria-label="今日家园">
-  <rect width="220" height="220" rx="12" fill="${bg}"/>
-  <ellipse cx="110" cy="196" rx="100" ry="26" fill="${grass}"/>
-  <!-- 房子主体 -->
-  <rect x="56" y="100" width="108" height="82" rx="5" fill="#F1ECE0" stroke="#0A5D08" stroke-width="2"/>
-  <!-- 屋顶 -->
-  <polygon points="46,102 110,48 174,102" fill="#117C0D" stroke="#0A5D08" stroke-width="2" stroke-linejoin="round"/>
-  <!-- 烟囱 -->
-  <rect x="140" y="58" width="17" height="28" rx="2" fill="#8D6E63" stroke="#0A5D08" stroke-width="1.5"/>
-  <!-- 窗户（暖黄灯） -->
-  <rect x="70" y="118" width="30" height="25" rx="3" fill="#FAC75E" stroke="#0A5D08" stroke-width="1.5"/>
-  <line x1="85" y1="118" x2="85" y2="143" stroke="#0A5D08" stroke-width="1.5"/>
-  <line x1="70" y1="130.5" x2="100" y2="130.5" stroke="#0A5D08" stroke-width="1.5"/>
-  <!-- 门 -->
-  <path d="M 118 182 v -25 a 13 13 0 0 1 26 0 v 25 z" fill="#8D6E63" stroke="#0A5D08" stroke-width="1.5"/>
-  <circle cx="139" cy="162" r="2" fill="#FAC75E"/>
-  <!-- 门前小树（随积分进度生长） -->
-  ${treeTrunk}
-  <circle cx="110" cy="${treeY}" r="${treeR}" fill="${treeC}" stroke="#0A5D08" stroke-width="1.5"/>
-  <circle cx="${110 - treeR * 0.4}" cy="${treeY - treeR * 0.3}" r="${treeR * 0.55}" fill="${treeC}" opacity="0.85"/>
-  <!-- 高亮框 -->
-  <rect x="4" y="4" width="212" height="212" rx="14" fill="none" stroke="#FAC75E" stroke-width="6"/>
-</svg>`;
-    if (nameEl) nameEl.textContent = cropName;
-    if (subEl) {
-      if (crop) {
-        const stageNames = ['种子 · 再学学就发芽', '发芽 · 学过半就长成', '长成 · 今天学满了！'];
-        subEl.textContent = '今日已种下 · 积分进度 ' + Math.round(ratio * 100) + '%（' + stageNames[stage] + '）';
-      } else {
-        subEl.textContent = '今天还没学习——学一点就种下';
-      }
+    if (crop && Farm._imgs.crops && FARM.CROP_DEFS[crop]) {
+      const def = FARM.CROP_DEFS[crop];
+      const sx = def.x * 96 + 64; // 成熟帧
+      const size = 190;
+      ctx.drawImage(Farm._imgs.crops, sx, 0, 32, 32, (C - size) / 2, (C - size) / 2, size, size);
+      nameEl.textContent = def.name;
+      subEl.textContent = '今日已种下 · 学习就能收获';
+    } else {
+      // 未学习：画一个小种子 + 提示
+      nameEl.textContent = FARM.CROP_DEFS[FARM.monthCrop(st.month, today)].name;
+      subEl.textContent = '今天还没学习——学一点就种下';
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.font = 'bold 15px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('待播种', C / 2, C / 2 + 5);
+      ctx.textAlign = 'left';
     }
   },
   /* 本月限定装饰：当月 sprite + 名称 + 已购标记 */

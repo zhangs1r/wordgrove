@@ -37,7 +37,7 @@
     <!-- 今日植被大图（v0.35 替代丑月历格子） -->
     <div class="today-veggie">
       <div class="today-veggie-frame">
-        <div id="todayVeggieWrap" class="today-veggie-wrap"><!-- 🔴 v1.1.1：SVG 小房子（替代 canvas 作物大图） --></div>
+        <canvas id="todayVeggieCanvas" width="220" height="220"></canvas>
         <div class="today-veggie-name" id="todayVeggieName">—</div>
         <div class="today-veggie-sub" id="todayVeggieSub"></div>
       </div>
@@ -279,7 +279,7 @@
       <button id="importBtn" class="btn btn-ghost">导入数据</button>
       <input id="importFile" type="file" accept=".json" class="hidden">
     </div>
-    <p class="footnote">数据全在本地 · 自用版本 · <span id="versionLabel">v0.31</span></p>
+    <p class="footnote">数据全在本地 · 自用版本 · <span id="versionLabel">v1.2</span></p>
   </section>
 
 </main>

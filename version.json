@@ -1,6 +1,6 @@
 {
-  "version": "1.2",
-  "notes": "1.2：查词升级（带整句语境识别固定搭配、老师式讲解：语境用法/词族/举一反三/记忆提示，例句难度匹配你的英语水平）；设置新增英语水平档位（CET4/6/考研/雅思/托福/自如，对话/剧场/查词都按此调词汇难度）；对话内嵌复习卡可开关；修复RP话题记录被普通对话覆盖的bug（退出RP残留会话id）；RP话题命名去重（同世界卡多次开自动加序号）；今日页SVG小房子（门前小树随当天积分进度生长）；植物生长改为当天积分进度驱动（学得多长得快）；新手指引（可勾不再提示）；启动自动检查更新（弹窗显示更新日志+下载）",
-  "apk": "EnglishApp-v1.2.apk",
-  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2/EnglishApp-v1.2.apk"
+  "version": "1.2.1",
+  "notes": "1.2.1 修复：1) 新手指引弹窗居中（原左下角窄条）；2) 修复启动检查更新误报——版本号读取顺序问题（之前读到 HTML 初始版本号导致明明最新却提示更新）；3) 小院 tab 图标改为房子 SVG（今日页植被大图已还原为原样）；4) 自动检查更新等原生版本号就绪后再比较",
+  "apk": "EnglishApp-v1.2.1.apk",
+  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.1/EnglishApp-v1.2.1.apk"
 }

@@ -3,22 +3,29 @@ document.addEventListener('DOMContentLoaded', () => {
   TTS.init();
   API.loadConfig();
   UI.init();
-  initVersion();
+  // 🔴 v1.2.1：等原生版本号就绪再自动检查更新（否则读 HTML 初始版本号误报"有新版本"）
+  initVersion().then(() => UI.checkUpdate(true));
 
   // 复盘按钮
   document.getElementById('chatReviewBtn').addEventListener('click', () => UI.startReview());
 });
 
-/* 设置页版本号：从原生 app 信息读取，跟随 build.gradle 自动更新 */
+/* 设置页版本号：从原生 app 信息读取，跟随 build.gradle 自动更新
+   🔴 v1.2.1：返回 Promise——checkUpdate 必须等版本号就绪再比较（否则读到 HTML 初始值会误报更新） */
 function initVersion() {
-  try {
-    if (window.Capacitor?.Plugins?.App) {
-      window.Capacitor.Plugins.App.getInfo().then(info => {
-        const label = document.getElementById('versionLabel');
-        if (label && info && info.version) label.textContent = 'v' + info.version;
-      }).catch(() => {});
-    }
-  } catch {}
+  return new Promise((resolve) => {
+    try {
+      if (window.Capacitor?.Plugins?.App) {
+        window.Capacitor.Plugins.App.getInfo().then(info => {
+          const label = document.getElementById('versionLabel');
+          if (label && info && info.version) label.textContent = 'v' + info.version;
+          resolve();
+        }).catch(() => resolve());
+        return;
+      }
+    } catch {}
+    resolve();
+  });
 }
 
 /* Android 键盘弹起/收起后布局恢复（WebView 视口高度 bug 兜底） */

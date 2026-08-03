@@ -1378,7 +1378,8 @@ const UI = {
       const seen = new Set();
       div.querySelectorAll('.tap-word.hl').forEach(el => {
         if (added >= 3) return; // 🔴 v1.2.3：每条消息最多入队 3 个，防排队轰炸
-        const raw = (el.dataset.w || '').toLowerCase();
+        // 🔴 v1.2.14：与高亮一致剥离词尾撇号（Carnival's → carnival）
+        const raw = (el.dataset.w || '').toLowerCase().replace(/['’]s$/, '').replace(/['’]$/, '');
         if (!raw || seen.has(raw)) return;
         seen.add(raw);
         // 词库原词优先，词形变形（running→run）用 stemCands 兜底找原形
@@ -1408,12 +1409,18 @@ const UI = {
     if (this.state.reviewActive) return;
     if (!this.state.reviewQueue.length) return;
     const item = this.state.reviewQueue.shift();
-    // 触发消息已被移除（切会话/回滚等）→ 跳过继续下一张
+    // 🔴 v1.2.14：触发消息 div 被移除（切会话/回滚/DOM 重建）时不再静默跳过——
+    //   卡片挂到对话区末尾继续弹（否则队列里的词永远不出现，用户"点知道后没后续"）
+    if (!item.div || !item.div.isConnected) {
+      const area = this.el('chatArea');
+      if (area) item.div = area; // 挂到对话区末尾
+      else { this.pumpReviewQueue(); return; }
+    }
     // 🔴 v1.2.4：用 item.word 查 wordMap（之前用 item.id 永远匹配不上 → 卡片全被跳过，普通/RP 都不弹）
     // 🔴 v1.2.12：🔴 大小写实锤——wordMap 的 key 是小写，item.word 是词库原词；
     //   首字母大写的词（如 "Clipboard"）has() 永远 false → 卡片被静默跳过！
     //   高亮（renderMsgText）用 lower 匹配所以正常，弹卡却用原词查 → 高亮正常但卡片不弹
-    if (!item.div || !item.div.isConnected || !this.state.wordMap.has(String(item.word).toLowerCase())) {
+    if (!this.state.wordMap.has(String(item.word).toLowerCase())) {
       this.pumpReviewQueue();
       return;
     }
@@ -2185,7 +2192,9 @@ const UI = {
     const parts = String(text || '').split(/([A-Za-z]+(?:['’-][A-Za-z]+)*)/);
     return parts.map(part => {
       if (part && /^[A-Za-z]/.test(part)) {
-        const lower = part.toLowerCase();
+        // 🔴 v1.2.14：匹配前剥离词尾撇号（Carnival's → carnival / don't 保留词干），
+        //   否则带撇号的词高亮不上、弹卡也没有
+        const lower = part.toLowerCase().replace(/['’]s$/, '').replace(/['’]$/, '');
         const hit = set.has(lower) || this.matchStem(lower, set);
         return `<span class="tap-word${hit ? ' hl' : ''}" data-w="${this.esc(part)}">${this.esc(part)}</span>`;
       }

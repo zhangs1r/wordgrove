@@ -1,6 +1,6 @@
 {
-  "version": "1.2.13",
-  "notes": "1.2.13：复习卡机制按你的思路重构——弹卡直接复用高亮结果：消息里高亮出来的生词本词就是弹卡候选（高亮什么就弹什么），大小写/词形/不规则匹配与高亮完全一致，从根上杜绝【高亮正常但卡片不弹】；每消息最多 3 个，看完一张点知道了再下一张",
-  "apk": "EnglishApp-v1.2.13.apk",
-  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.13/EnglishApp-v1.2.13.apk"
+  "version": "1.2.14",
+  "notes": "1.2.14：1) 修复带撇号的词（Carnival's 这类）高亮不上也不弹卡——匹配前剥离词尾撇号，与词库一致；2) 点【知道了】后如果下一条触发消息的界面被重建，卡片不再静默跳过，改为挂到对话末尾继续弹；3)【知道了】按钮改回正常大小（之前 flex 撑满整行显得巨大）",
+  "apk": "EnglishApp-v1.2.14.apk",
+  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.14/EnglishApp-v1.2.14.apk"
 }

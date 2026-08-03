@@ -713,6 +713,8 @@ body {
 .rc-blur { background: #B8860B; }
 .rc-ok { background: var(--primary, #117C0D); }
 .rc-done { flex: 1; text-align: center; font-size: 13px; font-weight: 600; color: var(--primary, #117C0D); padding: 4px 0; }
+/* 🔴 v1.2.14："知道了"按钮正常大小（原来 flex:1 单独一个时撑满整行） */
+.rc-know { flex: 0 0 auto; padding: 7px 24px; border-radius: 10px; font-size: 13px; }
 @media (prefers-color-scheme: dark) {
   .review-card { border-color: #43A047; background: #1D251A; }
   .rc-body { border-top-color: rgba(255, 255, 255, 0.15); }

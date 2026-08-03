@@ -786,5 +786,8 @@ body {
   .app-header { width: 100%; max-width: 430px; margin: 0 auto; }
   #main { width: 100%; max-width: 430px; margin: 0 auto; }
   .tab-bar { left: 50%; right: auto; width: 430px; transform: translateX(-50%); border-radius: 16px 16px 0 0; }
+  /* 🔴 v1.2.27：modal 面板（新手指引/查词/更新弹窗等）桌面也限 430px 居中——
+     原来 left:0 right:0 全宽拉伸；用 margin auto 居中（不能用 transform，会和面板 pageIn 动画冲突） */
+  .modal-panel { left: 0; right: 0; margin: 0 auto; width: 430px; }
   @media (prefers-color-scheme: dark) { body { background: #16181C; } }
 }

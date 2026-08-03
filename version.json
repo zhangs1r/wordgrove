@@ -1,6 +1,6 @@
 {
-  "version": "1.2.22",
-  "notes": "1.2.22：网页版桌面适配——电脑宽屏打开 https://zhangs1r.github.io/wordgrove/ 时内容居中单栏（宽 780px），背景区分；手机浏览器打开与 App 完全一致；手机可添加到主屏幕（PWA）",
-  "apk": "EnglishApp-v1.2.22.apk",
-  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.22/EnglishApp-v1.2.22.apk"
+  "version": "1.2.23",
+  "notes": "1.2.23：网页版电脑端布局修正——和手机同样大小（430px 宽居中），不再拉宽成横屏样式；手机与电脑比例一致",
+  "apk": "EnglishApp-v1.2.23.apk",
+  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.23/EnglishApp-v1.2.23.apk"
 }

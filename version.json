@@ -1,6 +1,6 @@
 {
-  "version": "1.2.5",
-  "notes": "1.2.5：1) 修复复习卡完全不弹的 bug——队列用错 key（拿 id 查单词表）导致所有卡片被跳过；2) RP 台词纠正卡——按你的意见恢复思考模式（质量优先），输出额度调大到 2000，解析时只取输出结果过滤思考链，输出为空时从思考链兜底提取；3) 角色标签改为标题下方单独一行，只显示【扮演 XX】",
-  "apk": "EnglishApp-v1.2.5.apk",
-  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.5/EnglishApp-v1.2.5.apk"
+  "version": "1.2.6",
+  "notes": "1.2.6：修复更新版本后积分/植物丢失——积分状态加了双保险：每次写入同时备份到本地存储，加载时 IndexedDB 读不到会自动从备份恢复；之后更新版本不会再丢今天的积分和植物",
+  "apk": "EnglishApp-v1.2.6.apk",
+  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.6/EnglishApp-v1.2.6.apk"
 }

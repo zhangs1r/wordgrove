@@ -113,7 +113,9 @@ const Farm = {
     const now = FARM.now();
     if (!this._state) {
       const s = await this.txGet('garden');
-      this._state = s || this.defaultState();
+      // 🔴 v1.2.6：IndexedDB 读不到 → 从 localStorage 备份恢复（防更新后数据丢失），再没有才新建
+      this._state = s || this._fromBackup() || this.defaultState();
+      if (!s && this._fromBackup()) { try { await this.txPut('garden', this._state); } catch (e) {} }
       this._state.dayCounts = this._state.dayCounts || {}; // 🔴 v1.1 旧数据迁移
       this._migrateDecor(this._state);
     }
@@ -179,7 +181,23 @@ const Farm = {
   newDecorId() {
     return 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   },
-  async save() { await this.txPut('garden', this._state); },
+  /* ============ 持久化（🔴 v1.2.6：双保险——IndexedDB + localStorage 备份）
+   * 现象：用户每次更新版本后"今天获取的积分和植物"消失——IndexedDB 数据在覆盖安装/WebView
+   * 清理时可能丢失或读失败，load() 读到 null 会用 defaultState 覆盖写，数据永久丢失。
+   * 修复：每次 save() 同步写一份到 localStorage('farm_backup')；load() 读 IndexedDB 失败/为 null
+   * 时自动从备份恢复并写回 IndexedDB；_addPointsTx 读不到 garden 记录时用内存缓存/备份兜底，不再直接覆盖。 */
+  async save() {
+    await this.txPut('garden', this._state);
+    try { localStorage.setItem('farm_backup', JSON.stringify(this._state)); } catch (e) {}
+  },
+  _fromBackup() {
+    try {
+      const raw = localStorage.getItem('farm_backup');
+      if (!raw) return null;
+      const s = JSON.parse(raw);
+      return (s && s.id === 'garden') ? s : null;
+    } catch { return null; }
+  },
   async txGet(id) {
     const d = await db();
     return new Promise((resolve, reject) => {
@@ -229,6 +247,8 @@ const Farm = {
             let st = reqS.result;
             const now = FARM.now();
             const today = FARM.dayKey(now);
+            // 🔴 v1.2.6：garden 记录读不到 → 内存缓存/备份兜底，绝不直接 defaultState 覆盖（防丢积分）
+            if (!st) st = Farm._state || this._fromBackup() || this.defaultState();
             // 跨月封存（统一 sealState）
             if (st && !st.sealed && (st.year !== now.getFullYear() || st.month !== now.getMonth() + 1)) {
               st = this.sealState(st);
@@ -255,6 +275,7 @@ const Farm = {
             if (newStage !== st.stage) st.stage = newStage;
             store.put(st);
             Farm._state = st; // 同步内存缓存
+            try { localStorage.setItem('farm_backup', JSON.stringify(st)); } catch (e) {} // 🔴 v1.2.6：事务内同步备份
             store.put({ id: evId, source, key, pts: p, at: Date.now() });
             resolve({ pts: p, stage: st.stage, planted: st.planted[dayNum] || null });
           };

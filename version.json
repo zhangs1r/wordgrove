@@ -1,6 +1,6 @@
 {
-  "version": "1.2.14",
-  "notes": "1.2.14：1) 修复带撇号的词（Carnival's 这类）高亮不上也不弹卡——匹配前剥离词尾撇号，与词库一致；2) 点【知道了】后如果下一条触发消息的界面被重建，卡片不再静默跳过，改为挂到对话末尾继续弹；3)【知道了】按钮改回正常大小（之前 flex 撑满整行显得巨大）",
-  "apk": "EnglishApp-v1.2.14.apk",
-  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.14/EnglishApp-v1.2.14.apk"
+  "version": "1.2.15",
+  "notes": "1.2.15：修复回滚/重新生成机制——1) 角色扮演里最新一条输入现在正确显示【重新生成】按钮（之前显示成回滚，因为用户消息渲染时还没入历史，判定错位）；2) 修复选选项后只显示继续按钮的幽灵回合（网络中断导致响应为空时不再静默渲染，提示重新生成）；3) 回滚后提示下一步操作",
+  "apk": "EnglishApp-v1.2.15.apk",
+  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.15/EnglishApp-v1.2.15.apk"
 }

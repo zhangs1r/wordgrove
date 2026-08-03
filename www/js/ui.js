@@ -2324,7 +2324,9 @@ const UI = {
     }
     this.saveChatState();
     this.renderChatHistory();
-    this.toast('已回滚到这条之前');
+    // 🔴 v1.2.15：回滚后提示下一步（选项可能随被删回合丢失，只剩继续/自己输入）
+    if (this.state.rpMode) this.toast('已回滚——可输入新内容，或点"继续"让故事推进');
+    else this.toast('已回滚到这条之前');
   },
   /* 重新生成：删除最后一条 AI 回复（RP 删整个最后一轮），重新生成（失败恢复，不丢记录） */
   async regenerateMsg() {
@@ -2801,6 +2803,12 @@ const UI = {
     await Agent.refreshForgetWords().catch(() => {});
     let userMsg = text;
     let userDiv = null;
+    // 🔴 v1.2.15：user 消息先入历史再渲染——否则渲染时"最后一条 user"判定
+    //   不包含本条 → 最新输入显示成"回滚"而不是"重新生成"（普通对话是先 push 的，RP 漏了）
+    //   continue 不入历史（不污染上下文/积分轮次计数）
+    //   中文输入：先 push 原始中文（按钮判定正确），翻译完成后把历史条目更新为英文（重生成直接重跑英文）
+    let histIdx = -1;
+    if (!isContinueInput) histIdx = this.state.rpHistory.push({ role: 'user', content: userMsg }) - 1;
     try {
       // 中文 → 翻译（全英语规则）
       if (/[\u4e00-\u9fa5]/.test(text)) {
@@ -2814,6 +2822,7 @@ const UI = {
           } else {
             userDiv = this.appendMsg('user', '（中文）' + text + '\n→ ' + en);
             userMsg = en;
+            if (histIdx >= 0) this.state.rpHistory[histIdx].content = en; // 历史同步为实际输入
           }
         } catch {
           tip.remove();
@@ -2823,9 +2832,6 @@ const UI = {
       } else {
         userDiv = this.appendMsg('user', text);
       }
-      // 🔴 v1.1：user 消息先入历史再渲染（重生成按钮的"最后一条 user"判定才正确），
-      //          continue 不入历史（不污染上下文/积分轮次计数）
-      if (!isContinueInput) this.state.rpHistory.push({ role: 'user', content: userMsg });
       await this.rpRound(userMsg, { pushed: true });
       // 🔴 v1.2.2：RP 台词检查（语法/表达/角色契合）——异步出纠正卡，不阻塞剧情
       // 🔴 v1.2.3：触发条件放宽到 ≥3 个英文词（之前 4 词有些短句不查）
@@ -2853,6 +2859,11 @@ const UI = {
         results.push(r);
       }
       const beat = await Agent.rpDirect(w, chars, this.state.rpHistory, isContinue ? '' : userMsg, results);
+      // 🔴 v1.2.15：空 beat 校验——切 App/网络中断导致响应截断时 rpDirect 会兜底出空内容，
+      //   直接渲染会出现"只有继续按钮、没有旁白和对话"的幽灵回合；视为失败抛错，用户可 ↻ 重新生成
+      if (!beat || (!beat.narration && !(beat.dialogue || []).length)) {
+        throw new Error('这轮生成内容为空（可能是网络中断导致响应不完整），请点 ↻ 重新生成');
+      }
       typing.remove();
       const nv = Settings.get('narratorVoice', 'f');
       // 🔴 v1.1：每轮先清掉历史里所有旧 options（导演这轮没给选项时，不能残留上一轮的过期选项）

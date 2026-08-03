@@ -1,6 +1,6 @@
 {
-  "version": "1.2.32",
-  "notes": "1.2.32：单词查词提速三件套——① 查词/句子翻译/中文求助改用 medium 推理档位（原来默认 high，思考链过长；对话/剧场保持 high 保质量）；② 单词讲解本地缓存（LRU 300 条，同一词再次点秒出）；③ 查词超时 90s→25s、翻译 20s（不干等）；400 参数错误自动去掉 reasoning_effort 重试（兼容性兜底）",
-  "apk": "EnglishApp-v1.2.32.apk",
-  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.32/EnglishApp-v1.2.32.apk"
+  "version": "1.2.33",
+  "notes": "1.2.33：撤销查词/翻译的 25s/20s 短超时，恢复默认 90s（用户拍板：超时收紧就算了，还是 90 秒）——medium 推理档位和单词本地缓存保留",
+  "apk": "EnglishApp-v1.2.33.apk",
+  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.33/EnglishApp-v1.2.33.apk"
 }

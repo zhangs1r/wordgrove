@@ -3162,6 +3162,11 @@ const UI = {
      🔴 v1.1.1：auto=true（启动自动检查）→ 有新版本弹 updateModal 显示更新日志 + 确认下载；
                 auto=false（设置页手动）→ 保持内联显示 */
   async checkUpdate(auto) {
+    // 🔴 v1.2.25：网页版没有"安装更新"概念——提示刷新即可（App 端 auto 已跳过，这里管手动按钮）
+    if (!window.Capacitor) {
+      if (!auto) this.toast('网页版随代码自动部署——刷新页面即可获取最新版');
+      return;
+    }
     const cur = (this.el('versionLabel').textContent || '').replace(/^v/, '');
     const fetchLatest = async () => {
       try {

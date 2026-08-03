@@ -1,6 +1,6 @@
 {
-  "version": "1.2.24",
-  "notes": "1.2.24：1) 网页版电脑端顶部栏宽度修复——header 之前只有内容宽度（比主体短一截、标题月亮挤中间），现在撑满 430px；2) 深色模式跟随系统——默认随电脑/手机系统深浅色自动切换（原来强制浅色覆盖了系统深色）；设置-外观可开关跟随系统，关闭后可用右上角月/日按钮手动固定",
-  "apk": "EnglishApp-v1.2.24.apk",
-  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.24/EnglishApp-v1.2.24.apk"
+  "version": "1.2.25",
+  "notes": "1.2.25：设置页显示完整版本号——App 显示原生版本（v1.2.25），网页版显示部署时版本，两边对照即可知道是否同步；网页版【检查版本更新】按钮改为提示刷新页面（网页版随代码自动部署）",
+  "apk": "EnglishApp-v1.2.25.apk",
+  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.25/EnglishApp-v1.2.25.apk"
 }

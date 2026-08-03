@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 240" width="900" height="240" role="img" aria-label="WordGrove 言木 banner">
+  <rect width="900" height="240" fill="#F1ECE0"/>
+  <!-- 背景装饰 -->
+  <circle cx="790" cy="52" r="100" fill="#FAC75E" opacity="0.35"/>
+  <circle cx="70" cy="210" r="70" fill="#117C0D" opacity="0.08"/>
+  <!-- 树（品牌：从书里长出的树） -->
+  <rect x="60" y="130" width="14" height="16" rx="3" fill="#6D4C41"/>
+  <rect x="64" y="146" width="6" height="52" rx="3" fill="#6D4C41"/>
+  <circle cx="67" cy="108" r="40" fill="#117C0D"/>
+  <circle cx="38" cy="126" r="28" fill="#2E9E2A"/>
+  <circle cx="96" cy="126" r="28" fill="#2E9E2A"/>
+  <circle cx="67" cy="84" r="26" fill="#43A047"/>
+  <!-- 光点 -->
+  <circle cx="56" cy="100" r="5" fill="#FAC75E"/>
+  <circle cx="82" cy="118" r="4" fill="#FAC75E"/>
+  <circle cx="74" cy="92" r="3" fill="#FFF8E1"/>
+  <!-- 标题 -->
+  <text x="150" y="128" font-family="Georgia, 'Times New Roman', serif" font-size="76" font-weight="700" fill="#262B24">WordGrove</text>
+  <text x="156" y="174" font-family="'Noto Serif SC', 'PingFang SC', 'Microsoft YaHei', serif" font-size="32" font-weight="600" fill="#117C0D">言木 · 在对话的森林里长单词</text>
+  <text x="158" y="206" font-family="'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="16" fill="#8A8A80">AI 口语陪练 · 角色扮演 · 对话内嵌复习卡 · 老师式查词 · 积分小院</text>
+  <!-- 版本角标 -->
+  <text x="830" y="226" font-family="monospace" font-size="14" fill="#8A8A80" text-anchor="end">v1.2 · MIT</text>
+</svg>

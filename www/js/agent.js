@@ -268,7 +268,7 @@ ${this.forgetLine()}
 如果表达没问题，返回：{"needFix":false}
 要求：better 要贴合对话上下文语境，口语化地道。只输出 JSON，不要其他内容。` },
         { role: 'user', content: ctx },
-      ], { model, maxTokens: 300 });
+      ], { model, maxTokens: 600 }); // 🔴 v1.2.3：300 太少——思考模式会先输出思考再输出 JSON，截断导致 parse 失败 → 卡片永不出现
       const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
       const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
       return j && j.needFix ? j : null;
@@ -277,7 +277,8 @@ ${this.forgetLine()}
     }
   },
 
-  /* 🔴 v1.2.2：RP 台词检查——语法/表达 + 是否符合扮演角色的身份/语气（出纠正小卡片） */
+  /* 🔴 v1.2.2：RP 台词检查——语法/表达 + 是否符合扮演角色的身份/语气（出纠正小卡片）
+     🔴 v1.2.3：maxTokens 600（思考模式截断问题）；提示词降低漏报阈值——学习者在练习，有任何不准确都要指出 */
   async suggestRp(line, world, player, history) {
     const model = Settings.get('chatModel', 'deepseek-v4-flash');
     const w = world || {};
@@ -286,15 +287,16 @@ ${this.forgetLine()}
     try {
       const resp = await API.chat([
         { role: 'system', content: `你是英语口语教练 + 表演指导。学习者在角色扮演中扮演「${p.name || '主角'}」（身份：${p.persona || '未知'}），世界：${w.name || ''}（${w.setting || ''}）。
-检查他最新这句英文台词，从两个维度：
-1) 语法/表达是否准确地道（有错误/不地道就给更自然的说法）
-2) 是否符合他扮演角色的身份/语气/时代背景（像现代人说出古代人的话、或语气完全不符合人设，要指出来）
-如果明显有问题，返回 JSON：
-{"needFix":true,"better":"更地道且符合角色的英文说法","reason":"一句话中文解释哪里不对、为什么这样更好"}
-如果没问题，返回：{"needFix":false}
+他是在练习英语，所以只要他的台词有任何问题都要指出来：
+1) 语法错误（时态/主谓一致/介词/冠词等）
+2) 表达不地道（中式英语/生硬/用词不当）
+3) 不符合角色身份（语气/用词/时代背景违和，比如古代角色说出现代俚语）
+发现任何一条就返回 JSON：
+{"needFix":true,"better":"更地道且符合角色的英文说法（完整一句，不要省略号）","reason":"一句话中文解释哪里不对、为什么这样更好"}
+完全没问题才返回：{"needFix":false}
 要求：better 口语化、贴合剧情语境。只输出 JSON，不要其他内容。` },
         { role: 'user', content: '最近剧情：\n' + ctx + '\n\n学习者的台词：' + line },
-      ], { model, maxTokens: 300 });
+      ], { model, maxTokens: 600 });
       const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
       const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
       return j && j.needFix ? j : null;

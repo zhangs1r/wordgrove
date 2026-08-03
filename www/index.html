@@ -103,7 +103,11 @@
   <section id="tab-chat" class="tab-page">
     <div class="conv-bar">
       <button id="convListBtn" class="icon-btn-sm" title="会话历史">☰</button>
+    <div class="chat-title-row">
       <span id="convTitle" class="conv-title">新会话</span>
+      <!-- 🔴 v1.2.3：角色标签绑定会话标题（只在该绘画/会话下显示，切走就消失） -->
+      <span id="rpRoleTag" class="rp-role-tag hidden"></span>
+    </div>
       <button id="convNewBtn" class="icon-btn-sm" title="新会话">＋</button>
     </div>
     <div id="chatArea" class="chat-area">
@@ -118,8 +122,6 @@
       <button id="chatSendBtn" class="btn btn-primary btn-round">➤</button>
     </div>
     <div id="reviewPanel" class="review-panel hidden"></div>
-    <!-- 🔴 v1.2.2：RP 当前扮演角色标签 -->
-    <div id="rpRoleTag" class="rp-role-tag hidden"></div>
   </section>
 
   <!-- ======== 笔记本（单词 + 句子） ======== -->

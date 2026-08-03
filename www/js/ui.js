@@ -54,7 +54,10 @@ const UI = {
     rpPendingRoles: [],
     rpActiveChars: [],
     wordMap: new Map(),       // 🔴 v1.1：word 小写 → 完整对象（对话内嵌复习卡用）
-    reviewedThisConv: new Set(), // 🔴 v1.1：本会话已弹过卡的词（防骚扰：同一词只弹一次）
+    // 🔴 v1.2.3：复习卡队列——多个待复习词按顺序一张张展示（评级→看释义→点"知道了"→下一张）
+    reviewQueue: [],
+    reviewActive: false,
+    reviewShown: new Map(),   // 本会话每词已展示次数（同一词最多 2 次）
   },
 
   init() {
@@ -986,7 +989,8 @@ const UI = {
     this.state.convTitle = '';
     this.state.chatHistory = [];
     this.state.autoTurn = 0;
-    this.state.reviewedThisConv = new Set(); // 🔴 v1.1.1：新会话可重新弹卡（每会话每词一次）
+    this.resetReviewQueue(); // 🔴 v1.2.3：新会话重置复习卡队列
+    this.updateRpRoleTag(); // 🔴 v1.2.3：新建普通会话 → 隐藏角色标签
     this.renderConvTitle();
     this.renderChatHistory();
     this.el('reviewPanel').classList.add('hidden');
@@ -1058,7 +1062,8 @@ const UI = {
     this.state.convTitle = conv.title || '';
     this.state.chatHistory = conv.history || [];
     this.state.autoTurn = 0;
-    this.state.reviewedThisConv = new Set(); // 🔴 v1.1.1：切会话重置复习卡去重
+    this.resetReviewQueue(); // 🔴 v1.2.3：切会话重置复习卡队列
+    this.updateRpRoleTag(); // 🔴 v1.2.3：切到普通会话 → 隐藏角色标签（标签绑定绘画标题）
     this.renderConvTitle();
     this.renderChatHistory();
     this.closeConvModal();
@@ -1139,7 +1144,7 @@ const UI = {
           this.state.rpRoster = {};
           this.state.rpActiveChars = [];
           this.state.rpStep = '';
-          this.state.reviewedThisConv = new Set();
+          this.resetReviewQueue(); // 🔴 v1.2.3
           this.renderConvTitle();
           this.renderChatHistory();
         }
@@ -1330,20 +1335,22 @@ const UI = {
     return div;
   },
 
-  /* ============ 🔴 v1.1 对话内嵌复习卡 ============
-   * AI 回复中出现生词本里"该复习"的词（SRS 到期或从未复习过）→ 消息下方弹小卡
-   * 防骚扰：每轮最多 2 张；同一词本会话只弹一次；不显示释义（先回忆），评级后展开释义巩固 */
+  /* ============ 🔴 v1.1 对话内嵌复习卡（🔴 v1.2.3 队列模式） ============
+   * AI 回复中出现生词本里"该复习"的词 → 入队，按顺序一张一张展示：
+   * 评级（忘了/模糊/记得）→ 展开释义 → 点"知道了" → 下一张；全部看完自动关闭
+   * 同一会话内同一词最多展示 2 次（第二次出现也可以再弹，再往后防轰炸）；队列内去重 */
   maybeEmbedReviewCard(text, div) {
     try {
       if (Settings.get('reviewCard', true) === false) return; // 🔴 v1.1.1：设置里可关
       if (!this.state.wordMap.size) return;
       const set = new Set(this.state.wordMap.keys());
       const words = String(text || '').match(/[A-Za-z]+(?:['’-][A-Za-z]+)*/g) || [];
-      const due = [];
-      const seen = new Set();
       // 🔴 v1.1：常用不规则动词过去式 → 原形（forgot→forget 这类 matchStem 覆盖不到）
       const IRREG = { forgot: 'forget', forgotten: 'forget', went: 'go', gone: 'go', been: 'be', was: 'be', were: 'be', did: 'do', done: 'do', had: 'have', has: 'have', made: 'make', took: 'take', taken: 'take', got: 'get', gotten: 'get', found: 'find', knew: 'know', known: 'know', saw: 'see', seen: 'see', said: 'say', told: 'tell', spoke: 'speak', spoken: 'speak', wrote: 'write', written: 'write', ate: 'eat', eaten: 'eat', came: 'come', became: 'become', ran: 'run', met: 'meet', felt: 'feel', left: 'leave', heard: 'hear', lost: 'lose', paid: 'pay', sold: 'sell', stood: 'stand', won: 'win', broke: 'break', broken: 'break', chose: 'choose', chosen: 'choose', drove: 'drive', driven: 'drive', fell: 'fall', fallen: 'fall', flew: 'fly', flown: 'fly', grew: 'grow', grown: 'grow', hid: 'hide', hidden: 'hide', meant: 'mean', rode: 'ride', ridden: 'ride', rang: 'ring', rose: 'rise', sang: 'sing', slept: 'sleep', threw: 'throw', thrown: 'throw', woke: 'wake', woken: 'wake' };
+      const seen = new Set();
+      let added = 0;
       for (const raw of words) {
+        if (added >= 3) break; // 🔴 v1.2.3：每条消息最多入队 3 个，防排队轰炸
         const lower = raw.toLowerCase();
         if (seen.has(lower)) continue;
         seen.add(lower);
@@ -1355,25 +1362,43 @@ const UI = {
         }
         if (!w && IRREG[lower]) w = this.state.wordMap.get(IRREG[lower]) || null;
         if (!w) continue;
-        // 该复习：到期（含从未复习过 reps=0）且本会话没弹过
-        if (this.state.reviewedThisConv.has(w.id)) continue;
+        // 该复习：到期（含从未复习过 reps=0）；队列内去重；本会话最多 2 次
         const dueTime = w.srs && w.srs.due ? w.srs.due : 0;
         if (dueTime > Date.now()) continue;
-        due.push(w);
-        if (due.length >= 2) break;
+        if (this.state.reviewQueue.some(q => q.id === w.id)) continue;
+        if ((this.state.reviewShown.get(w.id) || 0) >= 2) continue;
+        this.state.reviewQueue.push({ id: w.id, div });
+        added++;
       }
-      for (const w of due) {
-        this.state.reviewedThisConv.add(w.id);
-        this.renderReviewCard(div, w);
-      }
+      this.pumpReviewQueue();
     } catch (e) { /* 弹卡失败不影响对话 */ }
+  },
+  /* 🔴 v1.2.3：切会话/新会话/退出 RP 时重置复习卡队列（旧卡片/队列不带到新会话） */
+  resetReviewQueue() {
+    this.state.reviewQueue = [];
+    this.state.reviewActive = false;
+    this.state.reviewShown = new Map();
+  },
+  /* 🔴 v1.2.3：按顺序弹卡——同一时间只展示一张，看完（评级+知道了）再下一张 */
+  pumpReviewQueue() {
+    if (this.state.reviewActive) return;
+    if (!this.state.reviewQueue.length) return;
+    const item = this.state.reviewQueue.shift();
+    // 触发消息已被移除（切会话/回滚等）→ 跳过继续下一张
+    if (!item.div || !item.div.isConnected || !this.state.wordMap.has(item.id)) {
+      this.pumpReviewQueue();
+      return;
+    }
+    this.state.reviewActive = true;
+    this.renderReviewCard(item.div, this.state.wordMap.get(item.id));
   },
   renderReviewCard(anchor, w) {
     const card = document.createElement('div');
     card.className = 'review-card';
     card.dataset.wid = w.id;
+    const remain = this.state.reviewQueue.length;
     card.innerHTML = `
-      <div class="rc-head"><span class="rc-word">${this.esc(w.word)}</span>${w.phonetic ? `<span class="rc-phonetic">${this.esc(w.phonetic)}</span>` : ''}<span class="rc-tip">这个词还记得吗？</span></div>
+      <div class="rc-head"><span class="rc-word">${this.esc(w.word)}</span>${w.phonetic ? `<span class="rc-phonetic">${this.esc(w.phonetic)}</span>` : ''}<span class="rc-tip">${remain ? `还有 ${remain} 张 · ` : ''}这个词还记得吗？</span></div>
       <div class="rc-body hidden"><div class="rc-meaning">${this.esc(w.meaning || '')}</div>${w.example ? `<div class="rc-example">${this.esc(w.example)}</div>` : ''}</div>
       <div class="rc-actions">
         <button class="rc-btn rc-forgot" data-g="0">忘了</button>
@@ -1407,14 +1432,20 @@ const UI = {
         const r = await Farm.addPoints('reviewcard', { key: w.id, pts: 2, maxDay: 8 });
         if (r) this.rewardToast(r, '复习');
       } catch (e) {}
-      // 反馈态：展开释义 + 下次复习时间
+      // 反馈态：展开释义 + 下次复习时间 + "知道了"按钮（🔴 v1.2.3：点它切下一张）
       const next = (fresh && fresh.srs) ? fresh.srs.due : 0;
       const when = grade === 0 ? '明天再学' : grade === 1 ? '过几天再见' : (next ? (Math.max(1, Math.round((next - Date.now()) / 864e5)) + ' 天后见') : '巩固完成');
       const mark = grade === 0 ? '😕' : grade === 1 ? '🤔' : '✓';
       card.querySelector('.rc-body').classList.remove('hidden');
       const actions = card.querySelector('.rc-actions');
-      actions.innerHTML = `<span class="rc-done">${mark} ${grade === 0 ? '忘了，明天再学' : grade === 1 ? '模糊，缩短间隔' : '记得，' + when}</span>`;
+      actions.innerHTML = `<span class="rc-done">${mark} ${grade === 0 ? '忘了，明天再学' : grade === 1 ? '模糊，缩短间隔' : '记得，' + when}</span><button class="rc-btn rc-ok rc-know">知道了</button>`;
       card.classList.add('rc-done');
+      actions.querySelector('.rc-know').addEventListener('click', () => {
+        card.remove();
+        this.state.reviewShown.set(w.id, (this.state.reviewShown.get(w.id) || 0) + 1);
+        this.state.reviewActive = false;
+        this.pumpReviewQueue(); // 🔴 v1.2.3：下一张；队列空了自动关闭
+      });
     } catch (e) {
       card.dataset.done = '';
       card.querySelectorAll('.rc-btn').forEach(b => b.disabled = false);
@@ -1913,15 +1944,16 @@ const UI = {
     const body = this.el('wordModalBody');
     const srcMap = { agent: 'AI 对话', review: '复盘收藏', build: '一键建卡', manual: '手动添加' };
     const src = w.sourceScene || srcMap[w.source] || w.source || '未知';
-    const row = (k, v) => v ? `<div class="wd-row"><span class="wd-key">${k}</span> ${this.esc(v)}</div>` : '';
+    const row = (k, v) => v ? `<div class="wd-row"><span class="wd-key">${k}</span> ${this.renderMsgText(String(v))}</div>` : ''; // 🔴 v1.2.3：英文可点嵌套查询
     const rows = row('词根', w.root) + row('搭配', w.collocations) + row('同义', w.synonyms) + row('反义', w.antonyms)
       + (w.note ? `<div class="wd-note">${this.esc(w.note)}</div>` : '');
     body.innerHTML = `
-      <div class="wd-word">${this.esc(w.word)}${w.phonetic ? ` <span class="wi-phon">${this.esc(w.phonetic)}</span>` : ''}</div>
+      <div class="wd-word">${this.esc(w.word)}${w.phonetic ? ` <span class="wi-phon">${this.esc(w.phonetic)}</span>` : ''}<button class="wi-say wd-say" data-say="${this.esc(w.word)}">${this.sayIcon()}</button></div>
       ${w.pos ? `<div class="wd-pos">${this.esc(w.pos)}</div>` : ''}
       <div class="wd-meaning">${this.esc(w.meaning || '（暂无释义）')}</div>
-      ${w.example ? `<div class="wd-ex">${this.esc(w.example)}</div>` : ''}
+      ${w.example ? `<div class="wd-ex">${this.renderMsgText(w.example)}</div>` : ''}
       ${w.exampleCn ? `<div class="wd-excn">${this.esc(w.exampleCn)}</div>` : ''}
+      ${w.usage ? row('📌 语境用法', w.usage) : ''}${w.family ? row('🌱 词族', w.family) : ''}${w.expand ? row('🔁 举一反三', w.expand) : ''}
       ${rows}
       <div class="wd-meta">来源：${this.esc(src)} · ${this.fmtDate(w.created)}${(w.forgot || 0) > 0 ? ` · 忘了 ${w.forgot} 次` : ''}${(w.peak || w.forgot || 0) > 1 ? ` · 历史最高忘 ${w.peak || w.forgot} 次` : ''}</div>
       ${w.ctx ? `<div class="si-ctx">收藏场景：${this.esc(w.ctx)}</div>` : ''}
@@ -1929,6 +1961,9 @@ const UI = {
       <button class="btn btn-ghost btn-sm btn-block" id="wdEnrich" style="margin-top:10px">${Icons.search} 补全/刷新详情</button>
       <div id="wdEnrichResult" class="wd-result"></div>`;
     this.el('wordModal').classList.remove('hidden');
+    // 🔴 v1.2.3：生词本详情里的单词也可点（嵌套查询）+ 朗读按钮
+    this.bindTapWords(body);
+    body.querySelectorAll('.wd-say').forEach(b => this.addSpeakListener(b, b.dataset.say));
     this.bindTagEditor(body, w.tags || [], async (next) => {
       await Words.update(w.id, { tags: next });
       this.renderWords(this.el('wordSearch').value.trim());
@@ -2095,7 +2130,8 @@ const UI = {
       el.addEventListener('click', (e) => {
         e.stopPropagation();
         // 🔴 v1.1.1：查词带整句语境（AI 识别固定搭配/惯用法，即使搭配另一部分离得远）
-        const msgEl = el.closest('.msg');
+        // 🔴 v1.2.3：查词卡片里的单词 → 以所在行（例句/用法/词族等）为语境，支持无限嵌套查询
+        const msgEl = el.closest('.msg') || el.closest('.wd-ex, .wd-row, .wd-ctx, .wd-meaning');
         const ctx = msgEl ? ((msgEl.querySelector('.msg-en') || msgEl).textContent || '') : '';
         this.showWordQuery(el.dataset.w, ctx);
       });
@@ -2145,9 +2181,12 @@ const UI = {
         });
         this.refreshWordsSet();
       }
-      const ctxBlock = ctx ? `<div class="wd-ctx">📖 语境：<span class="wd-ctx-hl">${this.esc(String(ctx).slice(0, 160))}${String(ctx).length > 160 ? '…' : ''}</span></div>` : '';
+      const ctxBlock = ctx ? `<div class="wd-ctx">📖 语境：<span class="wd-ctx-hl">${this.renderMsgText(String(ctx).slice(0, 160))}${String(ctx).length > 160 ? '…' : ''}</span></div>` : '';
       body.innerHTML = ctxBlock + this.renderWordDetail(d, inSet ? '已在生词本（忘了 ' + ((exist.forgot || 0) + 1) + ' 次）' : '已加入生词本')
         + (inSet ? `<button id="wdRemember" class="btn btn-ghost btn-sm btn-block" style="margin-top:10px">✓ 这次记住了（忘次 -1）</button>` : '');
+      // 🔴 v1.2.3：查词卡片里点任意英文单词 → 嵌套继续查；朗读按钮
+      this.bindTapWords(body);
+      body.querySelectorAll('.wd-say').forEach(b => this.addSpeakListener(b, b.dataset.say));
       if (inSet) {
         const rb = body.querySelector('#wdRemember');
         if (rb) rb.addEventListener('click', async () => {
@@ -2168,10 +2207,12 @@ const UI = {
     }
   },
   renderWordDetail(d, savedNote) {
-    const exs = (d.examples || []).map(x => `<div class="wd-ex">${this.esc(x.en)}</div><div class="wd-excn">${this.esc(x.cn)}</div>`).join('');
-    const row = (k, v) => v ? `<div class="wd-row"><span class="wd-key">${k}</span> ${this.esc(v)}</div>` : '';
+    // 🔴 v1.2.3：英文内容用 renderMsgText 渲染——解释里的单词也能点，不断嵌套查询；
+    //            单词旁加朗读按钮
+    const exs = (d.examples || []).map(x => `<div class="wd-ex">${this.renderMsgText(x.en)}</div><div class="wd-excn">${this.esc(x.cn)}</div>`).join('');
+    const row = (k, v) => v ? `<div class="wd-row"><span class="wd-key">${k}</span> ${this.renderMsgText(String(v))}</div>` : '';
     return `
-      <div class="wd-word">${this.esc(d.word)} ${d.phonetic ? `<span class="wi-phon">${this.esc(d.phonetic)}</span>` : ''}</div>
+      <div class="wd-word">${this.esc(d.word)} ${d.phonetic ? `<span class="wi-phon">${this.esc(d.phonetic)}</span>` : ''}<button class="wi-say wd-say" data-say="${this.esc(d.word)}">${this.sayIcon()}</button></div>
       ${d.pos ? `<div class="wd-pos">${this.esc(d.pos)}</div>` : ''}
       ${savedNote ? `<div class="wd-meta" style="color:var(--primary)">${savedNote}</div>` : ''}
       <div class="wd-meaning">${this.esc(d.meaning || '')}</div>
@@ -2593,7 +2634,7 @@ const UI = {
       this.state.rpStep = 'choose';
       this.state.rpPendingRoles = [];
       this.state.rpHistory = [];
-      this.state.reviewedThisConv = new Set(); // 🔴 v1.1：新会话重置复习卡去重
+      this.resetReviewQueue(); // 🔴 v1.2.3：新会话重置复习卡队列
       this.state.convId = 'c_' + Date.now() + '_rp';
       // 🔴 v1.1.1：RP 话题命名去重——同一天同一世界卡开多次 → "世界名 · 8/3"、"世界名 · 8/3 (2)"、"世界名 · 8/3 (3)"
       let rpTitle = w.name + ' · ' + new Date().toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
@@ -2707,7 +2748,8 @@ const UI = {
       if (!isContinueInput) this.state.rpHistory.push({ role: 'user', content: userMsg });
       await this.rpRound(userMsg, { pushed: true });
       // 🔴 v1.2.2：RP 台词检查（语法/表达/角色契合）——异步出纠正卡，不阻塞剧情
-      if (!isContinueInput && userMsg && /[a-zA-Z]/.test(userMsg) && (userMsg.match(/[a-zA-Z]+/g) || []).length >= 4) {
+      // 🔴 v1.2.3：触发条件放宽到 ≥3 个英文词（之前 4 词有些短句不查）
+      if (!isContinueInput && userMsg && /[a-zA-Z]/.test(userMsg) && (userMsg.match(/[a-zA-Z]+/g) || []).length >= 3) {
         this.maybeSuggestRp(userMsg);
       }
     } finally {
@@ -2866,7 +2908,7 @@ const UI = {
     this.state.rpRoster = {};
     this.state.rpActiveChars = [];
     this.state.rpStep = '';
-    this.state.reviewedThisConv = new Set();
+    this.resetReviewQueue(); // 🔴 v1.2.3
     this.el('chatInput').placeholder = '输入英文…';
     this.renderConvTitle();
     this.updateRpRoleTag(); // 🔴 v1.2.2：退出 RP 隐藏角色标签

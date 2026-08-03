@@ -740,11 +740,12 @@ body {
 .today-review-count { font-size: 11px; color: var(--muted, #888); font-weight: 400; }
 .today-review-list { display: flex; flex-wrap: wrap; gap: 8px; background: var(--card, #FFFDF7); border-radius: 14px; padding: 10px; box-shadow: var(--shadow); }
 .today-review-list .rank-empty { width: 100%; text-align: center; color: var(--muted, #888); font-size: 12px; margin: 4px 0; }
+.chat-title-row { display: flex; align-items: center; justify-content: center; gap: 8px; flex: 1; min-width: 0; }
 .rp-role-tag {
-  display: inline-block; align-self: flex-start;
-  margin: 2px 0 6px 2px; padding: 5px 12px; border-radius: 999px;
+  display: inline-block; padding: 2px 10px; border-radius: 999px;
   background: var(--primary, #117C0D); color: #fff;
-  font-size: 12px; font-weight: 600;
+  font-size: 11px; font-weight: 600; white-space: nowrap;
+  max-width: 46%; overflow: hidden; text-overflow: ellipsis;
 }
 @media (prefers-color-scheme: dark) {
   .rp-role-tag { background: #43A047; }

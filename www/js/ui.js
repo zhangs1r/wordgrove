@@ -57,7 +57,6 @@ const UI = {
     // 🔴 v1.2.3：复习卡队列——多个待复习词按顺序一张张展示（评级→看释义→点"知道了"→下一张）
     reviewQueue: [],
     reviewActive: false,
-    reviewShown: new Map(),   // 本会话每词已展示次数（同一词最多 2 次）
   },
 
   init() {
@@ -906,16 +905,20 @@ const UI = {
 
     // 排行榜：忘词 / 表达 / 常犯错
     const words = await Words.list();
-    // 🔴 v1.2.2：今日待复习（SRS 到期词，前 8 个）——这些词会出现在对话/剧场里帮你巩固
+    // 🔴 v1.2.8 用户拍板去掉 SRS：今日重点复习 = 忘词榜前几（常忘的优先）+ 随机挑几个（广覆盖）
     const reviewWrap = this.el('todayReviewList');
     if (reviewWrap) {
-      const dueWords = words.filter(w => w.srs && w.srs.reps > 0 && w.srs.due <= Date.now())
-        .sort((a, b) => (a.srs.due || 0) - (b.srs.due || 0)).slice(0, 8);
+      const forgotSorted = [...words].sort((a, b) => (b.forgot || 0) - (a.forgot || 0));
+      const top = forgotSorted.filter(w => (w.forgot || 0) > 0).slice(0, 5);
+      // 随机补几个（排除已选，保证每天覆盖不同词）
+      const rest = forgotSorted.filter(w => !top.includes(w));
+      const shuffled = rest.sort(() => Math.random() - 0.5).slice(0, 3);
+      const picks = [...top, ...shuffled];
       const cntEl = this.el('todayReviewCount');
-      if (cntEl) cntEl.textContent = dueWords.length ? dueWords.length + ' 个' : '';
-      reviewWrap.innerHTML = dueWords.length
-        ? dueWords.map(w => `<button class="tag-chip rank" data-rw2="${this.esc(w.word)}">${this.esc(w.word)}</button>`).join('')
-        : '<p class="rank-empty">还没有到期的复习词——聊着聊着，复习卡就来了</p>';
+      if (cntEl) cntEl.textContent = picks.length ? picks.length + ' 个' : '';
+      reviewWrap.innerHTML = picks.length
+        ? picks.map(w => `<button class="tag-chip rank" data-rw2="${this.esc(w.word)}">${this.esc(w.word)}${(w.forgot || 0) > 1 ? ` <span style="opacity:.6">×${w.forgot}</span>` : ''}</button>`).join('')
+        : '<p class="rank-empty">还没有重点词——聊着聊着，复习卡就来了</p>';
       reviewWrap.querySelectorAll('[data-rw2]').forEach(b => b.addEventListener('click', () => this.showWordQuery(b.dataset.rw2, '')));
     }
     const forgotTop = words.filter(w => (w.forgot || 0) > 0).sort((a, b) => (b.forgot || 0) - (a.forgot || 0)).slice(0, 5);
@@ -1363,7 +1366,6 @@ const UI = {
     try {
       if (Settings.get('reviewCard', true) === false) return; // 🔴 v1.1.1：设置里可关
       if (!this.state.wordMap.size) return;
-      const set = new Set(this.state.wordMap.keys());
       const words = String(text || '').match(/[A-Za-z]+(?:['’-][A-Za-z]+)*/g) || [];
       // 🔴 v1.1：常用不规则动词过去式 → 原形（forgot→forget 这类 matchStem 覆盖不到）
       const IRREG = { forgot: 'forget', forgotten: 'forget', went: 'go', gone: 'go', been: 'be', was: 'be', were: 'be', did: 'do', done: 'do', had: 'have', has: 'have', made: 'make', took: 'take', taken: 'take', got: 'get', gotten: 'get', found: 'find', knew: 'know', known: 'know', saw: 'see', seen: 'see', said: 'say', told: 'tell', spoke: 'speak', spoken: 'speak', wrote: 'write', written: 'write', ate: 'eat', eaten: 'eat', came: 'come', became: 'become', ran: 'run', met: 'meet', felt: 'feel', left: 'leave', heard: 'hear', lost: 'lose', paid: 'pay', sold: 'sell', stood: 'stand', won: 'win', broke: 'break', broken: 'break', chose: 'choose', chosen: 'choose', drove: 'drive', driven: 'drive', fell: 'fall', fallen: 'fall', flew: 'fly', flown: 'fly', grew: 'grow', grown: 'grow', hid: 'hide', hidden: 'hide', meant: 'mean', rode: 'ride', ridden: 'ride', rang: 'ring', rose: 'rise', sang: 'sing', slept: 'sleep', threw: 'throw', thrown: 'throw', woke: 'wake', woken: 'wake' };
@@ -1375,28 +1377,30 @@ const UI = {
         if (seen.has(lower)) continue;
         seen.add(lower);
         let w = this.state.wordMap.get(lower) || null;
-        if (!w && this.matchStem(lower, set)) {
-          // 词形匹配：找原形（遍历 map 太贵，只查常见词尾变化）
-          const cands = [lower.replace(/ies$/, 'y'), lower.replace(/es$/, ''), lower.replace(/s$/, ''), lower.replace(/ing$/, ''), lower.replace(/ed$/, ''), lower.replace(/ed$/, 'e')];
-          for (const c of cands) { w = this.state.wordMap.get(c); if (w) break; }
+        if (!w) {
+          // 🔴 v1.2.8：直接用增强词形表找原形（不再先过 matchStem 判断——原来的判断挡住了部分变形词）
+          for (const c of this.stemCands(lower)) {
+            w = this.state.wordMap.get(c);
+            if (w) break;
+          }
         }
         if (!w && IRREG[lower]) w = this.state.wordMap.get(IRREG[lower]) || null;
         if (!w) continue;
-        // 🔴 v1.2.7：不再按 SRS 到期判断——用户要求"出现就弹"（哪怕前面绘画出现过，
-        //   第二次展示也没问题）；防骚扰靠：每消息最多 3 个入队 + 队列内去重 + 本会话每词最多 2 次
+        // 队列内去重（同一时刻不重复弹同一词）
         if (this.state.reviewQueue.some(q => q.id === w.id)) continue;
-        if ((this.state.reviewShown.get(w.id) || 0) >= 2) continue;
-        this.state.reviewQueue.push({ id: w.id, word: w.word, div }); // 🔴 v1.2.4：word 一并存（wordMap 的 key 是单词，不是 id）
+        // 🔴 v1.2.8 用户拍板：去掉 SRS 曲线——出现必弹（每消息最多 3 个）；
+        //   频率控制交给"忘词榜 + 随机"（今日重点复习），评级不再重排期
+        this.state.reviewQueue.push({ id: w.id, word: w.word, div });
         added++;
       }
       this.pumpReviewQueue();
     } catch (e) { /* 弹卡失败不影响对话 */ }
   },
-  /* 🔴 v1.2.3：切会话/新会话/退出 RP 时重置复习卡队列（旧卡片/队列不带到新会话） */
+  /* 🔴 v1.2.3：切会话/新会话/退出 RP 时重置复习卡队列（旧卡片/队列不带到新会话）
+     🔴 v1.2.8：_earlyDay/_earlyCount（未到期提前配额）不重置——是跨会话的每日全局配额 */
   resetReviewQueue() {
     this.state.reviewQueue = [];
     this.state.reviewActive = false;
-    this.state.reviewShown = new Map();
   },
   /* 🔴 v1.2.3：按顺序弹卡——同一时间只展示一张，看完（评级+知道了）再下一张 */
   pumpReviewQueue() {
@@ -1435,20 +1439,9 @@ const UI = {
     if (card.dataset.done) return; // 防连点
     card.dataset.done = '1';
     card.querySelectorAll('.rc-btn').forEach(b => b.disabled = true);
-    let fresh = null; // 🔴 v1.2.7：跨 try 块共享（显示"X 天后见"用）
-    // 🔴 v1.2.7：评级核心（SRS + 展开释义 + 知道了）与外围加分/统计隔离——
-    //   外围任何一步失败都不能打断卡片流程（原来 catch 会回滚评级，用户点了没反应）
+    // 🔴 v1.2.8 用户拍板去掉 SRS：评级只维护忘次计数（忘词榜的依据），不再重排期
     try {
-      await SRS.applyGrade(w.id, grade);
-    } catch (e) {
-      card.dataset.done = '';
-      card.querySelectorAll('.rc-btn').forEach(b => b.disabled = false);
-      this.toast('评级失败：' + (e.message || e).slice(0, 40));
-      return;
-    }
-    try {
-      // 忘了 → 忘次 +1；记得 → 忘次 -1（沿用旧卡片行为）
-      fresh = await Words.get(w.id);
+      const fresh = await Words.get(w.id);
       if (fresh) {
         if (grade === 0) {
           await Words.update(w.id, { forgot: (fresh.forgot || 0) + 1, peak: Math.max(fresh.peak || 0, (fresh.forgot || 0) + 1) });
@@ -1463,18 +1456,16 @@ const UI = {
       const r = await Farm.addPoints('reviewcard', { key: w.id, pts: 2, maxDay: 8 });
       if (r) this.rewardToast(r, '复习');
     } catch (e) {}
-    // 反馈态：展开释义 + 下次复习时间 + "知道了"按钮（🔴 v1.2.3：点它切下一张）
-    const next = (fresh && fresh.srs) ? fresh.srs.due : 0;
-    const when = grade === 0 ? '明天再学' : grade === 1 ? '过几天再见' : (next ? (Math.max(1, Math.round((next - Date.now()) / 864e5)) + ' 天后见') : '巩固完成');
+    // 反馈态：展开释义 + "知道了"按钮（🔴 v1.2.3：点它切下一张）
     const mark = grade === 0 ? '😕' : grade === 1 ? '🤔' : '✓';
+    const msg = grade === 0 ? '忘了——它会进忘词榜，多见面几次就记住了' : grade === 1 ? '模糊——有点印象，继续多见面' : '记得——记牢了，继续保持';
     card.querySelector('.rc-body').classList.remove('hidden');
     const actions = card.querySelector('.rc-actions');
-    actions.innerHTML = `<span class="rc-done">${mark} ${grade === 0 ? '忘了，明天再学' : grade === 1 ? '模糊，缩短间隔' : '记得，' + when}</span><button class="rc-btn rc-ok rc-know">知道了</button>`;
+    actions.innerHTML = `<span class="rc-done">${mark} ${msg}</span><button class="rc-btn rc-ok rc-know">知道了</button>`;
     card.classList.add('rc-done');
     actions.querySelector('.rc-know').addEventListener('click', () => {
       card.remove();
       this._activeCard = null; // 🔴 v1.2.7：清看门狗引用
-      this.state.reviewShown.set(w.id, (this.state.reviewShown.get(w.id) || 0) + 1);
       this.state.reviewActive = false;
       this.pumpReviewQueue(); // 🔴 v1.2.3：下一张；队列空了自动关闭
     });
@@ -2156,9 +2147,26 @@ const UI = {
     } catch {}
   },
   refreshWordsSet() { this.loadWordsSet(); },
+  /* 🔴 v1.2.8：增强词形还原——studies→study, studied→study, running→run, making→make,
+     boxes→box, watched→watch, stopped→stop…（原来缺双写辅音/ied 规则，导致变形词匹配不到不弹卡） */
+  stemCands(w) {
+    const s = String(w || '').toLowerCase();
+    return [
+      s,
+      s.replace(/ies$/, 'y'),        // studies→study
+      s.replace(/ied$/, 'y'),        // studied→study
+      s.replace(/es$/, ''),          // boxes→box / watches→watch
+      s.replace(/s$/, ''),           // apples→apple
+      s.replace(/ing$/, ''),         // eating→eat
+      s.replace(/ing$/, 'e'),        // making→make
+      s.replace(/(.)\1ing$/, '$1'),  // running→run
+      s.replace(/ed$/, ''),          // played→play
+      s.replace(/ed$/, 'e'),         // danced→dance
+      s.replace(/(.)\1ed$/, '$1'),   // stopped→stop
+    ];
+  },
   matchStem(base, set) {
-    const cands = [base.replace(/ies$/, 'y'), base.replace(/es$/, ''), base.replace(/s$/, ''), base.replace(/ing$/, ''), base.replace(/ed$/, ''), base.replace(/ed$/, 'e')];
-    return cands.some(c => set.has(c));
+    return this.stemCands(base).some(c => set.has(c));
   },
   /* 渲染消息文本：生词高亮 + 单词可点击查询（先切词再转义，避免 HTML 实体被误当单词） */
   renderMsgText(text) {

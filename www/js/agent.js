@@ -268,7 +268,7 @@ ${this.forgetLine()}
 如果表达没问题，返回：{"needFix":false}
 要求：better 要贴合对话上下文语境，口语化地道。只输出 JSON，不要其他内容。` },
         { role: 'user', content: ctx },
-      ], { model, maxTokens: 600 }); // 🔴 v1.2.3：300 太少——思考模式会先输出思考再输出 JSON，截断导致 parse 失败 → 卡片永不出现
+      ], { model, maxTokens: 600, thinking: 'disabled' }); // 🔴 v1.2.4：结构化输出关思考——思考链会吃光 token 导致 content 空/截断，JSON 解析失败 → 卡片永不出现
       const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
       const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
       return j && j.needFix ? j : null;
@@ -296,7 +296,7 @@ ${this.forgetLine()}
 完全没问题才返回：{"needFix":false}
 要求：better 口语化、贴合剧情语境。只输出 JSON，不要其他内容。` },
         { role: 'user', content: '最近剧情：\n' + ctx + '\n\n学习者的台词：' + line },
-      ], { model, maxTokens: 600 });
+      ], { model, maxTokens: 600, thinking: 'disabled' }); // 🔴 v1.2.4：结构化输出关思考（同 suggestBetter）
       const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
       const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
       return j && j.needFix ? j : null;

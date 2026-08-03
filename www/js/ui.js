@@ -1367,7 +1367,7 @@ const UI = {
         if (dueTime > Date.now()) continue;
         if (this.state.reviewQueue.some(q => q.id === w.id)) continue;
         if ((this.state.reviewShown.get(w.id) || 0) >= 2) continue;
-        this.state.reviewQueue.push({ id: w.id, div });
+        this.state.reviewQueue.push({ id: w.id, word: w.word, div }); // 🔴 v1.2.4：word 一并存（wordMap 的 key 是单词，不是 id）
         added++;
       }
       this.pumpReviewQueue();
@@ -1385,12 +1385,13 @@ const UI = {
     if (!this.state.reviewQueue.length) return;
     const item = this.state.reviewQueue.shift();
     // 触发消息已被移除（切会话/回滚等）→ 跳过继续下一张
-    if (!item.div || !item.div.isConnected || !this.state.wordMap.has(item.id)) {
+    // 🔴 v1.2.4：用 item.word 查 wordMap（之前用 item.id 永远匹配不上 → 卡片全被跳过，普通/RP 都不弹）
+    if (!item.div || !item.div.isConnected || !this.state.wordMap.has(item.word)) {
       this.pumpReviewQueue();
       return;
     }
     this.state.reviewActive = true;
-    this.renderReviewCard(item.div, this.state.wordMap.get(item.id));
+    this.renderReviewCard(item.div, this.state.wordMap.get(item.word));
   },
   renderReviewCard(anchor, w) {
     const card = document.createElement('div');
@@ -1571,13 +1572,13 @@ const UI = {
       if (sug) this.renderSuggestion(userDiv, sug, 'auto');
     } catch {}
   },
-  /* 🔴 v1.2.2：RP 台词纠正卡（语法/表达/角色契合）——挂到最近一条用户消息上 */
-  async maybeSuggestRp(line) {
+  /* 🔴 v1.2.2：RP 台词纠正卡（语法/表达/角色契合）——挂到传入的用户消息下（🔴 v1.2.4：直接传 div） */
+  async maybeSuggestRp(line, userDiv) {
     try {
       const sug = await Agent.suggestRp(line, this.state.rpWorld, this.state.rpPlayer, this.state.rpHistory);
       if (!sug) return;
-      const userDiv = this.el('chatArea').querySelector('.msg-me:last-of-type');
-      if (userDiv && userDiv.isConnected) this.renderSuggestion(userDiv, sug, 'rp');
+      const div = (userDiv && userDiv.isConnected) ? userDiv : this.el('chatArea').querySelector('.msg-me:last-of-type');
+      if (div && div.isConnected) this.renderSuggestion(div, sug, 'rp');
     } catch {}
   },
   renderSuggestion(userDiv, sug, mode) {
@@ -2720,6 +2721,7 @@ const UI = {
     // ---- 游玩阶段 ----
     this.state.rpBusy = true;
     let userMsg = text;
+    let userDiv = null;
     try {
       // 中文 → 翻译（全英语规则）
       if (/[\u4e00-\u9fa5]/.test(text)) {
@@ -2728,20 +2730,19 @@ const UI = {
           const en = await Agent.translateToEnglish(text);
           tip.remove();
           if (!en) {
-            // 🔴 v1.1：翻译返回空串 → 用原文继续，不再静默当成"继续"把输入丢掉
             this.toast('翻译失败，已按原文继续');
-            this.appendMsg('user', text);
+            userDiv = this.appendMsg('user', text);
           } else {
-            this.appendMsg('user', '（中文）' + text + '\n→ ' + en);
+            userDiv = this.appendMsg('user', '（中文）' + text + '\n→ ' + en);
             userMsg = en;
           }
         } catch {
           tip.remove();
           this.toast('翻译失败，已按原文继续');
-          this.appendMsg('user', text);
+          userDiv = this.appendMsg('user', text);
         }
       } else {
-        this.appendMsg('user', text);
+        userDiv = this.appendMsg('user', text);
       }
       // 🔴 v1.1：user 消息先入历史再渲染（重生成按钮的"最后一条 user"判定才正确），
       //          continue 不入历史（不污染上下文/积分轮次计数）
@@ -2749,8 +2750,9 @@ const UI = {
       await this.rpRound(userMsg, { pushed: true });
       // 🔴 v1.2.2：RP 台词检查（语法/表达/角色契合）——异步出纠正卡，不阻塞剧情
       // 🔴 v1.2.3：触发条件放宽到 ≥3 个英文词（之前 4 词有些短句不查）
+      // 🔴 v1.2.4：直接传 userDiv（不再查询 .msg-me，避免选择器落空）
       if (!isContinueInput && userMsg && /[a-zA-Z]/.test(userMsg) && (userMsg.match(/[a-zA-Z]+/g) || []).length >= 3) {
-        this.maybeSuggestRp(userMsg);
+        this.maybeSuggestRp(userMsg, userDiv);
       }
     } finally {
       this.state.rpBusy = false; // 🔴 v1.1：任何异常都复位，防永久锁死
@@ -2876,15 +2878,12 @@ const UI = {
     area.appendChild(div);
     area.scrollTop = area.scrollHeight;
   },
-  /* 🔴 v1.2.2：输入区显示当前扮演角色（话题多了分不清自己在 RP 里是谁） */
+  /* 🔴 v1.2.2：会话标题下显示当前扮演角色（🔴 v1.2.4：只显示角色，不显示世界；选角中不显示） */
   updateRpRoleTag() {
     const tag = this.el('rpRoleTag');
     if (!tag) return;
     if (this.state.rpMode && this.state.rpPlayer && this.state.rpPlayer.name) {
       tag.textContent = '🎭 扮演 ' + this.state.rpPlayer.name;
-      tag.classList.remove('hidden');
-    } else if (this.state.rpMode && this.state.rpWorld) {
-      tag.textContent = '🎭 世界：' + this.state.rpWorld.name + '（选角中…）';
       tag.classList.remove('hidden');
     } else {
       tag.classList.add('hidden');

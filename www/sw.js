@@ -1,5 +1,7 @@
-/* WordGrove 网页版 Service Worker——缓存静态资源，离线可用 + 添加到主屏幕体验 */
-const CACHE = 'wordgrove-v1';
+/* WordGrove 网页版 Service Worker——离线可用 + 始终最新
+   🔴 v1.2.30：修复旧版缓存永不更新——原 cache-first 策略缓存命中就返回，缓存名固定 v1 永不失效，
+   用户浏览器永远显示第一次访问的旧版（宽屏旧 UI）；改为 network-first：在线永远取最新，失败才用缓存（离线兜底） */
+const CACHE = 'wordgrove-v2';
 const CORE = [
   './',
   './index.html',
@@ -31,16 +33,17 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   // 只处理同源 GET；API 请求（api.deepseek.com 等）不缓存不拦截
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
+  // 🔴 v1.2.30：network-first——在线永远返回最新资源（后台顺手更新缓存），
+  //   网络失败（离线）才回退缓存；彻底解决"缓存了旧版就永远不更新"
   e.respondWith(
-    caches.match(e.request).then((hit) => {
-      if (hit) return hit;
-      return fetch(e.request).then((res) => {
-        if (res.ok && url.pathname.includes('/icons/')) {
+    fetch(e.request)
+      .then((res) => {
+        if (res.ok) {
           const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(e.request, copy));
+          caches.open(CACHE).then((c) => c.put(e.request, copy)).catch(() => {});
         }
         return res;
-      }).catch(() => caches.match('./index.html'));
-    })
+      })
+      .catch(() => caches.match(e.request).then((hit) => hit || caches.match('./index.html')))
   );
 });

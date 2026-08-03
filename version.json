@@ -1,6 +1,6 @@
 {
-  "version": "1.2.29",
-  "notes": "1.2.29：maxTokens 统一 4000（用户拍板）——对话/复盘/查词/剧场/世界卡/补角色/表达建议等 11 处大调用全部提到 4000，思考链+长内容输出不再截断；翻译/复述等短输出小调用保持原额度（无必要加大）。费用不受影响（按实际输出计费，maxTokens 只是上限）",
-  "apk": "EnglishApp-v1.2.29.apk",
-  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.29/EnglishApp-v1.2.29.apk"
+  "version": "1.2.30",
+  "notes": "1.2.30：修复网页版 Service Worker 缓存旧版永不更新——原来缓存命中就返回旧资源（缓存名固定），浏览器永远显示第一次访问的旧界面；改为网络优先（在线永远最新，离线自动用缓存），刷新一次即可看到最新版",
+  "apk": "EnglishApp-v1.2.30.apk",
+  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.30/EnglishApp-v1.2.30.apk"
 }

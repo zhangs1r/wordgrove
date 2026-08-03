@@ -1,6 +1,6 @@
 {
-  "version": "1.2.25",
-  "notes": "1.2.25：设置页显示完整版本号——App 显示原生版本（v1.2.25），网页版显示部署时版本，两边对照即可知道是否同步；网页版【检查版本更新】按钮改为提示刷新页面（网页版随代码自动部署）",
-  "apk": "EnglishApp-v1.2.25.apk",
-  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.25/EnglishApp-v1.2.25.apk"
+  "version": "1.2.26",
+  "notes": "1.2.26：修复跟随系统只有图标变、主题不变——CSS 的深色变量只在 data-theme=dark 下生效，之前跟随系统时删掉了 data-theme 导致系统深色没驱动主题；现在跟随系统会用系统状态显式设置主题（深色系统→深色，浅色系统→浅色），切换系统模式时实时同步",
+  "apk": "EnglishApp-v1.2.26.apk",
+  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.26/EnglishApp-v1.2.26.apk"
 }

@@ -1,6 +1,6 @@
 {
-  "version": "1.2.21",
-  "notes": "1.2.21：移除超纲词橙色标记（用户觉得没必要）；提示词里的词表注入保留（AI 输出仍按 CEFR 词表控制词汇难度）；另外网页版移植准备工作完成（PWA+GitHub Pages 流水线），等待部署切换",
-  "apk": "EnglishApp-v1.2.21.apk",
-  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.21/EnglishApp-v1.2.21.apk"
+  "version": "1.2.22",
+  "notes": "1.2.22：网页版桌面适配——电脑宽屏打开 https://zhangs1r.github.io/wordgrove/ 时内容居中单栏（宽 780px），背景区分；手机浏览器打开与 App 完全一致；手机可添加到主屏幕（PWA）",
+  "apk": "EnglishApp-v1.2.22.apk",
+  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.22/EnglishApp-v1.2.22.apk"
 }

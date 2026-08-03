@@ -778,3 +778,11 @@ body {
 }
 /* 🔴 v1.2.17：生词本列表里的来源上下文摘要 */
 .wi-ctx { font-size: 11.5px; color: var(--muted, #888); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* ============ 🔴 网页版桌面适配（方案 A：居中单栏） ============ */
+@media (min-width: 900px) {
+  body { background: #E9E5D9; }
+  .app-header { max-width: 780px; margin: 0 auto; }
+  #main { max-width: 780px; margin: 0 auto; }
+  .tab-bar { left: 50%; right: auto; width: 780px; transform: translateX(-50%); border-radius: 16px 16px 0 0; }
+  @media (prefers-color-scheme: dark) { body { background: #16181C; } }
+}

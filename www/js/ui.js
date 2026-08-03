@@ -81,6 +81,15 @@ const UI = {
     FarmActivity.start();
     this.bindFarm();
     this.showOnboarding();   // 🔴 v1.1.1：新手指引（勾"不再提示"后永不显示）
+    // 🔴 v1.2.7：复习卡队列看门狗——卡片被 DOM 重建意外移除（回滚/重生成/切页）时，
+    //   3 秒内自动解锁队列继续弹下一张（防队列卡死不显示）
+    setInterval(() => {
+      if (this.state.reviewActive && this._activeCard && !this._activeCard.isConnected) {
+        this._activeCard = null;
+        this.state.reviewActive = false;
+        this.pumpReviewQueue();
+      }
+    }, 3000);
     // 🔴 v1.2.1：自动检查更新移到 app.js（等原生版本号就绪后再比较，防止误报）
 
     if (!API.configured()) {
@@ -957,8 +966,16 @@ const UI = {
     return Settings.get('conversations', []);
   },
   saveConversation(conv) {
+    // 🔴 v1.2.7 防御：普通内容（!isRp）不允许覆盖已存在的 RP 绘画记录
+    //   用户实测：用世界卡开第二个绘画后，第一个绘画的记录变成普通对话的内容（普通内容写进了 RP id）
+    const all = this.listConversations();
+    const prev = all.find(c => c.id === conv.id);
+    if (prev && prev.isRp && !conv.isRp) {
+      console.warn('拒绝普通会话覆盖 RP 绘画记录', conv.id);
+      return;
+    }
     // 🔴 v1.1：LRU 上限 40 个（超了丢最旧），防 localStorage 无限增长逼近配额
-    let list = this.listConversations().filter(c => c.id !== conv.id);
+    let list = all.filter(c => c.id !== conv.id);
     list.push(conv);
     if (list.length > 40) {
       list = list.sort((a, b) => (b.updated || 0) - (a.updated || 0)).slice(0, 40);
@@ -1037,7 +1054,8 @@ const UI = {
       this.state.rpChars = (w && w.roles) || [];
       this.state.rpRoster = {};
       ((w && w.roles) || []).forEach(r => { this.state.rpRoster[r.name] = r.gender === 'male' ? 'm' : 'f'; });
-      this.state.rpPlayer = null;
+      // 🔴 v1.2.7：恢复会话里持久化的 player（之前写死 null → 切回绘画角色标签消失）
+      this.state.rpPlayer = conv.player || null;
       this.state.rpStep = 'play';
       // 🔴 v1.1：优先恢复会话里持久化的卡司（side 角色不丢），否则从世界卡重建
       this.state.rpActiveChars = (conv.activeChars && conv.activeChars.length)
@@ -1196,6 +1214,8 @@ const UI = {
             worldId: this.state.rpWorld ? this.state.rpWorld.id : '',
             activeChars: this.state.rpActiveChars || [],
             roster: this.state.rpRoster || {},
+            // 🔴 v1.2.7：player 随会话持久化——否则切走再切回 rpPlayer=null，角色标签消失
+            player: this.state.rpPlayer || null,
             updated: Date.now(),
           });
         }
@@ -1362,9 +1382,8 @@ const UI = {
         }
         if (!w && IRREG[lower]) w = this.state.wordMap.get(IRREG[lower]) || null;
         if (!w) continue;
-        // 该复习：到期（含从未复习过 reps=0）；队列内去重；本会话最多 2 次
-        const dueTime = w.srs && w.srs.due ? w.srs.due : 0;
-        if (dueTime > Date.now()) continue;
+        // 🔴 v1.2.7：不再按 SRS 到期判断——用户要求"出现就弹"（哪怕前面绘画出现过，
+        //   第二次展示也没问题）；防骚扰靠：每消息最多 3 个入队 + 队列内去重 + 本会话每词最多 2 次
         if (this.state.reviewQueue.some(q => q.id === w.id)) continue;
         if ((this.state.reviewShown.get(w.id) || 0) >= 2) continue;
         this.state.reviewQueue.push({ id: w.id, word: w.word, div }); // 🔴 v1.2.4：word 一并存（wordMap 的 key 是单词，不是 id）
@@ -1410,15 +1429,26 @@ const UI = {
       btn.addEventListener('click', () => this.reviewCardGrade(card, w, parseInt(btn.dataset.g, 10)));
     });
     anchor.appendChild(card);
+    this._activeCard = card; // 🔴 v1.2.7：看门狗引用（卡片被 DOM 重建意外移除时自动解锁队列）
   },
   async reviewCardGrade(card, w, grade) {
     if (card.dataset.done) return; // 防连点
     card.dataset.done = '1';
     card.querySelectorAll('.rc-btn').forEach(b => b.disabled = true);
+    let fresh = null; // 🔴 v1.2.7：跨 try 块共享（显示"X 天后见"用）
+    // 🔴 v1.2.7：评级核心（SRS + 展开释义 + 知道了）与外围加分/统计隔离——
+    //   外围任何一步失败都不能打断卡片流程（原来 catch 会回滚评级，用户点了没反应）
     try {
       await SRS.applyGrade(w.id, grade);
+    } catch (e) {
+      card.dataset.done = '';
+      card.querySelectorAll('.rc-btn').forEach(b => b.disabled = false);
+      this.toast('评级失败：' + (e.message || e).slice(0, 40));
+      return;
+    }
+    try {
       // 忘了 → 忘次 +1；记得 → 忘次 -1（沿用旧卡片行为）
-      const fresh = await Words.get(w.id);
+      fresh = await Words.get(w.id);
       if (fresh) {
         if (grade === 0) {
           await Words.update(w.id, { forgot: (fresh.forgot || 0) + 1, peak: Math.max(fresh.peak || 0, (fresh.forgot || 0) + 1) });
@@ -1426,32 +1456,28 @@ const UI = {
           await Words.update(w.id, { forgot: (fresh.forgot || 0) - 1 });
         }
       }
-      Agent.refreshForgetWords();
-      Profile.touchStreak(); // 🔴 v1.1：复习也算当日学习（连击复活）
-      // 复习积分（每日最多 8 卡）
-      try {
-        const r = await Farm.addPoints('reviewcard', { key: w.id, pts: 2, maxDay: 8 });
-        if (r) this.rewardToast(r, '复习');
-      } catch (e) {}
-      // 反馈态：展开释义 + 下次复习时间 + "知道了"按钮（🔴 v1.2.3：点它切下一张）
-      const next = (fresh && fresh.srs) ? fresh.srs.due : 0;
-      const when = grade === 0 ? '明天再学' : grade === 1 ? '过几天再见' : (next ? (Math.max(1, Math.round((next - Date.now()) / 864e5)) + ' 天后见') : '巩固完成');
-      const mark = grade === 0 ? '😕' : grade === 1 ? '🤔' : '✓';
-      card.querySelector('.rc-body').classList.remove('hidden');
-      const actions = card.querySelector('.rc-actions');
-      actions.innerHTML = `<span class="rc-done">${mark} ${grade === 0 ? '忘了，明天再学' : grade === 1 ? '模糊，缩短间隔' : '记得，' + when}</span><button class="rc-btn rc-ok rc-know">知道了</button>`;
-      card.classList.add('rc-done');
-      actions.querySelector('.rc-know').addEventListener('click', () => {
-        card.remove();
-        this.state.reviewShown.set(w.id, (this.state.reviewShown.get(w.id) || 0) + 1);
-        this.state.reviewActive = false;
-        this.pumpReviewQueue(); // 🔴 v1.2.3：下一张；队列空了自动关闭
-      });
-    } catch (e) {
-      card.dataset.done = '';
-      card.querySelectorAll('.rc-btn').forEach(b => b.disabled = false);
-      this.toast('评级失败：' + (e.message || e).slice(0, 40));
-    }
+    } catch (e) {}
+    try { Agent.refreshForgetWords(); } catch (e) {}
+    try { Profile.touchStreak(); } catch (e) {}
+    try {
+      const r = await Farm.addPoints('reviewcard', { key: w.id, pts: 2, maxDay: 8 });
+      if (r) this.rewardToast(r, '复习');
+    } catch (e) {}
+    // 反馈态：展开释义 + 下次复习时间 + "知道了"按钮（🔴 v1.2.3：点它切下一张）
+    const next = (fresh && fresh.srs) ? fresh.srs.due : 0;
+    const when = grade === 0 ? '明天再学' : grade === 1 ? '过几天再见' : (next ? (Math.max(1, Math.round((next - Date.now()) / 864e5)) + ' 天后见') : '巩固完成');
+    const mark = grade === 0 ? '😕' : grade === 1 ? '🤔' : '✓';
+    card.querySelector('.rc-body').classList.remove('hidden');
+    const actions = card.querySelector('.rc-actions');
+    actions.innerHTML = `<span class="rc-done">${mark} ${grade === 0 ? '忘了，明天再学' : grade === 1 ? '模糊，缩短间隔' : '记得，' + when}</span><button class="rc-btn rc-ok rc-know">知道了</button>`;
+    card.classList.add('rc-done');
+    actions.querySelector('.rc-know').addEventListener('click', () => {
+      card.remove();
+      this._activeCard = null; // 🔴 v1.2.7：清看门狗引用
+      this.state.reviewShown.set(w.id, (this.state.reviewShown.get(w.id) || 0) + 1);
+      this.state.reviewActive = false;
+      this.pumpReviewQueue(); // 🔴 v1.2.3：下一张；队列空了自动关闭
+    });
   },
   /* 🔴 v1.1：回滚/重生成后按剩余历史重建角色册（被删回合引入的 side 角色不再残留） */
   rebuildRpCast() {
@@ -1612,6 +1638,27 @@ const UI = {
       const ekey = String(better || '').toLowerCase().trim().replace(/[^a-z0-9\s]/g, '') || ('expr' + Date.now());
       const r = await Farm.addPoints('expr', { key: ekey, pts: 2, maxDay: 3 });
       if (r) this.rewardToast(r, '表达');
+    } catch (e) {}
+    // 🔴 v1.2.7：采纳后把消息内容真正更新为 better 版本（原来只记录表达，切走再切回还是错误原文）
+    try {
+      const msgDiv = box.closest('.msg');
+      if (msgDiv) {
+        const enEl = msgDiv.querySelector('.msg-en');
+        if (enEl) {
+          enEl.innerHTML = this.renderMsgText(better);
+          this.bindTapWords(msgDiv);
+        }
+        // 同步更新历史记录（普通对话 chatHistory / RP 的 rpHistory），切回会话/恢复时是修正版
+        if (this.state.rpMode) {
+          const lastUser = [...this.state.rpHistory].reverse().find(m => m.role === 'user');
+          if (lastUser) lastUser.content = better;
+          this.saveChatState();
+        } else {
+          const lastUser = [...this.state.chatHistory].reverse().find(m => m.role === 'user');
+          if (lastUser) lastUser.content = better;
+          this.saveChatState();
+        }
+      }
     } catch (e) {}
     box.innerHTML = `<div class="sg-done">✓ 已记入表达积累：${this.esc(better)}</div>`;
     TTS.speak(better);

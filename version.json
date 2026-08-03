@@ -1,6 +1,6 @@
 {
-  "version": "1.2.6",
-  "notes": "1.2.6：修复更新版本后积分/植物丢失——积分状态加了双保险：每次写入同时备份到本地存储，加载时 IndexedDB 读不到会自动从备份恢复；之后更新版本不会再丢今天的积分和植物",
-  "apk": "EnglishApp-v1.2.6.apk",
-  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.6/EnglishApp-v1.2.6.apk"
+  "version": "1.2.7",
+  "notes": "1.2.7：1) 复习卡改为出现就弹——不再等 SRS 到期（哪怕前面绘画出现过，第二次也能弹，同会话每词最多 2 次防轰炸）；2) 修切回绘画角色标签消失（player 随会话持久化）；3) 采纳纠错后消息内容真正更新为修正版（切走再切回不再回到错误原文）；4) 防普通对话内容覆盖 RP 绘画记录；5) 评级卡容错加固 + 看门狗（卡片意外消失自动继续下一张）",
+  "apk": "EnglishApp-v1.2.7.apk",
+  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.7/EnglishApp-v1.2.7.apk"
 }

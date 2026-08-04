@@ -112,7 +112,10 @@ const Words = {
       tags: w.tags || [],
       root: w.root || '', collocations: w.collocations || '', synonyms: w.synonyms || '', antonyms: w.antonyms || '', note: w.note || '',
       usage: w.usage || '', family: w.family || '', expand: w.expand || '',
-      srs: { due: now, interval: 0, reps: 0, lapses: 0, ease: 2.5 },
+      // 🔴 v1.2.36：srs 支持透传（导入备份保留原排期字段；不传时新建默认）——原来写死新建
+      srs: w.srs && typeof w.srs === 'object'
+        ? { due: Number(w.srs.due) || now, interval: Number(w.srs.interval) || 0, reps: Number(w.srs.reps) || 0, lapses: Number(w.srs.lapses) || 0, ease: Number(w.srs.ease) || 2.5 }
+        : { due: now, interval: 0, reps: 0, lapses: 0, ease: 2.5 },
     };
     await tx('words', 'readwrite', s => s.add(word));
     const p = Profile.load(); p.wordsLearned++; Profile.save(p);

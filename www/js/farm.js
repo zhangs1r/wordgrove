@@ -112,10 +112,14 @@ const Farm = {
   async load() {
     const now = FARM.now();
     if (!this._state) {
-      const s = await this.txGet('garden');
+      let s = null;
+      // 🔴 v1.2.36：IndexedDB 读失败（事务 reject/存储异常）也走备份兜底——原来只兜 null 不兜错误，
+      //   读失败直接 throw 会让今日页/小院整块炸掉，备份一次都没被咨询
+      try { s = await this.txGet('garden'); } catch (e) { console.warn('farm load txGet failed, fallback backup', e); }
+      const fromBackup = this._fromBackup();
       // 🔴 v1.2.6：IndexedDB 读不到 → 从 localStorage 备份恢复（防更新后数据丢失），再没有才新建
-      this._state = s || this._fromBackup() || this.defaultState();
-      if (!s && this._fromBackup()) { try { await this.txPut('garden', this._state); } catch (e) {} }
+      this._state = s || fromBackup || this.defaultState();
+      if (!s && fromBackup) { try { await this.txPut('garden', this._state); } catch (e) {} }
       this._state.dayCounts = this._state.dayCounts || {}; // 🔴 v1.1 旧数据迁移
       this._migrateDecor(this._state);
     }
@@ -127,11 +131,16 @@ const Farm = {
     }
     return this._state;
   },
-  /* 🔴 v1.1：跨月封存统一入口——积分跨月结转 + 已购装饰跨月保留 + 历史深拷贝 + 保留 36 个月 */
+  /* 🔴 v1.1：跨月封存统一入口——积分跨月结转 + 已购装饰跨月保留 + 历史深拷贝 + 保留 36 个月
+     🔴 v1.2.36：封存前查重（时钟回拨/并发 load 曾产生重复历史月条目） */
   sealState(st) {
     st.sealed = true;
     st.history = st.history || [];
-    st.history.unshift({ year: st.year, month: st.month, planted: st.planted, decor: JSON.parse(JSON.stringify(st.decor || [])), owned: (st.owned || []).slice(), stage: st.stage, totalEarned: st.totalEarned, sealedAt: Date.now() });
+    // 同一年月已存在 → 只更新不重复 unshift（防时钟回拨/并发 load 双封存）
+    const dup = st.history.findIndex(h => h.year === st.year && h.month === st.month);
+    const entry = { year: st.year, month: st.month, planted: st.planted, decor: JSON.parse(JSON.stringify(st.decor || [])), owned: (st.owned || []).slice(), stage: st.stage, totalEarned: st.totalEarned, sealedAt: Date.now() };
+    if (dup >= 0) st.history[dup] = entry;
+    else st.history.unshift(entry);
     const fresh = this.defaultState();
     fresh.points = st.points || 0;
     fresh.owned = (st.owned || []).slice();
@@ -185,18 +194,76 @@ const Farm = {
    * 现象：用户每次更新版本后"今天获取的积分和植物"消失——IndexedDB 数据在覆盖安装/WebView
    * 清理时可能丢失或读失败，load() 读到 null 会用 defaultState 覆盖写，数据永久丢失。
    * 修复：每次 save() 同步写一份到 localStorage('farm_backup')；load() 读 IndexedDB 失败/为 null
-   * 时自动从备份恢复并写回 IndexedDB；_addPointsTx 读不到 garden 记录时用内存缓存/备份兜底，不再直接覆盖。 */
-  async save() {
-    await this.txPut('garden', this._state);
-    try { localStorage.setItem('farm_backup', JSON.stringify(this._state)); } catch (e) {}
+   * 时自动从备份恢复并写回 IndexedDB；_addPointsTx 读不到 garden 记录时用内存缓存/备份兜底，不再直接覆盖。
+   * 🔴 v1.2.36：save() 也进串行队列（历史月装饰保存/导入/封存保存曾与 in-flight 奖励事务交错丢更新） */
+  save() {
+    return this._enqueue(async () => {
+      await this.txPut('garden', this._state);
+      try { localStorage.setItem('farm_backup', JSON.stringify(this._state)); } catch (e) {}
+    });
   },
+  /* 🔴 v1.2.36：备份恢复前过 sanitize（防篡改/脏数据绕过导入门槛直达渲染层） */
   _fromBackup() {
     try {
       const raw = localStorage.getItem('farm_backup');
       if (!raw) return null;
       const s = JSON.parse(raw);
-      return (s && s.id === 'garden') ? s : null;
+      if (!s || s.id !== 'garden') return null;
+      return this.sanitize(s);
     } catch { return null; }
+  },
+  /* ============ 状态清洗（🔴 v1.2.36：从 ui.js 迁移 + 全面增强，导入/备份恢复共用）
+   * 数值钳制防 NaN 腐化；decor/owned 白名单（任意月份的限定装饰都合法，跨月恢复不丢）；
+   * history 逐月递归清洗；planted 校验作物名；id 重建防属性注入；dayCounts 导入即清空（新起点）。 */
+  sanitize(f) {
+    const num = (v, max) => { const n = Number(v); return Number.isFinite(n) ? Math.max(0, Math.min(max, n)) : 0; };
+    const now = FARM.now();
+    // 任意月份的限定装饰 + 通用装饰都算合法（v0.43 设计：已购限定装饰跨月保留）
+    const validDecor = (t) => {
+      if (!t || typeof t !== 'string') return false;
+      if (FARM.DECOR[t]) return true;
+      for (let m = 1; m <= 12; m++) if ((FARM.MONTH_DECOR[m] || {})[t]) return true;
+      return false;
+    };
+    const cleanDecor = (list) => Array.isArray(list)
+      ? list.filter(d => d && validDecor(d.type) && Number.isFinite(Number(d.x)) && Number.isFinite(Number(d.y)))
+        .map(d => ({ id: (typeof d.id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(d.id)) ? d.id : this.newDecorId(), type: String(d.type), x: num(d.x, 1024), y: num(d.y, 1536), angle: num(d.angle, 360), scale: Math.max(0.5, Math.min(3, num(d.scale, 3) || 1)) }))
+      : [];
+    const cleanHistory = (list) => Array.isArray(list)
+      ? list.slice(0, 36).map(h => {
+          if (!h || typeof h !== 'object') return null;
+          const planted = (h.planted && typeof h.planted === 'object' && !Array.isArray(h.planted)) ? {} : {};
+          if (h.planted && typeof h.planted === 'object' && !Array.isArray(h.planted)) {
+            for (const [d, c] of Object.entries(h.planted)) {
+              if (/^\d{1,2}$/.test(d) && FARM.CROP_DEFS[c]) planted[d] = c;
+            }
+          }
+          return { year: num(h.year, 9999), month: num(h.month, 12) || 1, planted, decor: cleanDecor(h.decor), owned: Array.isArray(h.owned) ? h.owned.filter(validDecor) : [], stage: Math.min(2, num(h.stage, 2)), totalEarned: num(h.totalEarned, 9999999), sealedAt: num(h.sealedAt, Date.now()) };
+        }).filter(Boolean)
+      : [];
+    const planted = {};
+    if (f.planted && typeof f.planted === 'object' && !Array.isArray(f.planted)) {
+      for (const [d, c] of Object.entries(f.planted)) {
+        if (/^\d{1,2}$/.test(d) && FARM.CROP_DEFS[c]) planted[d] = c;
+      }
+    }
+    return {
+      id: 'garden',
+      year: num(f.year, 9999) || now.getFullYear(),
+      month: num(f.month, 12) || now.getMonth() + 1,
+      points: num(f.points, 999999),
+      totalEarned: num(f.totalEarned, 9999999),
+      dayPoints: num(f.dayPoints, FARM.POINT_DAY_LIMIT),
+      day: typeof f.day === 'string' ? f.day : FARM.dayKey(now),
+      planted,
+      stage: Math.min(2, num(f.stage, 2)),
+      decor: cleanDecor(f.decor),
+      owned: Array.isArray(f.owned) ? f.owned.filter(validDecor) : [],
+      // 🔴 v1.2.36：dayCounts 导入即清空——残留"今天已发满"的计数会锁死当天来源（P3-21）
+      dayCounts: {},
+      sealed: false,
+      history: cleanHistory(f.history),
+    };
   },
   async txGet(id) {
     const d = await db();
@@ -261,6 +328,10 @@ const Farm = {
             let p = opts.pts || 0;
             if (st.dayPoints + p > FARM.POINT_DAY_LIMIT) p = Math.max(0, FARM.POINT_DAY_LIMIT - st.dayPoints);
             if (p === 0) { resolve(null); return; }
+            // 🔴 v1.2.36：烧键修复——被日上限截断（p < 全额）时不写幂等记录！
+            //   否则 chat/rp 档位键（永久键）被烧成小分值、该档永不再发（最勤奋的用户最常触发）；
+            //   次数照计（dayCounts++ 防无限重试拿剩余额度），但键保留，下次全新触发可拿全额
+            const truncated = p < (opts.pts || 0);
             st.points += p;
             st.totalEarned += p;
             st.dayPoints += p;
@@ -276,7 +347,15 @@ const Farm = {
             store.put(st);
             Farm._state = st; // 同步内存缓存
             try { localStorage.setItem('farm_backup', JSON.stringify(st)); } catch (e) {} // 🔴 v1.2.6：事务内同步备份
-            store.put({ id: evId, source, key, pts: p, at: Date.now() });
+            if (!truncated) {
+              store.put({ id: evId, source, key, pts: p, at: Date.now() });
+              // 🔴 v1.2.36：ev_ 幂等记录定期清理（180 天前的键只占空间，防重放不需要永久保留）
+              try {
+                const cutoff = Date.now() - 180 * 864e5;
+                const cur = store.openCursor(IDBKeyRange.bound('ev_', 'ev_\uffff'));
+                cur.onsuccess = () => { const c = cur.result; if (c) { if ((c.value && c.value.at) < cutoff) c.delete(); c.continue(); } };
+              } catch (e) {}
+            }
             resolve({ pts: p, stage: st.stage, planted: st.planted[dayNum] || null });
           };
           reqS.onerror = () => reject(reqS.error);
@@ -328,14 +407,47 @@ const Farm = {
       return { ok: true };
     });
   },
-  /* 保存整体摆放布局（编辑模式点勾时调用，layout 带 id，同类型多份，保留 angle/scale） */
+  /* 保存整体摆放布局（编辑模式点勾时调用，layout 带 id，同类型多份，保留 angle/scale）
+     🔴 v1.2.36：保存前做全局库存复核（layout 中某类型数量 + 其他位置已摆 > 已购数 → 拒绝），
+     原来校验只在 placeDecor 一条路径，主摆放路径 gardenEditPlace→saveDecorLayout 完全绕过 */
   async saveDecorLayout(layout) {
     return this._enqueue(async () => {
       const st = await this.load();
+      const chk = this._checkLayoutStock(layout, null);
+      if (!chk.ok) return { ok: false, msg: '「' + this.decorName(chk.type) + '」超出库存（可摆 ' + chk.max + ' 个），先收几个再保存' };
       st.decor = layout.map(d => ({ id: d.id || this.newDecorId(), type: d.type, x: Math.round(d.x), y: Math.round(d.y), angle: d.angle || 0, scale: d.scale || 1 }));
       await this.save();
       return { ok: true };
     });
+  },
+  /* 🔴 v1.2.36：全局库存复核——layout（正在编辑的视图）各类型数量 + 其他位置已摆数 ≤ 已购数
+   * view 传入时表示编辑的是历史月（排除该月自己的已摆），null 表示当前月 */
+  _checkLayoutStock(layout, view) {
+    const st = this._state;
+    if (!st) return { ok: true };
+    const counts = {};
+    for (const d of layout || []) counts[d.type] = (counts[d.type] || 0) + 1;
+    const other = {};
+    const addList = (list) => { for (const de of list || []) other[de.type] = (other[de.type] || 0) + 1; };
+    if (view) {
+      addList(st.decor);
+      for (const h of st.history || []) {
+        if (!(h.year === view.year && h.month === view.month)) addList(h.decor);
+      }
+    } else {
+      for (const h of st.history || []) addList(h.decor);
+    }
+    for (const t of Object.keys(counts)) {
+      const ownedCount = (st.owned || []).filter(x => x === t).length;
+      const avail = ownedCount - (other[t] || 0);
+      if (counts[t] > avail) return { ok: false, type: t, max: Math.max(0, avail) };
+    }
+    return { ok: true };
+  },
+  decorName(type) {
+    const st = this._state;
+    const m = st ? st.month : new Date().getMonth() + 1;
+    return (FARM.DECOR[type] || {}).name || (FARM.MONTH_DECOR[m] || {})[type]?.name || type;
   },
   /* 全局已摆数（当前月 + 所有历史月）——🔴 v1.1 从 ui.js 下沉，数据层/UI 层共用 */
   placedTotal(type) {

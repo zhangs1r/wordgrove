@@ -250,7 +250,10 @@ const TTS = {
         });
         return;
       }
+      // 🔴 v1.2.36：合成 id 记到 item 上——_onResult/_onError 用 id 校验当前项，
+      //   否则快速切换朗读时旧句子的结果会打到新 item 上（听到 A 的音频、B 按钮提前复位）
       const id = ++this.synthId;
+      item.id = id;
       this.worker.postMessage({ type: 'synth', id, text: item.text, rate: item.rate, voice: item.voice });
       // 兜底超时
       this._synthTimer = setTimeout(() => {
@@ -266,7 +269,8 @@ const TTS = {
   },
 
   _onResult(id, samples, sampleRate) {
-    if (!this._current) return;
+    // 🔴 v1.2.36：id 校验——旧合成结果（被打断的任务）到达时直接丢弃，不能打到新 item 上
+    if (!this._current || (this._current.id != null && id !== this._current.id)) return;
     clearTimeout(this._synthTimer);
     this._pending(false);
     const item = this._current;
@@ -290,7 +294,8 @@ const TTS = {
 
   _onError(id, message) {
     console.log('tts synth error', message);
-    if (!this._current) return;
+    // 🔴 v1.2.36：id 校验同 _onResult（旧任务的错误不打到新任务上）
+    if (!this._current || (this._current.id != null && id !== this._current.id)) return;
     clearTimeout(this._synthTimer);
     this._pending(false);
     this.playing = false;

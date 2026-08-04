@@ -57,6 +57,8 @@ const UI = {
     // 🔴 v1.2.3：复习卡队列——多个待复习词按顺序一张张展示（评级→看释义→点"知道了"→下一张）
     reviewQueue: [],
     reviewActive: false,
+    // 🔴 v1.2.36：RP 用户消息单调计数（压缩/回滚不回收）——积分档位键用它在压缩后也不碰撞
+    rpUserSeq: 0,
   },
 
   init() {
@@ -387,7 +389,8 @@ const UI = {
     // 排行榜（原有逻辑：忘词/表达/常犯错）
     const ranks = this.el('dashRanks');
     if (ranks) {
-      const forget = Agent.forgetWords ? Agent.forgetWords() : [];
+      // 🔴 v1.2.36：Agent 没有 forgetWords 方法（只有 _forgetWords 数组缓存）——原调用恒空，忘词列永远"暂无"
+      const forget = (Agent._forgetWords || []);
       const exprs = (Settings.get('expressions', []) || []).slice(-5).reverse();
       const errs = (Profile.load().mistakes || []).slice(0, 5);
       ranks.innerHTML = `<div class="rank-col"><div class="rank-head">忘词最多</div>${forget.slice(0, 5).map(w => `<div class="rank-item" data-rw="${this.esc(w)}">${this.esc(w)}</div>`).join('') || '<div class="rank-item muted">暂无</div>'}</div>
@@ -580,14 +583,14 @@ const UI = {
       const s = base * (d.scale || 1);
       // 旋转只作用在 img 上（按钮保持正向）
       const rot = d.angle ? `transform:rotate(${d.angle}deg)` : '';
-      return `<div class="edit-decor" data-editid="${d.id || 'new'}" data-editdecor="${d.type}" style="left:${d.x * scaleX}px;top:${d.y * scaleY}px;width:${s}px;height:${s}px;transform:translate(-50%,-50%)">
-        <img src="assets/decor/${d.type}.png" alt="" style="${rot}">
-        ${d.id ? `<button class="edit-decor-del" data-delid="${d.id}">✕</button>` : ''}
-        ${d.id ? `<button class="edit-decor-rot" data-rotid="${d.id}">↻</button>` : ''}
-        ${d.id ? `<button class="edit-decor-szin" data-szid="${d.id}" data-dir="in">+</button>
-        <button class="edit-decor-szout" data-szid="${d.id}" data-dir="out">−</button>` : ''}
-        ${d.id ? `<button class="edit-decor-zup" data-zid="${d.id}" data-dir="up">▲</button>
-        <button class="edit-decor-zdown" data-zid="${d.id}" data-dir="down">▼</button>` : ''}
+      return `<div class="edit-decor" data-editid="${this.esc(d.id || 'new')}" data-editdecor="${this.esc(d.type)}" style="left:${d.x * scaleX}px;top:${d.y * scaleY}px;width:${s}px;height:${s}px;transform:translate(-50%,-50%)">
+        <img src="assets/decor/${this.esc(d.type)}.png" alt="" style="${rot}">
+        ${d.id ? `<button class="edit-decor-del" data-delid="${this.esc(d.id)}">✕</button>` : ''}
+        ${d.id ? `<button class="edit-decor-rot" data-rotid="${this.esc(d.id)}">↻</button>` : ''}
+        ${d.id ? `<button class="edit-decor-szin" data-szid="${this.esc(d.id)}" data-dir="in">+</button>
+        <button class="edit-decor-szout" data-szid="${this.esc(d.id)}" data-dir="out">−</button>` : ''}
+        ${d.id ? `<button class="edit-decor-zup" data-zid="${this.esc(d.id)}" data-dir="up">▲</button>
+        <button class="edit-decor-zdown" data-zid="${this.esc(d.id)}" data-dir="down">▼</button>` : ''}
       </div>`;
     }).join('');
     // 拖动绑定
@@ -740,6 +743,9 @@ const UI = {
     const layout = (src.list || []).map(d => ({ ...d, id: d.id || Farm.newDecorId() }));
     if (src.isView) {
       // 历史月：更新自己图层的 decor（作物不动）
+      // 🔴 v1.2.36：历史月保存也过全局库存复核（防超发库存，与当前月 saveDecorLayout 同口径）
+      const chk = Farm._checkLayoutStock(layout, this._gardenView);
+      if (!chk.ok) { this.toast('「' + Farm.decorName(chk.type) + '」超出库存（可摆 ' + chk.max + ' 个），先收几个再保存'); return; }
       this._gardenView.decor = layout;
       const idx = (st.history || []).findIndex(h => h.year === this._gardenView.year && h.month === this._gardenView.month);
       if (idx >= 0) st.history[idx].decor = layout;
@@ -780,29 +786,7 @@ const UI = {
     }
     const day = Farm.hitDay(cv, e, st.year, st.month);
     if (day == null) return;
-    if (this._gardenMode) {
-      this.gardenPlace(day);
-      return;
-    }
     this.gardenDayMenu(day);
-  },
-  async gardenPlace(day) {
-    const mode = this._gardenMode;
-    if (!mode) return;
-    const st = await Farm.load();
-    if (st.decor.some(x => x.day === day && x.type === mode.type)) {
-      this.toast('这天已经放了 ' + (FARM.DECOR[mode.type] ? FARM.DECOR[mode.type].name : ''));
-      return;
-    }
-    const r = await Farm.placeDecor(mode.type, day);
-    if (r.ok) {
-      this.toast('已放在 ' + day + ' 号');
-      this._gardenMode = null;
-      this.farmDrawerClose();
-      await this.renderGarden();
-    } else {
-      this.toast(r.msg || '无法放置');
-    }
   },
   async gardenDayMenu(day) {
     const st = await Farm.load();
@@ -862,7 +846,7 @@ const UI = {
       this.farmDrawerOpen();
       return;
     }
-    const rows = hist.map((h, i) => `<div class="fd-item"><span class="fd-name">${h.year} 年 ${h.month} 月 · ${Object.keys(h.planted || {}).length} 天有学习</span><button class="btn btn-primary btn-sm" data-viewhist="${i}">查看</button></div>`).join('');
+    const rows = hist.map((h, i) => `<div class="fd-item"><span class="fd-name">${this.esc(h.year)} 年 ${this.esc(h.month)} 月 · ${Object.keys(h.planted || {}).length} 天有学习</span><button class="btn btn-primary btn-sm" data-viewhist="${i}">查看</button></div>`).join('');
     d.innerHTML = `<div class="fd-head">历史院子（${hist.length}） <button class="icon-btn-sm" data-act="close">✕</button></div>
       <div class="fd-scroll">${rows}<div class="fd-item"><span class="fd-name">点查看回到当前月</span><button class="btn btn-ghost btn-sm" data-viewhist="back">返回</button></div></div>`;
     this.farmDrawerOpen();
@@ -932,15 +916,43 @@ const UI = {
     if (!r || !r.pts) return;
     this.toast(label + '：+' + r.pts + ' 积分');
   },
-  /* 对话奖励：会话内用户英文累计词数达到 24/48/72 档各发一次（每日最多 3 次） */
+  /* 🔴 v1.2.36：超长对话自动压缩（用户要求：不截断，AI 压缩早期记录——Pi compaction 思路）
+   * 超过 220 条时把最早的 (len-100) 条交给 AI 压成一条摘要；压缩失败极端保底截断 400 条（防配额爆） */
+  async maybeCompactHistory(isRp) {
+    const h = isRp ? this.state.rpHistory : this.state.chatHistory;
+    if (!h || h.length <= 220) return;
+    const keep = 100;
+    const early = h.slice(0, h.length - keep);
+    if (!early.length) return;
+    const summary = await Agent.compressHistory(early);
+    if (summary) {
+      const replaced = { role: 'assistant', name: '', content: summary, compressed: true };
+      if (isRp) this.state.rpHistory = [replaced, ...h.slice(h.length - keep)];
+      else this.state.chatHistory = [replaced, ...h.slice(h.length - keep)];
+      this.renderChatHistory();
+      this.saveChatState();
+      this.toast('对话较长，早期记录已自动压缩 ✓');
+    } else if (h.length > 400) {
+      // 压缩失败（网络/额度）的极端保底，防 localStorage 配额爆掉静默丢记录
+      if (isRp) this.state.rpHistory = h.slice(-400);
+      else this.state.chatHistory = h.slice(-400);
+      this.renderChatHistory();
+      this.saveChatState();
+    }
+  },
+  /* 对话奖励：当日用户英文词数达到 24/48/72 档各发一次（每日最多 3 次）
+     🔴 v1.2.36：① 只统计今天发的消息（旧消息无 at 字段自动排除）——长会话不再累计 72 词后永久封顶，
+        每天都能重新拿，不再奖励"删会话重建"；② 键加日期段——键生命周期与上限窗口对齐 */
   async chatRewardTick() {
     try {
+      const today0 = new Date(); today0.setHours(0, 0, 0, 0);
+      const t0 = today0.getTime();
       const total = this.state.chatHistory
-        .filter(m => m.role === 'user')
+        .filter(m => m.role === 'user' && (m.at || 0) >= t0)
         .reduce((n, m) => n + ((m.content.match(/[a-zA-Z]+/g) || []).length), 0);
       for (let i = 0; i < 3; i++) {
         if (total >= 24 * (i + 1)) {
-          const r = await Farm.addPoints('chat', { key: this.state.convId + ':t' + i, pts: 3, maxDay: 3 });
+          const r = await Farm.addPoints('chat', { key: this.state.convId + ':' + FARM.dayKey(FARM.now()) + ':t' + i, pts: 3, maxDay: 3 });
           if (r) this.rewardToast(r, '对话');
         }
       }
@@ -948,7 +960,7 @@ const UI = {
   },
 
   /* ============ 言木小院 v0.33（月历花园） ============ */
-  _gardenMode: null,   // 放置模式 {type}
+  // 🔴 v1.2.36：_gardenMode/gardenPlace 死代码已删（v0.33 遗留，placeDecor(type, day) 参数错配会把 NaN 写进数据）
   _gardenView: null,   // 历史查看 {year, month, planted, decor, stage}
 
   async renderToday() {
@@ -1041,6 +1053,9 @@ const UI = {
       console.warn('拒绝普通会话覆盖 RP 绘画记录', conv.id);
       return;
     }
+    // 🔴 v1.2.36：单会话 history 极端保底 400 条（正常超过 220 条会走 AI 压缩不截断；
+    //   这里只是压缩失败时的最后防线，防 localStorage 配额爆掉静默丢记录）——不再直接 slice(-200) 截断
+    if (Array.isArray(conv.history) && conv.history.length > 400) conv.history = conv.history.slice(-400);
     // 🔴 v1.1：LRU 上限 40 个（超了丢最旧），防 localStorage 无限增长逼近配额
     let list = all.filter(c => c.id !== conv.id);
     list.push(conv);
@@ -1067,6 +1082,7 @@ const UI = {
   },
   newConv() {
     if (this.state.rpMode) { this.exitRp(); return; }
+    if (this.state.hintMode) this.exitHintMode(); // 🔴 v1.2.36：hintMode 跨会话残留修复
     // 旧会话有内容就保存
     if (this.state.chatHistory.length) this.saveConversation(this.currentConv());
     this.state.convId = 'c_' + Date.now();
@@ -1084,6 +1100,7 @@ const UI = {
   switchConv(id) {
     // 🔴 v0.43：切到 RP 话题时不再提示"退出角色扮演"——只有切到普通会话才真正退出
     if (this.state.rpBusy) { this.toast('正在生成中，稍等…'); return; } // 🔴 v1.1：回合中禁止切换（防结果写进别的会话/丢失）
+    if (this.state.hintMode) this.exitHintMode(); // 🔴 v1.2.36：hintMode 跨会话残留修复
     const target = this.listConversations().find(c => c.id === id);
     if (!target) return;
     if (this.state.rpMode) {
@@ -1137,6 +1154,7 @@ const UI = {
       this.state.convId = conv.id;
       this.state.convTitle = conv.title || (w ? w.name : '剧场');
       this.state.autoTurn = 0;
+      this.state.rpUserSeq = conv.rpUserSeq || 0; // 🔴 v1.2.36：恢复单调计数
       this.updateRpRoleTag(); // 🔴 v1.2.2：恢复 RP 会话后显示扮演角色
       this.renderConvTitle();
       this.renderChatHistory();
@@ -1170,14 +1188,14 @@ const UI = {
     }
     wrap.innerHTML = sorted.map(c => {
       return `
-      <div class="conv-item ${c.id === this.state.convId ? 'active' : ''}" data-id="${c.id}">
+      <div class="conv-item ${c.id === this.state.convId ? 'active' : ''}" data-id="${this.esc(c.id)}">
         <div class="ci-main">
           <div class="ci-title">${this.esc(c.title || '新会话')}</div>
           <div class="ci-meta">${c.isRp ? '剧场 · ' : ''}${(c.history || []).length} 条 · ${this.fmtTime(c.updated)}</div>
         </div>
         <div class="ci-actions">
-          <button class="ci-edit" data-edit="${c.id}" title="重命名">✎</button>
-          <button class="ci-del" data-del="${c.id}">✕</button>
+          <button class="ci-edit" data-edit="${this.esc(c.id)}" title="重命名">✎</button>
+          <button class="ci-del" data-del="${this.esc(c.id)}">✕</button>
         </div>
       </div>`;
     }).join('');
@@ -1229,6 +1247,7 @@ const UI = {
           this.state.rpRoster = {};
           this.state.rpActiveChars = [];
           this.state.rpStep = '';
+          this.state.rpUserSeq = 0; // 🔴 v1.2.36：会话删除重置计数
           this.resetReviewQueue(); // 🔴 v1.2.3
           this.renderConvTitle();
           this.renderChatHistory();
@@ -1283,6 +1302,8 @@ const UI = {
             roster: this.state.rpRoster || {},
             // 🔴 v1.2.7：player 随会话持久化——否则切走再切回 rpPlayer=null，角色标签消失
             player: this.state.rpPlayer || null,
+            // 🔴 v1.2.36：单调计数随会话持久化（压缩/回滚后切回，积分键不碰撞）
+            rpUserSeq: this.state.rpUserSeq || 0,
             updated: Date.now(),
           });
         }
@@ -1366,13 +1387,14 @@ const UI = {
     if (placeholder) placeholder.remove();
     const div = document.createElement('div');
     div.className = 'msg ' + (role === 'user' ? 'msg-me' : 'msg-ai');
+    if (role === 'user' && opts.idx !== undefined) div.dataset.idx = opts.idx; // 🔴 v1.2.36：记录历史索引（adoptSuggestion 按消息定位，不再"改最后一条 user"）
     if (opts.typing) {
       div.className += ' msg-typing';
       div.innerHTML = '<i></i><i></i><i></i>';
     } else {
       const cn = opts.cn ? `<div class="msg-cn">${this.esc(opts.cn)}</div>` : '';
       const v = opts.voice || 'n';
-      const readBtn = role === 'assistant' ? `<button class="msg-chip-btn" data-say="${this.esc(text)}" data-voice="${v}" title="朗读">${this.sayIcon()}</button>` : '';
+      const readBtn = role === 'assistant' ? `<button class="msg-chip-btn" data-say="${this.esc(text)}" data-voice="${this.esc(v)}" title="朗读">${this.sayIcon()}</button>` : '';
       const hLen = this.state.rpMode ? this.state.rpHistory.length : this.state.chatHistory.length;
       const idx = opts.idx !== undefined ? opts.idx : hLen - 1;
       // 🔴 v0.43：回滚/重新生成按钮放在「我的输入」（user 消息）上：
@@ -1535,7 +1557,9 @@ const UI = {
     try { Agent.refreshForgetWords(); } catch (e) {}
     try { Profile.touchStreak(); } catch (e) {}
     try {
-      const r = await Farm.addPoints('reviewcard', { key: w.id, pts: 2, maxDay: 8 });
+      // 🔴 v1.2.36：键改词形+日期段（原来 w.id——删词重建新 id 可反复刷分）；同词同天只发一次
+      const rkey = 'w:' + String(w.word || '').toLowerCase().trim().replace(/[^a-z0-9\s]/g, '') + ':' + FARM.dayKey(FARM.now());
+      const r = await Farm.addPoints('reviewcard', { key: rkey, pts: 2, maxDay: 8 });
       if (r) this.rewardToast(r, '复习');
     } catch (e) {}
     // 反馈态：展开释义 + "知道了"按钮（🔴 v1.2.3：点它切下一张）
@@ -1593,7 +1617,7 @@ const UI = {
     await Agent.refreshForgetWords().catch(() => {});
     let userDiv = null;
     if (!opts.alreadyInHistory) {
-      this.state.chatHistory.push({ role: 'user', content: text });
+      this.state.chatHistory.push({ role: 'user', content: text, at: Date.now() }); // 🔴 v1.2.36：at 供当日词数统计
       userDiv = this.appendMsg('user', text);
     }
     // 表达建议：异步检查，不阻塞对话主线
@@ -1611,6 +1635,7 @@ const UI = {
       if (Settings.get('readReply', true)) TTS.speak(reply);
       this.saveChatState();
       await this.chatRewardTick();
+      this.maybeCompactHistory(false); // 🔴 v1.2.36：超长对话自动压缩（不截断）
       // 自动复盘：每 6 轮对话自动来一次，不打断下次输入
       this.state.autoTurn++;
       if (this.state.autoTurn >= 6 && !this.state.reviewing) {
@@ -1622,7 +1647,9 @@ const UI = {
       }
     } catch (e) {
       typing.remove();
-      const host = API.base.includes('deepseek.com') ? 'deepseek' : API.base.includes('opencode.ai') ? 'opencode' : API.base;
+      // 🔴 v1.2.36：只显示主机名（原来回显完整 apiBase——误填 userinfo 凭据会写进对话历史并随备份导出）
+      let host = 'deepseek';
+      try { const u = new URL(API.base); host = u.hostname; } catch {}
       const label = '⚠️ [' + Settings.get('chatModel', 'deepseek-v4-flash') + ' @' + host + '] ' + (e.message || '出错了');
       const div = this.appendMsg('assistant', label);
       const actions = div.querySelector('.msg-actions');
@@ -1714,11 +1741,15 @@ const UI = {
     Settings.set('expressions', list.slice(-50));
     try {
       // 🔴 v1.1：幂等 key 规范化（trim + 去标点），同一表达大小写/标点差异不再重复得分
-      const ekey = String(better || '').toLowerCase().trim().replace(/[^a-z0-9\s]/g, '') || ('expr' + Date.now());
-      const r = await Farm.addPoints('expr', { key: ekey, pts: 2, maxDay: 3 });
-      if (r) this.rewardToast(r, '表达');
+      // 🔴 v1.2.36：规范化后为空（全中文/纯标点）→ 不发分（原来 Date.now() fallback 每次都是新键，幂等形同虚设）
+      const ekey = String(better || '').toLowerCase().trim().replace(/[^a-z0-9\s]/g, '');
+      if (ekey) {
+        const r = await Farm.addPoints('expr', { key: ekey, pts: 2, maxDay: 3 });
+        if (r) this.rewardToast(r, '表达');
+      }
     } catch (e) {}
     // 🔴 v1.2.7：采纳后把消息内容真正更新为 better 版本（原来只记录表达，切走再切回还是错误原文）
+    // 🔴 v1.2.36：按建议卡所在消息的索引定位（原来取"最后一条 user"——连发多条后采纳旧建议会污染最新消息）
     try {
       const msgDiv = box.closest('.msg');
       if (msgDiv) {
@@ -1728,15 +1759,11 @@ const UI = {
           this.bindTapWords(msgDiv);
         }
         // 同步更新历史记录（普通对话 chatHistory / RP 的 rpHistory），切回会话/恢复时是修正版
-        if (this.state.rpMode) {
-          const lastUser = [...this.state.rpHistory].reverse().find(m => m.role === 'user');
-          if (lastUser) lastUser.content = better;
-          this.saveChatState();
-        } else {
-          const lastUser = [...this.state.chatHistory].reverse().find(m => m.role === 'user');
-          if (lastUser) lastUser.content = better;
-          this.saveChatState();
-        }
+        const idx = parseInt(msgDiv.dataset.idx, 10);
+        const h = this.state.rpMode ? this.state.rpHistory : this.state.chatHistory;
+        const target = (idx >= 0 && h[idx] && h[idx].role === 'user') ? h[idx] : null;
+        if (target) target.content = better;
+        this.saveChatState();
       }
     } catch (e) {}
     box.innerHTML = `<div class="sg-done">✓ 已记入表达积累：${this.esc(better)}</div>`;
@@ -1782,6 +1809,8 @@ const UI = {
       this.appendMsg('assistant', '⚠️ 生成建议失败：' + (e.message || '出错了'));
     }
     this.state.chatBusy = false;
+    // 🔴 v1.2.36：建议卡已不在 DOM（会话切换/清空）→ 自动退出 hintMode，防止输入被静默路由到中文求助
+    if (this.state.hintMode && this.state.hintBox && !this.state.hintBox.isConnected) this.exitHintMode();
   },
 
   /* ---------- 复盘 ---------- */
@@ -1830,7 +1859,8 @@ const UI = {
       // 🔴 v1.1：复盘积分移到分支外——手动/自动复盘都发分；有生词也不跳过（之前 else-if 导致"有生词就没分"）
       try {
         const rp = !!this.state.rpMode;
-        const r = await Farm.addPoints('review', { key: this.state.convId + ':' + (this.state.chatHistory.length || this.state.rpHistory.length || 0) + ':' + Date.now(), pts: rp ? 8 : 6, maxDay: 2 });
+        // 🔴 v1.2.36：键去掉 Date.now()——原来键永远唯一幂等形同虚设；改为 会话+消息数（同轮复盘两次被拦，下一轮键不同）
+        const r = await Farm.addPoints('review', { key: this.state.convId + ':rev:' + (this.state.chatHistory.length || this.state.rpHistory.length || 0), pts: rp ? 8 : 6, maxDay: 2 });
         if (r) this.rewardToast(r, '复盘');
       } catch (e) {}
       const rpIssues = (review.roleplay || []).filter(r => r && r.issue).length;
@@ -1976,7 +2006,8 @@ const UI = {
     }
     const wrap = this.el('wordList');
     this.el('wordEmpty').classList.toggle('hidden', list.length > 0);
-    if (!list.length) { wrap.innerHTML = ''; return; }
+    // 🔴 v1.2.36：单词为空不再提前 return（原来生词本没词时句子本永不显示——渲染被跳过）
+    if (list.length) {
     wrap.innerHTML = list.map(w => `
       <div class="word-item ${(w.srs.reps > 0 && w.srs.due > Date.now() + 20 * 864e5) ? 'mastered' : ''}" data-id="${w.id}">
         <div class="wi-main">
@@ -1998,6 +2029,7 @@ const UI = {
       if (w) this.showWordDetail(w);
     }));
 
+    } // 🔴 v1.2.36：单词渲染块结束（与句子本独立，单词空不影响句子显示）
     // 句子本区块（与单词合并展示）
     const sents = this.listSentences().filter(s =>
       (!tagF || (s.tags || []).includes(tagF)) &&
@@ -2005,14 +2037,14 @@ const UI = {
     const sentWrap = this.el('sentList');
     if (!sents.length) { sentWrap.innerHTML = ''; return; }
     sentWrap.innerHTML = `<div class="sent-head">句子本（${sents.length}）</div>` + sents.map(s => `
-      <div class="word-item sent-item" data-id="${s.id}">
+      <div class="word-item sent-item" data-id="${this.esc(s.id)}">
         <div class="wi-main">
           <div class="wi-word">${this.renderMsgText(s.text)}</div>
           <div class="wi-meaning">${this.esc(s.cn || '')}${s.note ? ` <span class="wi-state">${this.esc(s.note)}</span>` : ''}</div>
           ${s.ctx ? `<div class="si-ctx">${this.esc(s.ctx)}</div>` : ''}
         </div>
         <button class="wi-say" data-say="${this.esc(s.text)}">${this.sayIcon()}</button>
-        <button class="wi-del" data-del="${s.id}">✕</button>
+        <button class="wi-del" data-del="${this.esc(s.id)}">✕</button>
       </div>`).join('');
     sentWrap.querySelectorAll('.wi-say').forEach(b => this.addSpeakListener(b, b.dataset.say));
     sentWrap.querySelectorAll('.wi-del').forEach(b => b.addEventListener('click', async e => {
@@ -2315,7 +2347,9 @@ const UI = {
       const inSet = !!exist;
       if (!inSet) {
         try {
-          const r = await Farm.addPoints('word', { key: word.toLowerCase() + ':' + FARM.dayKey(FARM.now()), pts: 2, maxDay: 10 });
+          // 🔴 v1.2.36：键规范化（trim/去标点，与 expr 同款）——同一词不同形态不再重复得分
+          const wkey = String(word).toLowerCase().trim().replace(/[^a-z0-9\s]/g, '');
+          const r = await Farm.addPoints('word', { key: wkey + ':' + FARM.dayKey(FARM.now()), pts: 2, maxDay: 10 });
           if (r) this.rewardToast(r, '查词');
         } catch (e) {}
       }
@@ -2408,6 +2442,9 @@ const UI = {
       this.state.chatHistory = this.state.chatHistory.slice(0, idx);
     }
     this.saveChatState();
+    // 🔴 v1.2.36：回滚后重置复习卡队列（被删消息的卡还在队列里会继续弹） + autoTurn 归零
+    this.resetReviewQueue();
+    this.state.autoTurn = 0;
     this.renderChatHistory();
     // 🔴 v1.2.15：回滚后提示下一步（选项可能随被删回合丢失，只剩继续/自己输入）
     if (this.state.rpMode) this.toast('已回滚——可输入新内容，或点"继续"让故事推进');
@@ -2656,6 +2693,11 @@ const UI = {
     this.el('saveAiBtn').addEventListener('click', () => {
       const key = this.el('setApiKey').value.trim();
       const base = this.el('setApiBase').value.trim();
+      // 🔴 v1.2.36：apiBase 严格校验（必须 https + api.deepseek.com）——原来任意地址可保存，key 会发给第三方
+      if (!API.validateBase(base)) {
+        this.toast('API 地址不合法：必须是 https://api.deepseek.com/...（防止 key 发给陌生服务器）');
+        return;
+      }
       Settings.set('apiKey', key);
       Settings.set('apiBase', base);
       Settings.set('chatModel', this.el('setChatModel').value);
@@ -2669,6 +2711,8 @@ const UI = {
       const key = this.el('setApiKey').value.trim();
       const base = this.el('setApiBase').value.trim();
       if (!key) { this.toast('先填 API Key'); return; }
+      // 🔴 v1.2.36：测试连接同样校验（原来完全不校验，key 会被发往任意端点且成功即保存）
+      if (!API.validateBase(base)) { this.toast('API 地址不合法：必须是 https://api.deepseek.com/...'); return; }
       API.key = key; API.base = base;
       const res = this.el('testResult');
       res.className = 'test-result';
@@ -2689,10 +2733,68 @@ const UI = {
     });
 
     this.el('exportBtn').addEventListener('click', () => this.exportData());
+    // 🔴 v1.2.36：AI 思考强度——每个 API 调用点一个下拉（官方档位：关闭思考/low/high/max）
+    const EFFORT_DEFS = [
+      ['effort_chat', '对话', 'high'],
+      ['effort_rp', '剧场（角色/导演/选角）', 'high'],
+      ['effort_review', '复盘', 'high'],
+      ['effort_build', '一键建卡', 'high'],
+      ['effort_world', '世界卡生成', 'high'],
+      ['effort_suggest', '表达建议', 'low'],
+      ['effort_suggestRp', '台词纠正', 'low'],
+      ['effort_hint', '中文求助', 'low'],
+      ['effort_query', '查单词', 'off'],
+      ['effort_queryText', '查句子', 'low'],
+      ['effort_translate', '翻译', 'low'],
+      ['effort_title', '自动命名', 'low'],
+      ['effort_compress', '超长对话压缩', 'low'],
+    ];
+    const esWrap = this.el('effortSettings');
+    if (esWrap) {
+      const optHtml = (cur) => ['off', 'low', 'high', 'max'].map(v =>
+        `<option value="${v}"${v === cur ? ' selected' : ''}>${
+          v === 'off' ? '关闭思考（最快）' : v === 'low' ? 'low · 轻思考（快）' : v === 'high' ? 'high · 标准（推荐）' : 'max · 深度思考（慢·质量最高）'}</option>`).join('');
+      esWrap.innerHTML = EFFORT_DEFS.map(([k, label, def]) => {
+        const cur = Settings.get(k, def);
+        return `<label class="field"><span>${label}</span><select id="${k}">${optHtml(cur)}</select></label>`;
+      }).join('');
+      EFFORT_DEFS.forEach(([k, , def]) => {
+        const el = this.el(k);
+        if (el) el.addEventListener('change', () => Settings.set(k, el.value));
+      });
+    }
     // 🔴 v1.2.16：设置页随时重看新手指引（force=true 不改变"不再提示"）
     const reopen = this.el('onboardReopen');
     if (reopen) reopen.addEventListener('click', () => this.showOnboarding(true));
     this.el('importBtn').addEventListener('click', () => this.el('importFile').click());
+    // 🔴 v1.2.36：撤销上次导入（导入前自动备份到 ea_import_undo）
+    const undoBtn = this.el('undoImportBtn');
+    if (undoBtn) {
+      const syncUndo = () => undoBtn.classList.toggle('hidden', !localStorage.getItem('ea_import_undo'));
+      syncUndo();
+      undoBtn.addEventListener('click', () => {
+        try {
+          const snap = JSON.parse(localStorage.getItem('ea_import_undo') || 'null');
+          if (!snap) { this.toast('没有可撤销的导入记录'); return; }
+          Settings.set('conversations', snap.conversations || []);
+          Settings.set('sentences', snap.sentences || []);
+          Settings.set('expressions', snap.expressions || []);
+          Settings.set('worldCards', snap.worldCards || []);
+          Settings.set('currentWorldId', snap.currentWorldId || '');
+          if (snap.profile) Profile.save(snap.profile);
+          if (snap.farm) { Farm._state = Farm.sanitize(snap.farm); Farm.save(); }
+          localStorage.removeItem('ea_import_undo');
+          syncUndo();
+          this.refreshWordsSet();
+          Agent.refreshForgetWords();
+          this.renderWords();
+          this.renderProfile();
+          this.renderTavern();
+          if (this.state.tab === 'garden') this.renderGardenFull();
+          this.toast('已撤销导入，恢复导入前数据 ✓');
+        } catch (e) { this.toast('撤销失败：' + e.message); }
+      });
+    }
     const updBtn = this.el('checkUpdateBtn');
     if (updBtn) updBtn.addEventListener('click', () => this.checkUpdate());
     // 🔴 v1.1：开发者设置面板已移除（v0.35 测试后门，正式版不携带）
@@ -2743,12 +2845,12 @@ const UI = {
     const body = this.el('tavernModalBody');
     const worlds = this.listWorlds();
     body.innerHTML = (worlds.length ? worlds.map(w => `
-        <div class="conv-item ${w.id === this.currentWorldId() ? 'active' : ''}" data-id="${w.id}">
+        <div class="conv-item ${w.id === this.currentWorldId() ? 'active' : ''}" data-id="${this.esc(w.id)}">
           <div class="ci-main">
             <div class="ci-title">${this.esc(w.name)}</div>
             <div class="ci-meta">${this.esc((w.description || '').slice(0, 40))}</div>
           </div>
-          <button class="ci-del" data-del="${w.id}">✕</button>
+          <button class="ci-del" data-del="${this.esc(w.id)}">✕</button>
         </div>`).join('') : '<p class="empty-sub" style="text-align:center;padding:24px 0">还没有世界卡</p>') +
         `<button class="btn btn-ghost btn-sm btn-block" style="margin-top:10px" id="tavernAddWorld">＋ 新建世界卡</button>`;
     body.querySelectorAll('.conv-item').forEach(item => item.addEventListener('click', e => {
@@ -2767,9 +2869,6 @@ const UI = {
     const addBtn = body.querySelector('#tavernAddWorld');
     if (addBtn) addBtn.addEventListener('click', () => { this.el('tavernModal').classList.add('hidden'); this.openGenModal('world'); });
     this.el('tavernModal').classList.remove('hidden');
-  },
-
-  openGenModal(type) {    this.el('tavernModal').classList.remove('hidden');
   },
 
   openGenModal(type) {
@@ -2805,6 +2904,7 @@ const UI = {
   /* ============ 角色扮演对话（RP） ============ */
   async startRp() {
     if (this.state.rpBusy) { this.toast('正在生成中，稍等…'); return; } // 🔴 v1.1：防双开
+    if (this.state.hintMode) this.exitHintMode(); // 🔴 v1.2.36：hintMode 跨会话残留修复
     // 🔴 v1.1.1：已在 RP 中再开新 RP → 先保存当前绘画（原来直接覆盖，旧会话丢最后一轮）
     if (this.state.rpMode && this.state.rpHistory.length) this.saveChatState();
     this.state.rpBusy = true; // 🔴 v1.1：选角阶段也占用（rpOfferRoles 期间用户输入会并发竞态）
@@ -2841,6 +2941,7 @@ const UI = {
       this.state.rpStep = 'choose';
       this.state.rpPendingRoles = [];
       this.state.rpHistory = [];
+      this.state.rpUserSeq = 0; // 🔴 v1.2.36：新绘画重置计数
       this.resetReviewQueue(); // 🔴 v1.2.3：新会话重置复习卡队列
       this.state.convId = 'c_' + Date.now() + '_rp';
       // 🔴 v1.1.1：RP 话题命名去重——同一天同一世界卡开多次 → "世界名 · 8/3"、"世界名 · 8/3 (2)"、"世界名 · 8/3 (3)"
@@ -2939,7 +3040,10 @@ const UI = {
     //   continue 不入历史（不污染上下文/积分轮次计数）
     //   中文输入：先 push 原始中文（按钮判定正确），翻译完成后把历史条目更新为英文（重生成直接重跑英文）
     let histIdx = -1;
-    if (!isContinueInput) histIdx = this.state.rpHistory.push({ role: 'user', content: userMsg }) - 1;
+    if (!isContinueInput) {
+      histIdx = this.state.rpHistory.push({ role: 'user', content: userMsg }) - 1;
+      this.state.rpUserSeq = (this.state.rpUserSeq || 0) + 1; // 🔴 v1.2.36：单调计数（压缩/回滚不回收）
+    }
     try {
       // 中文 → 翻译（全英语规则）
       if (/[\u4e00-\u9fa5]/.test(text)) {
@@ -2979,7 +3083,10 @@ const UI = {
     const w = this.state.rpWorld;
     const chars = this.state.rpActiveChars && this.state.rpActiveChars.length ? this.state.rpActiveChars : this.state.rpChars;
     const isContinue = !userMsg || /^(continue|继续|自己来|你来|你自己来|go on|let it continue|\.\.\.?|…)$/i.test(userMsg.trim());
-    if (userMsg && !isContinue && !opts.regen && !opts.pushed) this.state.rpHistory.push({ role: 'user', content: userMsg });
+    if (userMsg && !isContinue && !opts.regen && !opts.pushed) {
+      this.state.rpHistory.push({ role: 'user', content: userMsg });
+      this.state.rpUserSeq = (this.state.rpUserSeq || 0) + 1; // 🔴 v1.2.36：单调计数
+    }
     this.saveChatState();
     const typing = this.appendMsg('assistant', '', { typing: true });
     try {
@@ -3022,10 +3129,13 @@ const UI = {
       if (beat.options && beat.options.length) this.appendRpOptions(beat.options);
       else this.appendRpOptions([]);
       this.saveChatState();
+      this.maybeCompactHistory(true); // 🔴 v1.2.36：超长绘画自动压缩（不截断）
       if (!isContinue && userMsg && (userMsg.match(/[a-zA-Z]+/g) || []).length >= 8) {
         try {
-          const roundN = this.state.rpHistory.filter(m => m.role === 'user').length;
-          const r = await Farm.addPoints('rp', { key: this.state.convId + ':r' + roundN, pts: 3, maxDay: 3 });
+          // 🔴 v1.2.36：roundN 用单调 rpUserSeq（压缩/回滚不回收）——回滚后重发不再撞新键重复拿分；
+          //   键加日期段与上限窗口对齐
+          const roundN = this.state.rpUserSeq || 0;
+          const r = await Farm.addPoints('rp', { key: this.state.convId + ':' + FARM.dayKey(FARM.now()) + ':r' + roundN, pts: 3, maxDay: 3 });
           if (r) this.rewardToast(r, '剧场');
         } catch (e) {}
       }
@@ -3045,7 +3155,7 @@ const UI = {
     div.className = 'msg msg-ai msg-rp-char';
     const mark = voice === 'm' ? '♂ ' : '♀ ';
     const idx = idxArg !== undefined ? idxArg : this.state.rpHistory.length;
-    div.innerHTML = `<div class="msg-rp-name">${mark}${this.esc(name)}</div><div class="msg-en">${this.renderMsgText(line)}</div><div class="msg-actions"><button class="msg-chip-btn" data-say="${this.esc(line)}" data-voice="${voice || 'f'}" title="朗读">${this.sayIcon()}</button><button class="msg-chip-btn" data-sel="${this.esc(line)}" title="查单词">${Icons.search}</button><button class="msg-chip-btn" data-sent="${this.esc(line)}" title="查这句">${Icons.chat}</button></div>`;
+    div.innerHTML = `<div class="msg-rp-name">${mark}${this.esc(name)}</div><div class="msg-en">${this.renderMsgText(line)}</div><div class="msg-actions"><button class="msg-chip-btn" data-say="${this.esc(line)}" data-voice="${this.esc(voice || 'f')}" title="朗读">${this.sayIcon()}</button><button class="msg-chip-btn" data-sel="${this.esc(line)}" title="查单词">${Icons.search}</button><button class="msg-chip-btn" data-sent="${this.esc(line)}" title="查这句">${Icons.chat}</button></div>`;
     this.bindTapWords(div);
     const sb = div.querySelector('[data-say]');
     if (sb) this.addSpeakListener(sb, sb.dataset.say, sb.dataset.voice || 'f');
@@ -3114,6 +3224,7 @@ const UI = {
   /* 退出 RP：回到普通场景对话 */
   exitRp() {
     if (this.state.rpBusy) { this.toast('正在生成中，稍等…'); return; } // 🔴 v1.1：回合中禁止退出
+    if (this.state.hintMode) this.exitHintMode(); // 🔴 v1.2.36：hintMode 跨会话残留修复
     this.saveChatState(); // 先保存绘画
     this.state.chatHistory = []; // 清空普通残留，避免切会话时把旧内容存进 RP 会话
     this.state.rpMode = false;
@@ -3128,6 +3239,7 @@ const UI = {
     this.state.rpRoster = {};
     this.state.rpActiveChars = [];
     this.state.rpStep = '';
+    this.state.rpUserSeq = 0; // 🔴 v1.2.36：退出 RP 重置计数
     this.resetReviewQueue(); // 🔴 v1.2.3
     this.el('chatInput').placeholder = '输入英文…';
     this.renderConvTitle();
@@ -3139,13 +3251,17 @@ const UI = {
 
   /* TTS 引擎状态（内置引擎，管理已简化） */
   loadTtsVoices() {
+    // 🔴 v1.2.36：轮询上限 30 次（~24s）——引擎卡 loading（worker 挂起/模型拉取失败未报错）时不再无限自调用
+    this._ttsPoll = (this._ttsPoll || 0) + 1;
     const status = this.el('ttsStatus');
     if (!status) return;
     if (TTS.engine === 'ready') {
       status.textContent = '内置引擎 ✓（Piper 离线美音）';
-    } else if (TTS.engine === 'loading') {
+    } else if (TTS.engine === 'loading' && this._ttsPoll < 30) {
       status.textContent = '内置引擎加载中…';
       setTimeout(() => this.loadTtsVoices(), 800);
+    } else if (TTS.engine === 'loading') {
+      status.textContent = '内置引擎加载超时（首次使用会拉模型，稍后重启 App 可恢复）';
     } else if (window.Capacitor?.Plugins?.TextToSpeech) {
       status.textContent = '系统原生引擎（内置引擎不可用）';
     } else {
@@ -3208,6 +3324,11 @@ const UI = {
       }
       const download = () => {
         if (!url) { this.toast('暂无下载链接，请到 GitHub release 页'); return; }
+        // 🔴 v1.2.36：url 白名单——只允许本项目 release 直链（防 version.json 被篡改后诱导下载任意 URL）
+        if (!String(url).startsWith('https://github.com/zhangs1r/wordgrove/releases/')) {
+          this.toast('下载链接异常，请到 GitHub release 页手动下载');
+          return;
+        }
         try { location.href = 'https://ghproxy.net/' + url; }
         catch (e) { try { location.href = url; } catch (e2) { this.toast('请在浏览器打开链接下载'); } }
       };
@@ -3240,7 +3361,8 @@ const UI = {
 
   exportData() {
     Words.list().then(async words => {
-      const farmState = await Farm.txGet('garden');
+      // 🔴 v1.2.36：用内存 _state（原来读 IndexedDB——localStorage 备份恢复路径下 IDB 可能为空，导出漏最新状态）
+      const farmState = Farm._state || (await Farm.txGet('garden').catch(() => null));
       // 🔴 v1.1：导出补全会话/句子/表达/世界卡（原来只有词库+画像+设置+小院，备份不完整）
       const data = {
         words, profile: Profile.load(), settings: {
@@ -3251,6 +3373,7 @@ const UI = {
         sentences: Settings.get('sentences', []),
         expressions: Settings.get('expressions', []),
         worldCards: Settings.get('worldCards', []),
+        currentWorldId: Settings.get('currentWorldId', ''), // 🔴 v1.2.36：补导出（原来剧场选中世界丢失）
       };
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
       const a = document.createElement('a');
@@ -3261,67 +3384,186 @@ const UI = {
     });
   },
 
-  /* 🔴 v1.1：导入 farm 的 schema 校验——数值钳制防 NaN 腐化、类型检查防脏数据 */
-  _sanitizeFarm(f) {
-    const num = (v, max) => { const n = Number(v); return Number.isFinite(n) ? Math.max(0, Math.min(max, n)) : 0; };
-    const now = FARM.now();
-    const st = {
-      id: 'garden',
-      year: num(f.year, 9999) || now.getFullYear(),
-      month: num(f.month, 12) || now.getMonth() + 1,
-      points: num(f.points, 999999),
-      totalEarned: num(f.totalEarned, 9999999),
-      dayPoints: num(f.dayPoints, FARM.POINT_DAY_LIMIT),
-      day: typeof f.day === 'string' ? f.day : FARM.dayKey(now),
-      planted: (f.planted && typeof f.planted === 'object' && !Array.isArray(f.planted)) ? f.planted : {},
-      stage: Math.min(2, num(f.stage, 2)),
-      decor: Array.isArray(f.decor) ? f.decor.filter(d => d && (FARM.DECOR[d.type] || (FARM.MONTH_DECOR[st.month] || {})[d.type])).map(d => ({ id: d.id || Farm.newDecorId(), type: d.type, x: num(d.x, 1024), y: num(d.y, 1536), angle: num(d.angle, 360), scale: Math.max(0.5, Math.min(3, num(d.scale, 3) || 1)) })) : [],
-      owned: Array.isArray(f.owned) ? f.owned.filter(t => FARM.DECOR[t] || (FARM.MONTH_DECOR[st.month] || {})[t]) : [],
-      dayCounts: (f.dayCounts && typeof f.dayCounts === 'object') ? f.dayCounts : {},
-      sealed: false,
-      history: Array.isArray(f.history) ? f.history.slice(0, 36) : [],
-    };
-    return st;
+  /* 🔴 v1.2.36：导入重写——大小限制 + 确认弹窗 + 导入前自动备份（可撤销）+ 重建式清洗
+   * 安全：conversations/sentences/worldCards 的 id 严格清洗（防属性注入 XSS）、voice 白名单、
+   *       history 逐条白名单、profile 类型校验；farm 走 Farm.sanitize（全 12 月装饰并集、history 递归、planted 校验）
+   * 数据：词条保留 forgot/peak/ctx/tags/srs 字段；恢复 settings/currentWorldId；导入后全面重渲染 */
+  _sanitizeImportId(id, prefix) {
+    const s = String(id || '');
+    return /^[A-Za-z0-9_-]{1,64}$/.test(s) ? s : (prefix + Date.now() + '_' + Math.random().toString(36).slice(2, 7));
   },
-
+  _cleanConv(conv) {
+    if (!conv || typeof conv !== 'object') return null;
+    const history = (Array.isArray(conv.history) ? conv.history : []).slice(0, 400).map(m => {
+      if (!m || typeof m !== 'object') return null;
+      const out = { role: m.role === 'user' ? 'user' : 'assistant', content: typeof m.content === 'string' ? m.content.slice(0, 4000) : '' };
+      if (m.name && typeof m.name === 'string') out.name = m.name.slice(0, 80);
+      if (m.options && Array.isArray(m.options)) out.options = m.options.map(o => String(o).slice(0, 200)).slice(0, 4);
+      // voice 白名单 n/f/m（防 data-voice 属性注入）
+      if (m.voice === 'n' || m.voice === 'f' || m.voice === 'm') out.voice = m.voice;
+      if (m.cast) out.cast = true;
+      if (m.at && typeof m.at === 'number') out.at = m.at;
+      return out;
+    }).filter(Boolean);
+    return {
+      id: this._sanitizeImportId(conv.id, 'c_'),
+      title: typeof conv.title === 'string' ? conv.title.slice(0, 80) : '',
+      history,
+      isRp: !!conv.isRp,
+      worldId: typeof conv.worldId === 'string' ? conv.worldId.slice(0, 64) : '',
+      activeChars: Array.isArray(conv.activeChars) ? conv.activeChars.slice(0, 30) : [],
+      roster: (conv.roster && typeof conv.roster === 'object') ? conv.roster : {},
+      player: (conv.player && typeof conv.player === 'object') ? conv.player : null,
+      rpUserSeq: Number.isFinite(Number(conv.rpUserSeq)) ? Number(conv.rpUserSeq) : 0,
+      updated: Number.isFinite(Number(conv.updated)) ? Number(conv.updated) : Date.now(),
+    };
+  },
+  _cleanSentence(s) {
+    if (!s || typeof s !== 'object' || typeof s.text !== 'string') return null;
+    return {
+      id: this._sanitizeImportId(s.id, 's_'),
+      text: s.text.slice(0, 2000), cn: typeof s.cn === 'string' ? s.cn.slice(0, 2000) : '',
+      note: typeof s.note === 'string' ? s.note.slice(0, 500) : '',
+      expand: typeof s.expand === 'string' ? s.expand.slice(0, 1000) : '',
+      source: typeof s.source === 'string' ? s.source.slice(0, 20) : '',
+      ctx: typeof s.ctx === 'string' ? s.ctx.slice(0, 600) : '',
+      tags: Array.isArray(s.tags) ? s.tags.map(t => String(t).slice(0, 20)).slice(0, 10) : [],
+      at: Number.isFinite(Number(s.at)) ? Number(s.at) : Date.now(),
+    };
+  },
+  _cleanWorld(w) {
+    if (!w || typeof w !== 'object' || typeof w.name !== 'string') return null;
+    const cleanStr = (v, n) => typeof v === 'string' ? v.slice(0, n) : '';
+    return {
+      id: this._sanitizeImportId(w.id, 'w_'),
+      name: w.name.slice(0, 80), title: cleanStr(w.title, 80), description: cleanStr(w.description, 500),
+      setting: cleanStr(w.setting, 2000), rules: cleanStr(w.rules, 2000), tone: cleanStr(w.tone, 200),
+      roles: Array.isArray(w.roles) ? w.roles.slice(0, 10).map(r => r && typeof r === 'object' ? {
+        name: cleanStr(r.name, 80), gender: r.gender === 'male' ? 'male' : 'female',
+        persona: cleanStr(r.persona, 500), role: cleanStr(r.role, 50), speakingStyle: cleanStr(r.speakingStyle, 300),
+        appearance: cleanStr(r.appearance, 300), background: cleanStr(r.background, 500), exampleDialogue: cleanStr(r.exampleDialogue, 500),
+      } : null).filter(Boolean) : [],
+      at: Number.isFinite(Number(w.at)) ? Number(w.at) : Date.now(),
+    };
+  },
   async importData(file) {
     if (!file) return;
+    // 🔴 v1.2.36：大小限制 10MB（防超大 JSON 卡死页面）
+    if (file.size > 10 * 1024 * 1024) { this.toast('备份文件超过 10MB，无法导入'); this.el('importFile').value = ''; return; }
+    let data;
     try {
-      const data = JSON.parse(await file.text());
-      if (data.words && Array.isArray(data.words)) {
-        let n = 0;
-        for (const w of data.words) {
-          if (!w || !w.word) continue;
-          const exist = await Words.findByWord(w.word);
-          if (exist) continue;
-          await Words.add({ word: String(w.word).slice(0, 80), phonetic: w.phonetic || '', meaning: w.meaning || '',
-            example: w.example || '', exampleCn: w.exampleCn || '', source: w.source || 'import' });
-          n++;
-        }
-        // 🔴 v1.1：画像合并导入（不整体覆盖——旧备份缺新字段会清掉 streak/wordsLearned）
-        if (data.profile && typeof data.profile === 'object') {
-          Profile.save({ ...Profile.load(), ...data.profile });
-        }
-        // 🔴 v1.1：farm 导入带 schema 校验与数值钳制（手改 JSON 注入任意积分/NaN 腐化都拦掉）
-        if (data.farm && data.farm.id) {
-          const st = this._sanitizeFarm(data.farm);
-          Farm._state = st;
-          Farm._migrateDecor(st);
-          await Farm.save();
-        }
-        // 🔴 v1.1：补全会话/句子/表达/世界卡导入
-        if (Array.isArray(data.conversations)) Settings.set('conversations', data.conversations.slice(0, 40));
-        if (Array.isArray(data.sentences)) Settings.set('sentences', data.sentences.slice(0, 500));
-        if (Array.isArray(data.expressions)) Settings.set('expressions', data.expressions.slice(0, 50));
-        if (Array.isArray(data.worldCards)) Settings.set('worldCards', data.worldCards.slice(0, 50));
-        this.toast(`导入 ${n} 个词` + (data.farm ? '，小院已恢复' : ''));
-        this.refreshWordsSet();
-        Agent.refreshForgetWords();
-        this.renderWords();
-        if (this.state.tab === 'garden') this.renderGardenFull();
-      } else {
-        this.toast('备份文件格式不对（缺少 words）');
+      data = JSON.parse(await file.text());
+    } catch (e) {
+      this.toast('导入失败：不是有效的 JSON（' + e.message + '）');
+      this.el('importFile').value = '';
+      return;
+    }
+    if (!data.words || !Array.isArray(data.words)) {
+      this.toast('备份文件格式不对（缺少 words）');
+      this.el('importFile').value = '';
+      return;
+    }
+    const convCount = Array.isArray(data.conversations) ? data.conversations.length : 0;
+    const sentCount = Array.isArray(data.sentences) ? data.sentences.length : 0;
+    const worldCount = Array.isArray(data.worldCards) ? data.worldCards.length : 0;
+    // 🔴 v1.2.36：确认弹窗——会覆盖现有会话/句子/小院，分享场景误导入不再静默清数据
+    if (!confirm('导入将覆盖当前数据：\n· 会话 ' + convCount + ' 条、句子 ' + sentCount + ' 条、世界卡 ' + worldCount + ' 张\n· 小院状态（含历史院子）\n· 词库按词合并（不删除现有词）\n\n导入前会自动备份当前数据，可在设置里「撤销上次导入」。\n\n确定导入吗？')) {
+      this.el('importFile').value = '';
+      return;
+    }
+    try {
+      // 🔴 v1.2.36：导入前自动备份（可撤销）
+      try {
+        localStorage.setItem('ea_import_undo', JSON.stringify({
+          conversations: Settings.get('conversations', []),
+          sentences: Settings.get('sentences', []),
+          expressions: Settings.get('expressions', []),
+          worldCards: Settings.get('worldCards', []),
+          currentWorldId: Settings.get('currentWorldId', ''),
+          profile: Profile.load(),
+          farm: Farm._state,
+          at: Date.now(),
+        }));
+        const undoBtn = this.el('undoImportBtn');
+        if (undoBtn) undoBtn.classList.remove('hidden');
+      } catch (e) { console.warn('导入备份失败', e); }
+
+      let n = 0;
+      for (const w of data.words) {
+        if (!w || !w.word) continue;
+        const word = String(w.word).slice(0, 80);
+        const exist = await Words.findByWord(word);
+        if (exist) continue;
+        // 🔴 v1.2.36：导入保留 forgot/peak/ctx/tags/srs 字段（原来 Words.add 强制 forgot=1 并重置 ctx/tags → 忘词榜/语境全丢）
+        await Words.add({
+          word, phonetic: String(w.phonetic || '').slice(0, 50), meaning: String(w.meaning || '').slice(0, 500),
+          example: String(w.example || '').slice(0, 1000), exampleCn: String(w.exampleCn || '').slice(0, 1000),
+          source: typeof w.source === 'string' ? w.source.slice(0, 20) : 'import',
+          ctx: typeof w.ctx === 'string' ? w.ctx.slice(0, 600) : '',
+          forgot: Number.isFinite(Number(w.forgot)) ? Math.max(0, Number(w.forgot)) : undefined,
+          peak: Number.isFinite(Number(w.peak)) ? Math.max(0, Number(w.peak)) : undefined,
+          tags: Array.isArray(w.tags) ? w.tags.map(t => String(t).slice(0, 20)).slice(0, 10) : [],
+          root: String(w.root || '').slice(0, 500), collocations: String(w.collocations || '').slice(0, 500),
+          synonyms: String(w.synonyms || '').slice(0, 500), antonyms: String(w.antonyms || '').slice(0, 500),
+          note: String(w.note || '').slice(0, 500), usage: String(w.usage || '').slice(0, 1000),
+          family: String(w.family || '').slice(0, 1000), expand: String(w.expand || '').slice(0, 1000),
+          srs: (w.srs && typeof w.srs === 'object') ? { due: Number(w.srs.due) || Date.now(), interval: Number(w.srs.interval) || 0, reps: Number(w.srs.reps) || 0, lapses: Number(w.srs.lapses) || 0, ease: Number(w.srs.ease) || 2.5 } : undefined,
+        });
+        n++;
       }
+      // 🔴 v1.1：画像合并导入 + 🔴 v1.2.36：类型校验（mistakes/mastered 必须数组，防类型腐化导致对话全挂）
+      if (data.profile && typeof data.profile === 'object') {
+        const cur = Profile.load();
+        const p = { ...cur };
+        for (const k of Object.keys(data.profile)) {
+          const v = data.profile[k];
+          if (k === 'mistakes' || k === 'mastered' || k === 'topics') {
+            if (Array.isArray(v)) p[k] = v.slice(0, 50);
+          } else if (k === 'sessions' || k === 'wordsLearned' || k === 'streak') {
+            if (Number.isFinite(Number(v))) p[k] = Math.max(0, Number(v));
+          } else if (k !== '__proto__' && k !== 'constructor') {
+            p[k] = v;
+          }
+        }
+        Profile.save(p);
+      }
+      // 🔴 v1.1：farm 导入走 Farm.sanitize（🔴 v1.2.36：全 12 月装饰并集/planted 校验/history 递归清洗/跨月不丢限定）
+      if (data.farm && data.farm.id) {
+        const st = Farm.sanitize(data.farm);
+        Farm._state = st;
+        Farm._migrateDecor(st);
+        await Farm.save();
+      }
+      // 🔴 v1.2.36：重建式清洗后导入（id 防注入、voice 白名单、history 白名单）
+      const convs = Array.isArray(data.conversations) ? data.conversations.map(c => this._cleanConv(c)).filter(Boolean).slice(0, 40) : [];
+      if (convs.length) Settings.set('conversations', convs);
+      const sents = Array.isArray(data.sentences) ? data.sentences.map(s => this._cleanSentence(s)).filter(Boolean).slice(0, 500) : [];
+      if (sents.length) Settings.set('sentences', sents);
+      const exprs = Array.isArray(data.expressions) ? data.expressions.filter(e => e && (typeof e === 'string' || typeof e.en === 'string')).slice(0, 50).map(e => typeof e === 'string' ? { en: e.slice(0, 500), at: Date.now() } : { en: String(e.en).slice(0, 500), at: Number(e.at) || Date.now() }) : [];
+      if (exprs.length) Settings.set('expressions', exprs);
+      const worlds = Array.isArray(data.worldCards) ? data.worldCards.map(w => this._cleanWorld(w)).filter(Boolean).slice(0, 100) : [];
+      if (worlds.length) Settings.set('worldCards', worlds);
+      // 🔴 v1.2.36：恢复 settings（仅合法值）+ currentWorldId
+      if (data.settings && typeof data.settings === 'object') {
+        if (API.validateBase(data.settings.apiBase)) Settings.set('apiBase', data.settings.apiBase);
+        const cm = data.settings.chatModel, bm = data.settings.buildModel;
+        if (cm === 'deepseek-v4-flash' || cm === 'deepseek-v4-pro') Settings.set('chatModel', cm);
+        if (bm === 'deepseek-v4-flash' || bm === 'deepseek-v4-pro') Settings.set('buildModel', bm);
+      }
+      if (typeof data.currentWorldId === 'string') {
+        const wid = this._sanitizeImportId(data.currentWorldId, 'w_');
+        if (worlds.some(w => w.id === wid) || !wid.startsWith('w_')) Settings.set('currentWorldId', wid);
+        else Settings.set('currentWorldId', worlds.length ? worlds[0].id : '');
+      }
+      this.toast(`导入 ${n} 个词` + (data.farm ? '，小院已恢复' : '') + (convs.length ? `，会话 ${convs.length} 条` : ''));
+      this.refreshWordsSet();
+      Agent.refreshForgetWords();
+      this.renderWords();
+      this.renderProfile();
+      this.renderTavern();
+      // 🔴 v1.2.36：导入后全面重渲染（原来只刷 garden——今日页激活时积分/植被停留旧数据）
+      if (this.state.tab === 'today') this.renderToday();
+      if (this.state.tab === 'garden') this.renderGardenFull();
     } catch (e) {
       this.toast('导入失败：' + e.message);
     }

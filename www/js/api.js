@@ -4,14 +4,24 @@ const API = {
   base: 'https://api.deepseek.com/v1/chat/completions',
   key: '',
 
+  /* 🔴 v1.2.36 安全加固：API 地址严格校验——必须 https + api.deepseek.com 主机名、无 userinfo（防 key 发往任意端点）
+     原来 includes('deepseek.com') 子串匹配可被 deepseek.com.evil.com / 明文 http 绕过 */
+  validateBase(base) {
+    if (!base || typeof base !== 'string') return false;
+    try {
+      const u = new URL(base);
+      return u.protocol === 'https:'
+        && u.hostname === 'api.deepseek.com'
+        && !u.username && !u.password;
+    } catch { return false; }
+  },
+
   loadConfig() {
     const provider = Settings.get('provider', 'deepseek');
     const base = Settings.get('apiBase', '');
-    const defaultBase = provider === 'deepseek'
-      ? 'https://api.deepseek.com/v1/chat/completions'
-      : 'https://api.deepseek.com/v1/chat/completions';
-    // 只用 DeepSeek：非 deepseek.com 地址一律重置，防残留 opencode 地址
-    this.base = (base && base.includes('deepseek.com')) ? base : defaultBase;
+    const defaultBase = 'https://api.deepseek.com/v1/chat/completions';
+    // 只用 DeepSeek：非合法 deepseek.com 地址一律重置，防残留/恶意地址
+    this.base = (base && this.validateBase(base)) ? base : defaultBase;
     this.key = Settings.get('apiKey', '');
     if (this.base !== base) Settings.set('apiBase', this.base);
   },
@@ -20,16 +30,21 @@ const API = {
     return !!this.key;
   },
 
-  /* DeepSeek 账户余额查询 */
+  /* DeepSeek 账户余额查询（🔴 v1.2.36：加 10s 超时，防网络黑洞永久挂起） */
   async getBalance() {
     if (!this.configured()) return null;
-    const resp = await fetch('https://api.deepseek.com/user/balance', {
-      headers: { Authorization: 'Bearer ' + Settings.get('apiKey', '') },
-    });
-    if (!resp.ok) throw new Error('balance ' + resp.status);
-    const j = await resp.json();
-    const infos = j.balance_infos || [];
-    return { total: infos[0] ? infos[0].total_balance : '' };
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 10000);
+    try {
+      const resp = await fetch('https://api.deepseek.com/user/balance', {
+        headers: { Authorization: 'Bearer ' + Settings.get('apiKey', '') },
+        signal: ctrl.signal,
+      });
+      if (!resp.ok) throw new Error('balance ' + resp.status);
+      const j = await resp.json();
+      const infos = j.balance_infos || [];
+      return { total: infos[0] ? infos[0].total_balance : '' };
+    } finally { clearTimeout(timer); }
   },
 
   async chat(messages, opts = {}) {
@@ -143,25 +158,31 @@ const API = {
   /* 测试连接：发一个最小请求验证 key
      🔴 v1.1：max_tokens 8→200（思考模式会吃光 8 个 token 导致 content 空，假阳性"连接成功"）；校验 content 非空 */
   async test() {
-    const res = await fetch(this.base, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + this.key,
-      },
-      body: JSON.stringify({
-        model: 'deepseek-v4-flash',
-        messages: [{ role: 'user', content: 'ping' }],
-        max_tokens: 200,
-      }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(data?.error?.message || ('HTTP ' + res.status));
-    }
-    const content = data.choices?.[0]?.message?.content || '';
-    if (!content) throw new Error('响应异常（模型未返回内容，可能是思考链吃光了输出额度）');
-    return content;
+    // 🔴 v1.2.36：加 10s 超时，防网络黑洞时按钮永久卡"测试中…"
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 10000);
+    try {
+      const res = await fetch(this.base, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + this.key,
+        },
+        body: JSON.stringify({
+          model: 'deepseek-v4-flash',
+          messages: [{ role: 'user', content: 'ping' }],
+          max_tokens: 200,
+        }),
+        signal: ctrl.signal,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error?.message || ('HTTP ' + res.status));
+      }
+      const content = data.choices?.[0]?.message?.content || '';
+      if (!content) throw new Error('响应异常（模型未返回内容，可能是思考链吃光了输出额度）');
+      return content;
+    } finally { clearTimeout(timer); }
   },
 };
 

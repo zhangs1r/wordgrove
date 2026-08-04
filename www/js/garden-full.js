@@ -8,12 +8,8 @@ const GardenFull = {
   _map: null,     // 当前坐标映射
   _mapKey: '',
 
-  /* 背景图 key：bg_<season>_<days>.webp */
-  bgKey(month) {
-    const season = FARM.seasonOf(month);
-    const days = FARM.daysInMonth(new Date().getFullYear(), month);
-    return season + '_' + days;
-  },
+  /* 背景图 key：bg_<season>_<days>.webp（🔴 v1.2.36：删除旧 bgKey——它用当前年份算历史月天数，
+     闰年 2 月会错；loadBg(month, year) 已正确使用传入年份，bgKey 是无人调用的死函数） */
 
   async loadBg(month, year) {
     const season = FARM.seasonOf(month);

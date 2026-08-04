@@ -136,10 +136,11 @@ const Agent = {
           return { found: !!w, word: w ? { word: w.word, meaning: w.meaning, example: w.example } : null };
         }
         case 'add_words': {
+          // 🔴 v1.2.36：工具参数长度截断（模型返回超长词条不再原样入库，防 DOM/提示词膨胀）
           const items = (args.words || []).slice(0, 10);
           const result = await Words.addMany(items.map(it => ({
-            word: it.word, phonetic: it.phonetic || '', meaning: it.meaning || '',
-            example: it.example || '', exampleCn: it.exampleCn || '',
+            word: String(it.word || '').slice(0, 80), phonetic: String(it.phonetic || '').slice(0, 50), meaning: String(it.meaning || '').slice(0, 200),
+            example: String(it.example || '').slice(0, 300), exampleCn: String(it.exampleCn || '').slice(0, 300),
             source: 'agent', sourceScene: scene ? scene.name : '',
           })));
           return { added: result.added, duplicates: result.dup };
@@ -149,7 +150,9 @@ const Agent = {
           if (w) {
             await Words.update(w.id, { srs: { ...w.srs, due: Date.now() + 30 * 864e5 } });
             const p = Profile.load();
+            // 🔴 v1.2.36：mastered 去重 + 上限 500（防无限增长）
             if (!p.mastered.includes(w.word)) p.mastered.push(w.word);
+            if (p.mastered.length > 500) p.mastered = p.mastered.slice(-500);
             Profile.save(p);
             return { ok: true };
           }
@@ -168,6 +171,33 @@ const Agent = {
     } catch (e) {
       return { error: String(e && e.message || e) };
     }
+  },
+
+  /* ---------- 思考强度（🔴 v1.2.36 用户需求：每个 API 调用点可自定义） ----------
+   * DeepSeek 官方档位（api-docs.deepseek.com 确认）：reasoning_effort = low / high / max；
+   *   medium、xhigh 只是兼容别名（映射 high），无 ultra；v4-pro 暂只支持 high/max。
+   * 值：'off'（关闭思考，thinking disabled）/ 'low' / 'high' / 'max'；默认由各调用点指定（设置页可改）。 */
+  effortOpt(key, def) {
+    const v = Settings.get('effort_' + key, def);
+    if (v === 'off') return { thinking: 'disabled' };
+    if (v === 'low' || v === 'high' || v === 'max') return { reasoningEffort: v };
+    return {};
+  },
+
+  /* ---------- 上下文压缩（🔴 v1.2.36：超长对话不截断——Pi compaction 思路） ----------
+   * 会话超过阈值时，把最早的 N 条交给 AI 压成一段英文摘要（保留剧情/角色/生词），
+   * 替换成一条压缩消息。失败时调用方做极端保底。 */
+  async compressHistory(msgs) {
+    const brief = (msgs || []).map(m => `${m.role}${m.name ? '(' + m.name + ')' : ''}: ${typeof m.content === 'string' ? m.content.slice(0, 120) : ''}`).join('\n').slice(0, 8000);
+    const eo = this.effortOpt('compress', 'low');
+    try {
+      const resp = await API.chat([
+        { role: 'system', content: 'You are a dialogue compressor. Below is the EARLY part of an English learning conversation (daily chat or roleplay story). Compress it into one English paragraph:\n- Keep key facts: story progress, characters (with names), topics discussed, words the learner struggled with or learned\n- At most 150 words, plain paragraph, no numbering, no JSON, nothing else\n- This is context for the AI to continue the conversation, not for the user to read' },
+        { role: 'user', content: brief },
+      ], { model: Settings.get('chatModel', 'deepseek-v4-flash'), maxTokens: 1000, ...eo });
+      const summary = (resp.choices?.[0]?.message?.content || '').trim();
+      return summary ? '[早期对话已压缩] ' + summary : '';
+    } catch { return ''; }
   },
 
   /* ---------- system prompt 组装（场景 + 用户档案） ---------- */
@@ -206,7 +236,7 @@ ${this.forgetLine()}
     let turns = 0;
     while (turns < 8) {
       turns++;
-      const resp = await API.chat(msgs, { model, tools: this.toolDefs, maxTokens: 4000 });
+      const resp = await API.chat(msgs, { model, tools: this.toolDefs, maxTokens: 4000, ...this.effortOpt('chat', 'high') });
       const choices = resp.choices || [];
       if (!choices.length || !choices[0].message) {
         throw new Error('模型返回异常(空响应) [' + model + ']');
@@ -235,7 +265,7 @@ ${this.forgetLine()}
 
   /* ---------- 复盘：对话后生成生词/错误清单 ---------- */
   async review(messages) {
-    const model = Settings.get('buildModel', 'mimo-v2.5');
+    const model = Settings.get('buildModel', 'deepseek-v4-flash'); // 🔴 v1.2.36：默认值修复（mimo-v2.5 不是 DeepSeek 模型，曾致复盘/建卡必然 400）
     const brief = messages.slice(-14).map(m => `${m.role}: ${typeof m.content === 'string' ? m.content.slice(0, 300) : ''}`).join('\n');
     const resp = await API.chat([
       { role: 'system', content: `你是英语老师 + 表演教练。下面是学习者刚结束的一段英语对话（可能含 AI 角色和工具消息，只看 user 和 assistant 的内容）。
@@ -251,7 +281,7 @@ ${this.forgetLine()}
 - roleplay：仅当这段对话是角色扮演时检查（学习者有扮演身份），检查他的台词是否符合角色身份/语气；普通对话时 roleplay 返回空数组
 - 如果学习者中文提问了某个词的意思，那个词一定要放进 newWords` },
       { role: 'user', content: brief },
-    ], { model, maxTokens: 4000 });
+    ], { model, maxTokens: 4000, ...this.effortOpt('review', 'high') });
     const content = resp.choices[0].message.content || '';
     try {
       const json = content.replace(/```json|```/g, '').trim();
@@ -272,7 +302,7 @@ ${this.forgetLine()}
 {"words":[{"word":"单词或短语","phonetic":"英式音标","meaning":"中文释义","example":"从原文中截取或改写一个短例句","exampleCn":"例句中文翻译"}]}
 要求：优先选影响理解的核心词，跳过太简单或太生僻的词。` },
       { role: 'user', content: text.slice(0, 4000) },
-    ], { model, maxTokens: 4000 });
+    ], { model, maxTokens: 4000, ...this.effortOpt('build', 'high') });
     const content = resp.choices[0].message.content || '';
     try {
       const json = content.replace(/```json|```/g, '').trim();
@@ -298,7 +328,7 @@ ${this.forgetLine()}
 如果表达没问题，返回：{"needFix":false}
 要求：better 要贴合对话上下文语境，口语化地道。只输出 JSON，不要其他内容。` },
         { role: 'user', content: ctx },
-      ], { model, maxTokens: 4000 }); // 🔴 v1.2.5：恢复思考模式（质量优先）+ maxTokens 2000（思考链不再吃光输出）
+      ], { model, maxTokens: 4000, ...this.effortOpt('suggest', 'low') }); // 🔴 v1.2.36：思考强度可配置（默认 low）
       const msg = resp.choices?.[0]?.message || {};
       let content = (msg.content || '').replace(/```json|```/g, '').trim();
       if (!content && msg.reasoning_content) {
@@ -333,7 +363,7 @@ ${this.forgetLine()}
 完全没问题才返回：{"needFix":false}
 要求：better 口语化、贴合剧情语境。只输出 JSON，不要其他内容。` },
         { role: 'user', content: '最近剧情：\n' + ctx + '\n\n学习者的台词：' + line },
-      ], { model, maxTokens: 4000 }); // 🔴 v1.2.5：恢复思考 + maxTokens 2000（同 suggestBetter）
+      ], { model, maxTokens: 4000, ...this.effortOpt('suggestRp', 'low') }); // 🔴 v1.2.36：思考强度可配置（默认 low）
       const msg = resp.choices?.[0]?.message || {};
       let content = (msg.content || '').replace(/```json|```/g, '').trim();
       if (!content && msg.reasoning_content) {
@@ -359,7 +389,7 @@ ${this.forgetLine()}
     ];
     // 🔴 v1.2.31：maxTokens 300→2000 + 解析失败自动重试一次（思考链截断 JSON 同款坑）
     const tryOnce = async () => {
-      const resp = await API.chat(msgs, { model, maxTokens: 2000, reasoningEffort: 'medium' });
+      const resp = await API.chat(msgs, { model, maxTokens: 2000, ...this.effortOpt('hint', 'low') }); // 🔴 v1.2.36：思考强度可配置（默认 low）
       const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
       const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
       return { better: j.better || '', reason: j.reason || '' };
@@ -380,7 +410,7 @@ ${this.forgetLine()}
     const resp = await API.chat([
       { role: 'system', content: `You are casting the player in an English roleplay story.\nWorld: ${w.name} — ${w.setting || w.description || ''}\nCast already in this world: ${rolesDesc || 'none'}\n\nOffer 3-4 distinct roles the PLAYER could play in this world. They can be a character from the cast, an outsider, or a fresh arrival. Each must fit the world.\nYou MUST reply with ONLY a JSON array, no explanation, no markdown fences, no trailing text:\n[{"name":"角色英文名","gender":"male或female","desc":"一句话身份介绍(英文)","persona":"性格要点(英文,1句)"}]` },
       { role: 'user', content: 'Give me 3-4 role options.' },
-    ], { model, maxTokens: 4000 });
+    ], { model, maxTokens: 4000, ...this.effortOpt('rp', 'high') });
     const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
     try {
       const a = content.indexOf('['), b = content.lastIndexOf(']');
@@ -402,7 +432,7 @@ Cast: ${(w.roles || []).map(r => r.name).join(', ') || 'none'}
 The player will roleplay as a character. Given their choice/description, produce a compact character card.
 Output ONLY JSON: {"name":"角色英文名","gender":"male或female","persona":"身份与性格(英文,2句)","background":"与世界的关联(英文,1-2句)"}` },
       { role: 'user', content: 'My character: ' + desc },
-    ], { model, maxTokens: 2000 });
+    ], { model, maxTokens: 2000, ...this.effortOpt('rp', 'high') });
     const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
     try {
       return JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
@@ -417,7 +447,7 @@ Output ONLY JSON: {"name":"角色英文名","gender":"male或female","persona":"
     const castLine = (w.roles || []).map(r => `${r.name}(${r.gender === 'male' ? 'M' : 'F'})`).join(', ');
     const sys = this.rpSystem(w) + `\nYou are the GAME MASTER / narrator.\n\nWrite the OPENING scene: the player ${p.name || 'the stranger'} arrives in ${w.name}. Set the scene vividly in 3-4 sentences of narration (English), introduce who is around (cast: ${castLine}), and end by presenting 3-4 English choices for the player's first move (second-person, actionable, short).\n\nOutput ONLY JSON: {"narration":"...","options":["Choice 1","Choice 2","Choice 3"]}`;
     const msgs = [{ role: 'system', content: sys }, { role: 'user', content: 'Open the story.' }];
-    const resp = await API.chat(msgs, { model, maxTokens: 2000 });
+    const resp = await API.chat(msgs, { model, maxTokens: 2000, ...this.effortOpt('rp', 'high') });
     const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
     try {
       const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
@@ -535,7 +565,7 @@ Output ONLY JSON: {"inner":"their inner thoughts in English","action":"what they
       ...this.cleanRpHistory(history, 10),
       { role: 'user', content: 'Latest event: ' + userInput + '\n\nRespond as ' + char.name + '.' },
     ];
-    const resp = await API.chat(msgs, { model, maxTokens: 4000 }); // 🔴 v1.1：800→1200（思考模式下三字段 JSON 更不易截断）
+    const resp = await API.chat(msgs, { model, maxTokens: 4000, ...this.effortOpt('rp', 'high') }); // 🔴 v1.1：800→1200（思考模式下三字段 JSON 更不易截断）
     const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
     try {
       const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
@@ -580,7 +610,7 @@ For dialogue: characters from the cast keep their identity; NEW side characters 
       ...this.cleanRpHistory(history, 8),
       { role: 'user', content: 'Player action: ' + (userInput || '(the player lets the story continue on its own)') + '\n\nCharacter inner states:\n' + charBrief + '\n\nWrite the next beat.' },
     ];
-    const resp = await API.chat(msgs, { model, maxTokens: 4000 }); // v0.42：1000 太小，narration+dialogue+options 会被截断→JSON解析失败显示原始JSON
+    const resp = await API.chat(msgs, { model, maxTokens: 4000, ...this.effortOpt('rp', 'high') }); // v0.42：1000 太小，narration+dialogue+options 会被截断→JSON解析失败显示原始JSON
     const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
     try {
       const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
@@ -605,7 +635,7 @@ For dialogue: characters from the cast keep their identity; NEW side characters 
     const resp = await API.chat([
       { role: 'system', content: 'Translate the user input to natural, spoken English. Output ONLY the translation, nothing else.' },
       { role: 'user', content: text },
-    ], { model, maxTokens: 1000 });
+    ], { model, maxTokens: 1000, ...this.effortOpt('translate', 'low') });
     return (resp.choices?.[0]?.message?.content || '').trim();
   },
 
@@ -619,7 +649,7 @@ For dialogue: characters from the cast keep their identity; NEW side characters 
 要求：角色要和世界观贴合，性别明确。英文输出，适合英语学习。只输出 JSON。` };
     const msgs = [sys, { role: 'user', content: '我的世界设想：' + desc }];
     const tryOnce = async () => {
-      const resp = await API.chat(msgs, { model, maxTokens: 4000 });
+      const resp = await API.chat(msgs, { model, maxTokens: 4000, ...this.effortOpt('world', 'high') });
       const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
       const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
       if (!Array.isArray(j.roles)) j.roles = [];
@@ -641,7 +671,7 @@ For dialogue: characters from the cast keep their identity; NEW side characters 
 [{"name":"角色英文名","gender":"male或female","persona":"身份与性格(英文,1-2句)","role":"主角/配角/反派等(中文)","speakingStyle":"说话风格(英文,1句)"}]
 要求：角色贴合世界观，性别明确。英文输出。只输出 JSON 数组。` },
       { role: 'user', content: `世界：${w.name || ''} — ${w.setting || w.description || ''}` },
-    ], { model, maxTokens: 4000 });
+    ], { model, maxTokens: 4000, ...this.effortOpt('world', 'high') });
     const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
     try {
       const a = content.indexOf('['), b = content.lastIndexOf(']');
@@ -673,7 +703,7 @@ For dialogue: characters from the cast keep their identity; NEW side characters 
     const tryOnce = async () => {
       // 🔴 v1.2.35：查词思考模式直接关闭（thinking: 'disabled'）——medium 档还是慢，
       //   用户拍板：查词不要思考链，直接输出，最快
-      const resp = await API.chat(msgs, { model, maxTokens: 4000, thinking: 'disabled' });
+      const resp = await API.chat(msgs, { model, maxTokens: 4000, ...this.effortOpt('query', 'off') }); // 🔴 v1.2.36：思考强度可配置（默认 off=关闭思考，保持 v1.2.35 拍板的最快方案）
       const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
       try {
         const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
@@ -709,7 +739,7 @@ For dialogue: characters from the cast keep their identity; NEW side characters 
     // 🔴 v1.2.31：maxTokens 500→2000（思考链截断 JSON 同查词的坑——"小调用额度可以小"是错误认知，
     //   思考链开销是固定的）+ 解析失败自动重试一次
     const tryOnce = async () => {
-      const resp = await API.chat(msgs, { model, maxTokens: 2000, reasoningEffort: 'medium' });
+      const resp = await API.chat(msgs, { model, maxTokens: 2000, ...this.effortOpt('queryText', 'low') }); // 🔴 v1.2.36：思考强度可配置（默认 low）
       const content = (resp.choices?.[0]?.message?.content || '').replace(/```json|```/g, '').trim();
       const j = JSON.parse(content.slice(content.indexOf('{'), content.lastIndexOf('}') + 1));
       return { cn: j.cn || '', note: j.note || '', expand: j.expand || '' };
@@ -730,7 +760,7 @@ For dialogue: characters from the cast keep their identity; NEW side characters 
       const resp = await API.chat([
         { role: 'system', content: '你是标题生成器。给下面这段英语学习对话生成一个简短的中文标题，不超过 8 个字，概括对话主题（如"咖啡店点单""组会汇报"）。只输出标题本身，不要引号和其他内容。' },
         { role: 'user', content: brief },
-      ], { model, maxTokens: 300 });
+      ], { model, maxTokens: 300, ...this.effortOpt('title', 'low') });
       const title = (resp.choices?.[0]?.message?.content || '').trim().replace(/["「」']/g, '').slice(0, 12);
       return title || '';
     } catch {

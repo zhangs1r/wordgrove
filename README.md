@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/zhangs1r/wordgrove/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License"></a>
-  <img src="https://img.shields.io/badge/version-1.2.29-blue" alt="Version 1.2.29">
+  <img src="https://img.shields.io/badge/version-1.2.36-blue" alt="Version 1.2.36">
   <img src="https://img.shields.io/badge/platform-Android%20%2B%20Web-orange" alt="Platform">
   <img src="https://img.shields.io/badge/AI-DeepSeek%20v4--flash-blue" alt="AI">
   <img src="https://img.shields.io/badge/TTS-Piper%20offline-purple" alt="TTS">
@@ -104,7 +104,14 @@ cd android && ./gradlew assembleDebug --no-daemon
 
 ## 📋 更新日志
 
-- **v1.2.29（最新）**：maxTokens 统一 4000（对话/查词/剧场/世界卡 11 处大调用，长内容不再被思考链截断）；修复 AI 生成世界卡空值报错（自动重试 + 友好提示）；网页版电脑端弹窗/顶部栏 430px 对齐；深色模式默认跟随系统（三态：跟随/浅色/深色）；设置页显示完整版本号
+- **v1.2.36（最新）**：安全加固（导入备份重建式清洗防注入、8 处属性转义补全、API 地址严格校验、CSP、Android 关闭系统备份、导入确认+可撤销）；**AI 思考强度可调**（设置页 13 个下拉：关闭思考/low/high/max，官方档位）；**超长对话 AI 压缩**（超过 220 条自动压缩早期记录，不再截断）；积分公平性修复（长会话每天可拿对话分、删词重建不再刷复习分、回滚重发不再刷剧场分、顶满 50 分不再烧档位）；修复 TTS 快速切换播错句、新用户复盘/建卡失败、句子本在无单词时不显示等 bug
+- **v1.2.35**：查词思考模式关闭（thinking disabled，最快）；本地缓存 LRU 300 保留
+- **v1.2.34**：网页版刷新永不更新完整修复（SW 注册 updateViaCache none + 缓存名升 v3 + 版本兜底自动刷新）
+- **v1.2.33**：超时恢复 90s（收紧方案被否）
+- **v1.2.32**：查词/翻译提速（reasoning medium + 单词讲解本地缓存 LRU 300）
+- **v1.2.31**：翻译/小调用 maxTokens 2000（修复句子翻译一直失败）
+- **v1.2.30**：网页版 SW 缓存改 network-first（修复用户永远旧版）
+- **v1.2.29**：maxTokens 统一 4000（对话/查词/剧场/世界卡 11 处大调用，长内容不再被思考链截断）；修复 AI 生成世界卡空值报错（自动重试 + 友好提示）；网页版电脑端弹窗/顶部栏 430px 对齐；深色模式默认跟随系统（三态：跟随/浅色/深色）；设置页显示完整版本号
 - **v1.2.2x**：网页版上线（GitHub Pages + PWA + 自动部署）；桌面适配（手机同宽 430px 居中）；CEFR 词表词汇难度控制（8648 词内置，提示词注入）；超纲词标记（后移除）；查词截断修复（重试 + 2000 额度）；设置页版本号
 - **v1.2.1x**：回滚/重新生成机制修复（最新输入=重新生成、选角入历史、幽灵回合校验）；新手指引 5 页轮播；剧场选项改第一人称 + 截断过滤；查词保存句子上下文；评级忘次即时生效；朗读按钮统一
 - **v1.2**：查词升级（带语境识别固定搭配、老师式讲解：语境用法/词族/举一反三/记忆提示）；英语水平档位（CET4/6/考研/雅思/托福/自如，对话/剧场/查词都按此调词汇难度）；复习卡可开关；修复 RP 话题记录被普通对话覆盖的 bug；RP 话题命名去重；今日页 SVG 小房子（门前小树随当天积分进度生长）；植物生长改为当天积分进度驱动；新手指引；启动自动检查更新

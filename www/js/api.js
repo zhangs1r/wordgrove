@@ -4,14 +4,24 @@ const API = {
   base: 'https://api.deepseek.com/v1/chat/completions',
   key: '',
 
-  /* 🔴 v1.2.36 安全加固：API 地址严格校验——必须 https + api.deepseek.com 主机名、无 userinfo（防 key 发往任意端点）
-     原来 includes('deepseek.com') 子串匹配可被 deepseek.com.evil.com / 明文 http 绕过 */
+  /* 🔴 v1.2.36 安全加固：API 地址严格校验——必须 https + 白名单主机名、无 userinfo（防 key 发往任意端点）
+     v1.2.37 扩展白名单：api.deepseek.com（DeepSeek 官方）+ opencode.ai（OpenCode Go 网关，2026-08-05 复测 Cloudflare 拦截已放开，手机可直连） */
+  ALLOWED_HOSTS: ['api.deepseek.com', 'opencode.ai'],
+  PROVIDER_BASES: {
+    deepseek: 'https://api.deepseek.com/v1/chat/completions',
+    opencode: 'https://opencode.ai/zen/go/v1/chat/completions',
+  },
+
+  hostOf(base) {
+    try { return new URL(base).hostname; } catch { return ''; }
+  },
+
   validateBase(base) {
     if (!base || typeof base !== 'string') return false;
     try {
       const u = new URL(base);
       return u.protocol === 'https:'
-        && u.hostname === 'api.deepseek.com'
+        && this.ALLOWED_HOSTS.includes(u.hostname)
         && !u.username && !u.password;
     } catch { return false; }
   },
@@ -19,15 +29,42 @@ const API = {
   loadConfig() {
     const provider = Settings.get('provider', 'deepseek');
     const base = Settings.get('apiBase', '');
-    const defaultBase = 'https://api.deepseek.com/v1/chat/completions';
-    // 只用 DeepSeek：非合法 deepseek.com 地址一律重置，防残留/恶意地址
+    const defaultBase = this.PROVIDER_BASES[provider] || this.PROVIDER_BASES.deepseek;
+    // 白名单外地址一律重置（防残留/恶意地址）；provider 与主机名不匹配也按 provider 重置（防旧值残留发错地方）
     this.base = (base && this.validateBase(base)) ? base : defaultBase;
+    const expectHost = provider === 'deepseek' ? 'api.deepseek.com' : 'opencode.ai';
+    if (this.hostOf(this.base) !== expectHost) this.base = defaultBase;
     this.key = Settings.get('apiKey', '');
     if (this.base !== base) Settings.set('apiBase', this.base);
   },
 
   configured() {
     return !!this.key;
+  },
+
+  /* 模型列表端点（按 provider）：
+     deepseek: https://api.deepseek.com/models（官方 /models，不带 v1）
+     opencode: https://opencode.ai/zen/go/v1/models（网关实测无 key 也返回全量，25 个模型） */
+  modelsUrl() {
+    if (this.hostOf(this.base) === 'api.deepseek.com') return 'https://api.deepseek.com/models';
+    return this.base.replace(/\/chat\/completions$/, '') + '/models';
+  },
+
+  /* 获取模型列表：GET models 端点带 key，返回模型 id 数组（rikkahub 同款：拉列表→选择→保存） */
+  async listModels() {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15000);
+    try {
+      const res = await fetch(this.modelsUrl(), {
+        headers: { 'Authorization': 'Bearer ' + this.key, 'Accept': 'application/json' },
+        signal: ctrl.signal,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error?.message || ('HTTP ' + res.status));
+      const ids = (data.data || []).map(m => m.id).filter(Boolean);
+      if (!ids.length) throw new Error('模型列表为空');
+      return ids;
+    } finally { clearTimeout(timer); }
   },
 
   /* DeepSeek 账户余额查询（🔴 v1.2.36：加 10s 超时，防网络黑洞永久挂起） */
@@ -100,10 +137,12 @@ const API = {
         } finally { clearTimeout(timer); }
         // 🔴 v1.1：参数类错误不重试（重试只会浪费 4.5s）；402 余额不足给中文提示
         // 🔴 v1.2.32：400 时若带 reasoning_effort，去掉后重试一次（兼容不支持该参数的端点）
+        // 🔴 v1.2.37：thinking 同样兜底——opencode 网关的非 deepseek 模型（mimo/grok/glm 等）可能不认思考参数
         if (res.status === 400 || res.status === 422) {
           const t = await res.text();
-          if (body.reasoning_effort && attempt === 0) {
+          if (attempt === 0 && (body.reasoning_effort || body.thinking)) {
             delete body.reasoning_effort;
+            delete body.thinking;
             attempt--;
             continue;
           }

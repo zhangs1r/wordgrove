@@ -187,12 +187,13 @@
         <span>API 提供商</span>
         <select id="setProvider">
           <option value="deepseek">DeepSeek 官方（国内直连）</option>
+          <option value="opencode">OpenCode Go（订阅套餐）</option>
         </select>
       </label>
       <label class="field">
         <span>API Key</span>
         <div class="input-wrap">
-          <input id="setApiKey" type="password" placeholder="platform.deepseek.com 的 key">
+          <input id="setApiKey" type="password" placeholder="deepseek 或 opencode 的 key">
           <button id="apiKeyClearBtn" class="input-clear" title="清空" hidden></button>
         </div>
       </label>
@@ -208,6 +209,10 @@
         <span>API 地址</span>
         <input id="setApiBase" type="text" value="https://api.deepseek.com/v1/chat/completions">
       </label>
+      <div class="field-btns">
+        <button id="fetchModelsBtn" class="btn btn-ghost">↻ 获取模型列表</button>
+        <span id="fetchModelsResult" class="test-result"></span>
+      </div>
       <div class="field-btns">
         <button id="saveAiBtn" class="btn btn-primary">保存</button>
         <button id="testAiBtn" class="btn btn-ghost">测试连接</button>

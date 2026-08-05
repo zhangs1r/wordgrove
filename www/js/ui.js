@@ -1022,10 +1022,11 @@ const UI = {
 
   },
 
-  /* API 余额（缓存 5 分钟） */
+  /* API 余额（缓存 5 分钟；🔴 v1.2.37：OpenCode Go 套餐无余额端点，显示 —） */
   async loadBalance() {
     const el = this.el('dashBalance');
     if (!el) return;
+    if (Settings.get('provider', 'deepseek') !== 'deepseek') { el.textContent = '—'; return; }
     const cached = Settings.get('balanceCache', null);
     if (cached && Date.now() - cached.at < 5 * 60 * 1000) { el.textContent = cached.text; return; }
     if (!API.configured()) { el.textContent = '未配置'; return; }
@@ -2604,14 +2605,21 @@ const UI = {
 
   /* ---------- 设置 ---------- */
   bindSettings() {
-    // API 提供商预设（只用 DeepSeek 官方，国内直连）
+    // API 提供商预设（DeepSeek 官方国内直连 + OpenCode Go 订阅网关）
+    // 🔴 v1.2.37：opencode 网关 2026-08-05 复测 Cloudflare 拦截已放开，手机端可直连（无需 Vercel 代理）
     const PROVIDERS = {
       deepseek: { base: 'https://api.deepseek.com/v1/chat/completions', models: ['deepseek-v4-flash', 'deepseek-v4-pro'] },
+      opencode: { base: 'https://opencode.ai/zen/go/v1/chat/completions', models: ['deepseek-v4-flash', 'deepseek-v4-pro', 'mimo-v2.5', 'mimo-v2.5-pro', 'grok-4.5', 'glm-5.2', 'kimi-k3', 'qwen3.7-max', 'minimax-m3', 'hy3'] },
     };
+    const hostOf = (b) => { try { return new URL(b).hostname; } catch { return ''; } };
+    const expectHost = (p) => p === 'deepseek' ? 'api.deepseek.com' : 'opencode.ai';
     const fillModels = (provider) => {
       const chat = this.el('setChatModel');
       const build = this.el('setBuildModel');
-      const models = PROVIDERS[provider].models;
+      // 默认列表 + 用户「获取模型列表」拉到的全量（按 provider 分别缓存）
+      const fetched = Settings.get('fetchedModels_' + provider, []);
+      const models = [...PROVIDERS[provider].models];
+      fetched.forEach(m => { if (!models.includes(m)) models.push(m); });
       const curChat = Settings.get('chatModel', '');
       const curBuild = Settings.get('buildModel', '');
       chat.innerHTML = models.map(m => `<option value="${m}">${m}</option>`).join('');
@@ -2621,9 +2629,9 @@ const UI = {
     };
     const providerEl = this.el('setProvider');
     providerEl.value = Settings.get('provider', 'deepseek');
-    // 校正历史遗留的 API 地址（provider 与地址不匹配时，按 provider 重置）
+    // 校正历史遗留的 API 地址（provider 与地址不匹配时，按 provider 重置——防旧值残留发错地方）
     const savedBase = Settings.get('apiBase', '');
-    if (savedBase && savedBase.includes('deepseek.com') !== (providerEl.value === 'deepseek')) {
+    if (savedBase && hostOf(savedBase) !== expectHost(providerEl.value)) {
       Settings.set('apiBase', PROVIDERS[providerEl.value].base);
     }
     fillModels(providerEl.value);
@@ -2632,7 +2640,7 @@ const UI = {
       Settings.set('provider', p);
       this.el('setApiBase').value = PROVIDERS[p].base;
       fillModels(p);
-      this.toast(p === 'deepseek' ? '已切换 DeepSeek 官方（国内直连）' : '已切换 OpenCode Go（备用）');
+      this.toast(p === 'deepseek' ? '已切换 DeepSeek 官方（国内直连）' : '已切换 OpenCode Go（订阅套餐）');
     });
 
     const bind = (id, key, def) => {
@@ -2693,9 +2701,10 @@ const UI = {
     this.el('saveAiBtn').addEventListener('click', () => {
       const key = this.el('setApiKey').value.trim();
       const base = this.el('setApiBase').value.trim();
-      // 🔴 v1.2.36：apiBase 严格校验（必须 https + api.deepseek.com）——原来任意地址可保存，key 会发给第三方
+      // 🔴 v1.2.36：apiBase 严格校验（必须 https + 白名单主机名）——原来任意地址可保存，key 会发给第三方
+      // 🔴 v1.2.37：白名单扩展为 api.deepseek.com + opencode.ai
       if (!API.validateBase(base)) {
-        this.toast('API 地址不合法：必须是 https://api.deepseek.com/...（防止 key 发给陌生服务器）');
+        this.toast('API 地址不合法：必须是 api.deepseek.com 或 opencode.ai（防止 key 发给陌生服务器）');
         return;
       }
       Settings.set('apiKey', key);
@@ -2706,13 +2715,40 @@ const UI = {
       this.toast('已保存');
     });
 
+    // 获取模型列表（v1.2.37，rikkahub 同款：拉列表→选择→保存；按 provider 缓存，切换回来不丢）
+    const fetchModelsBtn = this.el('fetchModelsBtn');
+    const fetchModelsRes = this.el('fetchModelsResult');
+    if (fetchModelsBtn) {
+      fetchModelsBtn.addEventListener('click', async () => {
+        const p = this.el('setProvider').value;
+        const key = this.el('setApiKey').value.trim();
+        const base = this.el('setApiBase').value.trim();
+        if (!key) { this.toast('先填 API Key'); return; }
+        if (!API.validateBase(base)) { this.toast('API 地址不合法'); return; }
+        API.key = key; API.base = base;
+        fetchModelsBtn.disabled = true;
+        if (fetchModelsRes) { fetchModelsRes.textContent = '获取中…'; fetchModelsRes.className = 'test-result'; }
+        try {
+          const ids = await API.listModels();
+          Settings.set('fetchedModels_' + p, ids);
+          fillModels(p);
+          if (fetchModelsRes) { fetchModelsRes.textContent = `已获取 ${ids.length} 个模型`; fetchModelsRes.className = 'test-result ok'; }
+          this.toast('模型列表已更新');
+        } catch (e) {
+          if (fetchModelsRes) { fetchModelsRes.textContent = '❌ ' + (e.message || e); fetchModelsRes.className = 'test-result err'; }
+        }
+        fetchModelsBtn.disabled = false;
+      });
+    }
+
     // 测试连接
     this.el('testAiBtn').addEventListener('click', async () => {
       const key = this.el('setApiKey').value.trim();
       const base = this.el('setApiBase').value.trim();
       if (!key) { this.toast('先填 API Key'); return; }
       // 🔴 v1.2.36：测试连接同样校验（原来完全不校验，key 会被发往任意端点且成功即保存）
-      if (!API.validateBase(base)) { this.toast('API 地址不合法：必须是 https://api.deepseek.com/...'); return; }
+      // 🔴 v1.2.37：白名单扩展为 deepseek + opencode
+      if (!API.validateBase(base)) { this.toast('API 地址不合法：必须是 api.deepseek.com 或 opencode.ai'); return; }
       API.key = key; API.base = base;
       const res = this.el('testResult');
       res.className = 'test-result';

@@ -295,7 +295,8 @@ ${this.forgetLine()}
 
   /* ---------- 一键建卡：粘贴英文文本提取生词 ---------- */
   async buildCards(text) {
-    const model = Settings.get('buildModel', 'mimo-v2.5');
+    // 🔴 v1.2.37：修残留默认值（v1.2.36 只修了复盘那处，这处还是 mimo-v2.5——未保存过设置的用户必 400）
+    const model = Settings.get('buildModel', 'deepseek-v4-flash');
     const resp = await API.chat([
       { role: 'system', content: `你是英语学习助手。下面是用户粘贴的英文文本（可能是论文摘要、文章、对话等）。
 提取其中对用户（中国研究生，四级水平）最有学习价值的 5-8 个生词/短语，输出 JSON（不要输出其他内容）：

@@ -1,6 +1,6 @@
 {
-  "version": "1.2.36",
-  "notes": "1.2.36：安全加固（导入防注入、API 地址校验、CSP）+ 思考强度可调（设置页 13 个下拉：关闭思考/low/high/max）+ 超长对话 AI 压缩不截断 + 积分公平修复（长会话每天可拿分、删词重建不能刷分）+ 修复 TTS 快速切换播错句、新用户复盘失败、句子本空词不显示等",
-  "apk": "EnglishApp-v1.2.36.apk",
-  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.36/EnglishApp-v1.2.36.apk"
+  "version": "1.2.37",
+  "notes": "1.2.37：OpenCode Go 订阅套餐直连恢复（网关 Cloudflare 拦截已放开，设置页切换提供商，无需代理）+ 获取模型列表（一键拉取网关全量模型并选择保存，按提供商缓存）+ 修复查词结果太长无法滚动（弹窗内容区可滚动）+ 修复一键建卡残留错误模型默认值",
+  "apk": "EnglishApp-v1.2.37.apk",
+  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.37/EnglishApp-v1.2.37.apk"
 }

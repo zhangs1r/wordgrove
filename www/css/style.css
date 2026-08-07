@@ -656,6 +656,19 @@ body {
 }
 #gardenFullCanvas { width: 100%; height: auto; display: block; image-rendering: pixelated; }
 .garden-full-hint { text-align: center; font-size: 12px; color: var(--muted); margin-top: 10px; }
+/* 🔴 最近 7 天每日积分条（dayLog） */
+.garden-week-row {
+  display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;
+  margin-top: 10px; padding: 8px 10px;
+  background: var(--card); border-radius: 12px; border: 1px solid var(--border);
+}
+.gw-item {
+  font-size: 12px; color: var(--muted);
+  background: var(--card-2); border-radius: 999px; padding: 4px 10px;
+  display: inline-flex; align-items: baseline; gap: 4px;
+}
+.gw-item b { color: var(--text); font-weight: 600; }
+.gw-empty { font-size: 12px; color: var(--muted); }
 
 /* 像素风按钮（v0.34 装饰风格） */
 .px-btn {

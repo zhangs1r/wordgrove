@@ -100,6 +100,7 @@ const Farm = {
       points: 0, totalEarned: 0, dayPoints: 0, day: FARM.dayKey(now),
       planted: {}, stage: 0, decor: [], owned: [],
       dayCounts: {}, // 🔴 v1.1：各来源当日发放次数（maxDay 语义修复）
+      dayLog: [],    // 🔴 每日积分记录 [{day, pts}]（跨天结算，保留最近 14 天，今日页/小院可回看）
       sealed: false, history: [],
     };
   },
@@ -118,10 +119,28 @@ const Farm = {
       try { s = await this.txGet('garden'); } catch (e) { console.warn('farm load txGet failed, fallback backup', e); }
       const fromBackup = this._fromBackup();
       // 🔴 v1.2.6：IndexedDB 读不到 → 从 localStorage 备份恢复（防更新后数据丢失），再没有才新建
-      this._state = s || fromBackup || this.defaultState();
-      if (!s && fromBackup) { try { await this.txPut('garden', this._state); } catch (e) {} }
-      this._state.dayCounts = this._state.dayCounts || {}; // 🔴 v1.1 旧数据迁移
-      this._migrateDecor(this._state);
+      // 🔴 备份择优：旧版本（v0.33~v1.2.37）存在"内存加分但 IDB 事务 abort 回滚"的 bug（_addPointsTx 裸 key
+      //   ReferenceError），IDB 常落后于 farm_backup——totalEarned 单调不减，备份更大说明备份更新 → 用备份
+      //   找回旧版丢掉的积分，并写回 IDB
+      let pick = s || fromBackup;
+      if (s && fromBackup && (fromBackup.totalEarned || 0) > (s.totalEarned || 0)) {
+        console.warn('farm IDB 落后于备份（旧版积分落库 bug），用备份恢复并写回 IDB');
+        pick = fromBackup;
+      }
+      // 🔴 竞态修复：只在内存 _state 仍为空时才设置——更新后首次启动瞬间，renderGarden 的 load 可能
+      //   与第一笔 addPoints 并发：addPoints 已把新状态写进内存，这里若直接赋值会把新状态回退成旧值，
+      //   之后 save() 把旧状态写回 IDB → 刚拿的积分凭空消失（用户"更新版本后积分被清空"的代码路径之一）
+      if (!this._state) {
+        this._state = pick || this.defaultState();
+        // 用了备份（IDB 为空或落后）→ 写回 IDB 同步
+        if (pick && pick !== s) { try { await this.txPut('garden', this._state); } catch (e) {} }
+        this._state.dayCounts = this._state.dayCounts || {};
+        this._state.dayLog = this._state.dayLog || [];
+        this._migrateDecor(this._state);
+        // 🔴 备份保鲜：load 成功总是把最新状态刷进 localStorage 备份（覆盖安装后 IDB 读到的可能比备份新，
+        //   若此时不刷，之后 IDB 一旦被清，备份恢复出来的是旧状态）
+        try { localStorage.setItem('farm_backup', JSON.stringify(this._state)); } catch (e) { console.warn('farm_backup 保鲜写失败', e); }
+      }
     }
     // 跨月封存（统一走 sealState，load 与 addPoints 共用同一条路径）
     const st = this._state;
@@ -144,6 +163,9 @@ const Farm = {
     const fresh = this.defaultState();
     fresh.points = st.points || 0;
     fresh.owned = (st.owned || []).slice();
+    // 🔴 每日积分记录结转：跨月封存时把旧月份最后一天的积分也结算进 dayLog（不然月底那天看不到记录）
+    fresh.dayLog = (st.dayLog || []).slice(-13);
+    if (st.day && st.dayPoints > 0) fresh.dayLog.push({ day: st.day, pts: st.dayPoints });
     fresh.history = st.history.slice(0, 36);
     return fresh;
   },
@@ -199,8 +221,27 @@ const Farm = {
   save() {
     return this._enqueue(async () => {
       await this.txPut('garden', this._state);
-      try { localStorage.setItem('farm_backup', JSON.stringify(this._state)); } catch (e) {}
+      this._backup();
     });
+  },
+  /* 🔴 备份写入（localStorage farm_backup）：写失败（配额满）时清理超上限的旧会话腾空间再重试一次；
+     localStorage 满会导致积分备份静默失败——用户更新版本后 IDB 一旦被清，备份形同虚设 */
+  _backup() {
+    try {
+      localStorage.setItem('farm_backup', JSON.stringify(this._state));
+      return true;
+    } catch (e) {
+      console.warn('farm_backup 写入失败（localStorage 可能已满），尝试清理超限会话后重试', e);
+      try {
+        const convs = Settings.get('conversations', []);
+        if (Array.isArray(convs) && convs.length > 40) {
+          Settings.set('conversations', convs.slice(-40)); // 会话 LRU 上限本就是 40
+          localStorage.setItem('farm_backup', JSON.stringify(this._state));
+          return true;
+        }
+      } catch (e2) { console.warn('farm_backup 清理重试失败', e2); }
+      return false;
+    }
   },
   /* 🔴 v1.2.36：备份恢复前过 sanitize（防篡改/脏数据绕过导入门槛直达渲染层） */
   _fromBackup() {
@@ -261,6 +302,10 @@ const Farm = {
       owned: Array.isArray(f.owned) ? f.owned.filter(validDecor) : [],
       // 🔴 v1.2.36：dayCounts 导入即清空——残留"今天已发满"的计数会锁死当天来源（P3-21）
       dayCounts: {},
+      // 🔴 每日积分记录清洗（day/pts 钳制，保留最近 14 天）
+      dayLog: Array.isArray(f.dayLog)
+        ? f.dayLog.filter(d => d && typeof d === 'object').slice(-14).map(d => ({ day: String(d.day || ''), pts: num(d.pts, 9999) }))
+        : [],
       sealed: false,
       history: cleanHistory(f.history),
     };
@@ -322,7 +367,13 @@ const Farm = {
             }
             if (!st) st = this.defaultState();
             st.dayCounts = st.dayCounts || {};
-            if (st.day !== today) { st.day = today; st.dayPoints = 0; st.dayCounts = {}; }
+            if (st.day !== today) {
+              // 🔴 每日积分记录：昨天结算进 dayLog（今日页/小院可回看每日积分，不再"当天到第二天就没记录"）
+              st.dayLog = st.dayLog || [];
+              if (st.day && st.dayPoints > 0) st.dayLog.push({ day: st.day, pts: st.dayPoints });
+              st.dayLog = st.dayLog.slice(-14);
+              st.day = today; st.dayPoints = 0; st.dayCounts = {};
+            }
             // 🔴 v1.1：maxDay = 当日发放次数上限（按 source 独立统计）
             if (opts.maxDay && (st.dayCounts[source] || 0) >= opts.maxDay) { resolve(null); return; }
             let p = opts.pts || 0;
@@ -346,9 +397,12 @@ const Farm = {
             if (newStage !== st.stage) st.stage = newStage;
             store.put(st);
             Farm._state = st; // 同步内存缓存
-            try { localStorage.setItem('farm_backup', JSON.stringify(st)); } catch (e) {} // 🔴 v1.2.6：事务内同步备份
+            this._backup(); // 🔴 v1.2.6：事务内同步备份（v1.2.36 起带写失败兜底）
             if (!truncated) {
-              store.put({ id: evId, source, key, pts: p, at: Date.now() });
+              // 🔴 修复"每日积分没记录/更新版本清空"的根因（v0.33 引入）：这里原来用了未定义的裸变量 `key`
+              //   （函数签名是 _addPointsTx(source, evId, opts)）→ 每次正常发分都抛 ReferenceError →
+              //   IDB 事务整体 abort → 积分只存在于内存，从不落库 → 当天看着有、重启/更新后从 IDB 读回旧值
+              store.put({ id: evId, source, key: opts.key == null ? '' : String(opts.key), pts: p, at: Date.now() });
               // 🔴 v1.2.36：ev_ 幂等记录定期清理（180 天前的键只占空间，防重放不需要永久保留）
               try {
                 const cutoff = Date.now() - 180 * 864e5;

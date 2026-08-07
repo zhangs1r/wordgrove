@@ -20,7 +20,8 @@ const Icons = {
   user: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>',
   pen: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>',
   house: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11.5 12 3l9 8.5"/><path d="M5 10v11h14V10"/><path d="M9.5 21v-6h5v6"/></svg>',
-  };
+  copy: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+};
 
 const UI = {
   state: {
@@ -179,6 +180,33 @@ const UI = {
     });
   },
 
+  /* 复制整段话到剪贴板（navigator.clipboard 优先，失败降级 textarea+execCommand；
+     Capacitor WebView 是 https://localhost 安全上下文，clipboard API 可用） */
+  async copyText(t) {
+    if (!t) return;
+    let ok = false;
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(t);
+        ok = true;
+      }
+    } catch (e) {}
+    if (!ok) {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = t;
+        ta.setAttribute('readonly', '');
+        ta.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0';
+        document.body.appendChild(ta);
+        ta.select();
+        ta.setSelectionRange(0, t.length);
+        ok = document.execCommand('copy');
+        ta.remove();
+      } catch (e) {}
+    }
+    this.toast(ok ? '已复制整段 ✓' : '复制失败，长按文字手动复制吧');
+  },
+
   /* 静态 SVG 图标注入（tab/标题/关闭按钮） */
   injectIcons() {
     const tabMap = { today: Icons.sprout, garden: Icons.house, chat: Icons.chat, tavern: Icons.mug, words: Icons.book, settings: Icons.gear }; // 🔴 v1.2.1：小院 tab 图标 树→房子
@@ -293,6 +321,11 @@ const UI = {
     this.el('gardenStage').textContent = 'Lv' + (st.stage + 1);
     this.el('gardenPoints2').textContent = st.points;
     this.el('gardenStage2').textContent = 'Lv' + (st.stage + 1);
+    // 🔴 今日积分显示（dayPoints/日上限）：让用户能直观看到"今天的积分"有记录
+    const tp = this.el('gardenTodayPoints');
+    if (tp) tp.textContent = st.dayPoints;
+    const tp2 = this.el('gardenTodayPoints2');
+    if (tp2) tp2.textContent = st.dayPoints;
     const now = FARM.now();
     this.el('todayVeggieDate').textContent = now.getMonth() + 1 + '月' + now.getDate() + '日';
     this.el('todayVeggieSeason').textContent = seasonNames[FARM.seasonOf(now.getMonth() + 1)] || '';
@@ -451,6 +484,17 @@ const UI = {
     this.el('gardenFullSeason').textContent = seasonNames[FARM.seasonOf(st.month)] || '';
     this.el('gardenFullPoints').textContent = st.points;
     this.el('gardenFullStage').textContent = 'Lv' + (st.stage + 1);
+    // 🔴 今日积分显示
+    const gfp = this.el('gardenFullTodayPoints');
+    if (gfp) gfp.textContent = st.dayPoints;
+    // 🔴 最近 7 天每日积分条（dayLog：每天结算一次，回看"昨天赚了多少"）
+    const weekRow = this.el('gardenWeekRow');
+    if (weekRow) {
+      const log = (st.dayLog || []).slice(-7);
+      weekRow.innerHTML = log.length
+        ? log.map(d => `<span class="gw-item"><b>${this.esc(String(d.day).split('-').slice(1).join('/'))}</b>+${d.pts}</span>`).join('')
+        : '<span class="gw-empty">还没有每日记录——学一点，积分就记上</span>';
+    }
     const cv = this.el('gardenFullCanvas');
     if (!cv) return;
     const ctx = cv.getContext('2d');
@@ -1407,7 +1451,9 @@ const UI = {
       const isLastUser = isUser && idx === lastUserIdx && hArr.length > 0;
       const rbBtn = isUser && !isLastUser ? `<button class="msg-chip-btn" data-rb="${idx}" title="回滚到此（删除这条及以下）">${Icons.undo}</button>` : '';
       const rgBtn = isUser && isLastUser ? `<button class="msg-chip-btn" data-rg title="重新生成">${Icons.refresh}</button>` : '';
-      const actions = `<div class="msg-actions">${readBtn}<button class="msg-chip-btn" data-sel="${this.esc(text)}" title="查单词">${Icons.search}</button><button class="msg-chip-btn" data-sent="${this.esc(text)}" title="查这句">${Icons.chat}</button>${rbBtn}${rgBtn}</div>`;
+      // 🔴 复制按钮：AI/旁白/user 消息都带，点击把整段话复制到剪贴板
+      const cpBtn = `<button class="msg-chip-btn" data-cp="${this.esc(text)}" title="复制整段">${Icons.copy}</button>`;
+      const actions = `<div class="msg-actions">${readBtn}<button class="msg-chip-btn" data-sel="${this.esc(text)}" title="查单词">${Icons.search}</button><button class="msg-chip-btn" data-sent="${this.esc(text)}" title="查这句">${Icons.chat}</button>${cpBtn}${rbBtn}${rgBtn}</div>`;
       div.innerHTML = `<div class="msg-en">${this.renderMsgText(text)}</div>${cn}${actions}`;
       this.bindTapWords(div);
       if (role === 'assistant') {
@@ -1433,6 +1479,11 @@ const UI = {
       if (rgBtnEl) rgBtnEl.addEventListener('click', (e) => {
         e.stopPropagation();
         this.regenerateMsg();
+      });
+      const cpBtnEl = div.querySelector('[data-cp]');
+      if (cpBtnEl) cpBtnEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.copyText(cpBtnEl.dataset.cp);
       });
     }
     area.appendChild(div);
@@ -3191,10 +3242,15 @@ const UI = {
     div.className = 'msg msg-ai msg-rp-char';
     const mark = voice === 'm' ? '♂ ' : '♀ ';
     const idx = idxArg !== undefined ? idxArg : this.state.rpHistory.length;
-    div.innerHTML = `<div class="msg-rp-name">${mark}${this.esc(name)}</div><div class="msg-en">${this.renderMsgText(line)}</div><div class="msg-actions"><button class="msg-chip-btn" data-say="${this.esc(line)}" data-voice="${this.esc(voice || 'f')}" title="朗读">${this.sayIcon()}</button><button class="msg-chip-btn" data-sel="${this.esc(line)}" title="查单词">${Icons.search}</button><button class="msg-chip-btn" data-sent="${this.esc(line)}" title="查这句">${Icons.chat}</button></div>`;
+    div.innerHTML = `<div class="msg-rp-name">${mark}${this.esc(name)}</div><div class="msg-en">${this.renderMsgText(line)}</div><div class="msg-actions"><button class="msg-chip-btn" data-say="${this.esc(line)}" data-voice="${this.esc(voice || 'f')}" title="朗读">${this.sayIcon()}</button><button class="msg-chip-btn" data-sel="${this.esc(line)}" title="查单词">${Icons.search}</button><button class="msg-chip-btn" data-sent="${this.esc(line)}" title="查这句">${Icons.chat}</button><button class="msg-chip-btn" data-cp="${this.esc(line)}" title="复制整段">${Icons.copy}</button></div>`;
     this.bindTapWords(div);
     const sb = div.querySelector('[data-say]');
     if (sb) this.addSpeakListener(sb, sb.dataset.say, sb.dataset.voice || 'f');
+    const cpBtn = div.querySelector('[data-cp]');
+    if (cpBtn) cpBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.copyText(cpBtn.dataset.cp);
+    });
     const selBtn = div.querySelector('[data-sel]');
     if (selBtn) selBtn.addEventListener('click', (e) => {
       e.stopPropagation();

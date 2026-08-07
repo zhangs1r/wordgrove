@@ -35,7 +35,7 @@
     <div class="farm-head">
       <div class="farm-h-left">
         <div class="farm-title">言木小院 · <span id="gardenMonth">8月</span></div>
-        <div class="farm-sub">本月积分 <b id="gardenPoints">0</b> · 作物 <span id="gardenStage">Lv1</span></div>
+        <div class="farm-sub">今日积分 <b id="gardenTodayPoints">0</b>/50 · 本月积分 <b id="gardenPoints">0</b> · 作物 <span id="gardenStage">Lv1</span></div>
       </div>
       <div class="farm-h-right">
         <button id="gardenShopBtn" class="btn btn-ghost btn-sm">商店</button>
@@ -52,7 +52,7 @@
       </div>
       <div class="today-veggie-info">
         <div class="today-veggie-date"><span id="todayVeggieDate">8月2日</span> · <span id="todayVeggieSeason">夏</span></div>
-        <div class="today-veggie-points">本月积分 <b id="gardenPoints2">0</b> · 全院等级 <span id="gardenStage2">Lv1</span></div>
+        <div class="today-veggie-points">今日积分 <b id="gardenTodayPoints2">0</b>/50 · 本月积分 <b id="gardenPoints2">0</b> · 全院等级 <span id="gardenStage2">Lv1</span></div>
         <button class="btn btn-primary btn-sm" id="todayGoGardenBtn">去小院看看</button>
       </div>
     </div>
@@ -73,7 +73,7 @@
       <div class="garden-full-head">
         <div class="garden-full-title">
           <div class="garden-full-month"><span id="gardenFullMonth">8月</span> · <span id="gardenFullSeason">夏</span></div>
-          <div class="garden-full-sub">本月积分 <b id="gardenFullPoints">0</b> · 阶段 <span id="gardenFullStage">Lv1</span></div>
+          <div class="garden-full-sub">今日积分 <b id="gardenFullTodayPoints">0</b>/50 · 本月积分 <b id="gardenFullPoints">0</b> · 阶段 <span id="gardenFullStage">Lv1</span></div>
         </div>
         <div class="garden-full-actions">
           <button id="gardenFullShopBtn" class="px-btn small">商店</button>
@@ -87,6 +87,8 @@
         <div id="gardenEditLayer" class="garden-edit-layer hidden"></div>
       </div>
       <div class="garden-full-hint" id="gardenFullHint">学习种下今天的作物 · 点格子看详情</div>
+      <!-- 🔴 最近 7 天每日积分条（dayLog，跨天结算） -->
+      <div class="garden-week-row" id="gardenWeekRow"></div>
       <!-- 编辑模式操作条（放 canvas 正下方，保证编辑时可见） -->
       <div id="gardenEditBar" class="garden-edit-bar hidden">
         <span class="garden-edit-tip">点选装饰 → 在小院里点位置摆放（可拖动）</span>

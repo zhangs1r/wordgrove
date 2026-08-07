@@ -231,6 +231,11 @@ const TTS = {
   pumpQueue() {
     if (this.playing || !this.queue.length || this.engine !== 'ready' || !this.worker) return;
     const item = this.queue.shift();
+    // 🔴 修复"单词朗读读成乱七八糟"：所有 item 出队时统一分配合成 id（缓存命中路径也必须分配）——
+    //   原来只有合成路径有 id，缓存项的 this._current.id 是 undefined → _onResult 的 id 校验
+    //   `this._current.id != null` 对缓存项失效：被打断的旧合成结果到达时会打到缓存项上，
+    //   播错音频 + 把旧音频写进新词的 AudioCache 缓存 → 之后点该词永远读错内容
+    item.id = ++this.synthId;
     this.playing = true;
     this._current = item;
     this._pending(true);
@@ -242,35 +247,36 @@ const TTS = {
         this._pending(false);
         // 🔴 v1.1：playing 保持 true 直到播放结束（原来这里提前置 false → 播放中再点不触发打断 → 音频重叠）
         this._currentText = item.text;
-        this.playSamples(new Float32Array(cached), 22050, () => {
-          this._currentText = null;
-          this.playing = false;
-          this._current = null;
-          item.resolve(true); this.pumpQueue();
-        });
+        this.playSamples(new Float32Array(cached), 22050, () => this._finishItem(item, true));
         return;
       }
-      // 🔴 v1.2.36：合成 id 记到 item 上——_onResult/_onError 用 id 校验当前项，
-      //   否则快速切换朗读时旧句子的结果会打到新 item 上（听到 A 的音频、B 按钮提前复位）
-      const id = ++this.synthId;
-      item.id = id;
-      this.worker.postMessage({ type: 'synth', id, text: item.text, rate: item.rate, voice: item.voice });
+      this.worker.postMessage({ type: 'synth', id: item.id, text: item.text, rate: item.rate, voice: item.voice });
       // 兜底超时
       this._synthTimer = setTimeout(() => {
         if (this.playing && this._current === item) {
           this._pending(false);
-          this.playing = false;
-          this._current = null;
-          item.resolve(false);
-          this.pumpQueue();
+          this._finishItem(item, false);
         }
       }, 30000);
     });
   },
 
+  /* 🔴 统一完成路径：只有当前项才清播放状态；被替换/打断的旧项只 settle 不碰状态
+     （旧播放的 onended 晚到时若误清新任务状态 → 新句子播放中 playing=false → 再点不打断 → 音频重叠） */
+  _finishItem(item, ok) {
+    const isCurrent = this._current === item;
+    if (isCurrent) {
+      this._currentText = null;
+      this.playing = false;
+      this._current = null;
+    }
+    item.resolve(ok);
+    if (isCurrent) this.pumpQueue();
+  },
+
   _onResult(id, samples, sampleRate) {
-    // 🔴 v1.2.36：id 校验——旧合成结果（被打断的任务）到达时直接丢弃，不能打到新 item 上
-    if (!this._current || (this._current.id != null && id !== this._current.id)) return;
+    // 🔴 无条件 id 校验（缓存项现在也有 id）：旧合成结果（被打断的任务）到达时直接丢弃，不能打到新 item 上
+    if (!this._current || id !== this._current.id) return;
     clearTimeout(this._synthTimer);
     this._pending(false);
     const item = this._current;
@@ -278,31 +284,20 @@ const TTS = {
       AudioCache.put(item.text, item.rate, item.voice, samples); // 存入缓存（不阻塞播放）
       // 🔴 v1.1：playing 保持 true 直到播放结束（原来合成完成就置 false → 播放中再点不打断 → 音频重叠）
       this._currentText = item.text;
-      this.playSamples(samples, sampleRate, () => {
-        this._currentText = null;
-        this.playing = false;
-        this._current = null;
-        item.resolve(true); this.pumpQueue();
-      });
+      this.playSamples(samples, sampleRate, () => this._finishItem(item, true));
     } else {
-      this.playing = false;
-      this._current = null;
-      item.resolve(false);
-      this.pumpQueue();
+      this._finishItem(item, false);
     }
   },
 
   _onError(id, message) {
     console.log('tts synth error', message);
-    // 🔴 v1.2.36：id 校验同 _onResult（旧任务的错误不打到新任务上）
-    if (!this._current || (this._current.id != null && id !== this._current.id)) return;
+    // 🔴 无条件 id 校验同 _onResult（旧任务的错误不打到新任务上）
+    if (!this._current || id !== this._current.id) return;
     clearTimeout(this._synthTimer);
     this._pending(false);
-    this.playing = false;
     const item = this._current;
-    this._current = null;
-    item.resolve(false);
-    this.pumpQueue();
+    this._finishItem(item, false);
   },
 
   _drainFail() {

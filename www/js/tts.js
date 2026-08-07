@@ -210,19 +210,19 @@ const TTS = {
       });
     }
     if (this.engine === 'loading') {
+      // 🔴 修复"朗读读成乱七八糟"第二根因：原来每个请求各自等 8 秒后并发降级系统 TTS——
+      //   多个 speakSystem 同时跑，speechSynthesis.cancel() 互相打架/声音叠读；
+      //   现在 loading 期间所有请求进同一个队列，ready 后统一走 Piper 顺序合成；
+      //   只有引擎真正不可用（20 秒看门狗）才一次性降级
       return new Promise((resolve) => {
-        const t0 = Date.now();
-        const wait = () => {
-          if (this.engine === 'ready') {
-            this.queue.push({ text, rate, voice, resolve });
-            this.pumpQueue();
-          } else if (this.engine === 'unavailable' || Date.now() - t0 > 8000) {
-            resolve(this.speakSystem(text, rate));
-          } else {
-            setTimeout(wait, 150);
+        this.queue.push({ text, rate, voice, resolve });
+        this._loadingFallbackTimer = this._loadingFallbackTimer || setTimeout(() => {
+          this._loadingFallbackTimer = null;
+          if (this.engine !== 'ready' && this.queue.length) {
+            this.engine = 'unavailable';
+            this._drainFail();
           }
-        };
-        wait();
+        }, 20000);
       });
     }
     return this.speakSystem(text, rate);
@@ -344,28 +344,46 @@ const TTS = {
 
   /* 系统引擎：原生 TTS 插件优先，fallback speechSynthesis */
   async speakSystem(text, rate) {
+    const r = rate || this.rate; // 🔴 防御：调用方漏传 rate 时用默认（否则 u.rate=undefined 报 non-finite）
     if (this.usingNative) {
       try {
         const plugin = window.Capacitor.Plugins.TextToSpeech;
         const voiceIdx = Settings.get('voiceIdx', -1);
+        // 🔴 先停掉之前的（插件默认可能排队不打断 → 点单词却先听上一句长文本）
+        try { plugin.stop(); } catch {}
+        this.playing = true;
+        this._currentText = text;
         await plugin.speak({
-          text, lang: 'en-US', rate, pitch: 1.0, volume: 1.0,
+          text, lang: 'en-US', rate: r, pitch: 1.0, volume: 1.0,
           ...(voiceIdx >= 0 ? { voice: voiceIdx } : {}),
         });
+        this._currentText = null;
+        this.playing = false;
         return true;
       } catch (e) {
         console.log('native TTS fail, fallback', e);
+        this._currentText = null;
+        this.playing = false;
       }
     }
     if (!('speechSynthesis' in window)) return false;
     return new Promise(resolve => {
       try { speechSynthesis.cancel(); } catch {}
+      // 🔴 系统引擎也纳入 playing 状态：打断/同句再点取消/防并发叠读
+      this.playing = true;
+      this._currentText = text;
       const u = new SpeechSynthesisUtterance(text);
       u.lang = 'en-US';
       if (this.voice) u.voice = this.voice;
-      u.rate = rate;
-      u.onend = () => resolve(true);
-      u.onerror = () => resolve(false);
+      u.rate = r;
+      u.onend = () => {
+        if (this._currentText === text) { this._currentText = null; this.playing = false; }
+        resolve(true);
+      };
+      u.onerror = () => {
+        if (this._currentText === text) { this._currentText = null; this.playing = false; }
+        resolve(false);
+      };
       const keepAlive = setInterval(() => {
         if (!speechSynthesis.speaking) clearInterval(keepAlive);
         else { speechSynthesis.pause(); speechSynthesis.resume(); }

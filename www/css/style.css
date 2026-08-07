@@ -721,6 +721,7 @@ body {
 }
 .rc-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .rc-word { font-weight: 700; font-size: 17px; color: var(--text, #262B24); }
+.rc-say { flex: 0 0 auto; align-self: center; margin-left: 2px; }
 .rc-phonetic { color: var(--muted, #888); font-size: 12px; }
 .rc-tip { margin-left: auto; color: var(--muted, #888); font-size: 12px; }
 .rc-body { margin-top: 8px; padding-top: 8px; border-top: 1px dashed rgba(0, 0, 0, 0.15); }

@@ -1570,13 +1570,16 @@ const UI = {
     card.dataset.wid = w.id;
     const remain = this.state.reviewQueue.length;
     card.innerHTML = `
-      <div class="rc-head"><span class="rc-word">${this.esc(w.word)}</span>${w.phonetic ? `<span class="rc-phonetic">${this.esc(w.phonetic)}</span>` : ''}<span class="rc-tip">${remain ? `还有 ${remain} 张 · ` : ''}这个词还记得吗？</span></div>
+      <div class="rc-head"><span class="rc-word">${this.esc(w.word)}</span><button class="wi-say rc-say" data-say="${this.esc(w.word)}" title="朗读单词">${this.sayIcon()}</button>${w.phonetic ? `<span class="rc-phonetic">${this.esc(w.phonetic)}</span>` : ''}<span class="rc-tip">${remain ? `还有 ${remain} 张 · ` : ''}这个词还记得吗？</span></div>
       <div class="rc-body hidden"><div class="rc-meaning">${this.esc(w.meaning || '')}</div>${w.example ? `<div class="rc-example">${this.esc(w.example)}</div>` : ''}</div>
       <div class="rc-actions">
         <button class="rc-btn rc-forgot" data-g="0">忘了</button>
         <button class="rc-btn rc-blur" data-g="1">模糊</button>
         <button class="rc-btn rc-ok" data-g="2">记得</button>
       </div>`;
+    // 🔴 复习卡朗读按钮：读的就是单词本身（用户"点单词卡却听到乱七八糟"——以前复习卡没有朗读按钮，容易误点消息的整段朗读）
+    const rcSay = card.querySelector('.rc-say');
+    if (rcSay) this.addSpeakListener(rcSay, rcSay.dataset.say);
     card.querySelectorAll('.rc-btn').forEach(btn => {
       btn.addEventListener('click', () => this.reviewCardGrade(card, w, parseInt(btn.dataset.g, 10)));
     });

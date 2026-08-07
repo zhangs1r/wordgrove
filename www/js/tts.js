@@ -278,6 +278,15 @@ const TTS = {
     // 🔴 无条件 id 校验（缓存项现在也有 id）：旧合成结果（被打断的任务）到达时直接丢弃，不能打到新 item 上
     if (!this._current || id !== this._current.id) return;
     clearTimeout(this._synthTimer);
+    // 🔴 合成输出自检：全零/异常短 = 引擎推理输出垃圾（Android WebView 的 WebGPU/jsep 路径
+    //   对 int8 模型推理错误时会输出噪声/静音——已移除 jsep.wasm 强制纯 wasm EP，这里兜底）→ 降级系统引擎
+    if (!samples || samples.length < 500 || !samples.some(v => Math.abs(v) > 0.001)) {
+      console.warn('tts synth output abnormal, fallback system engine', samples && samples.length);
+      this._pending(false);
+      const item = this._current;
+      this._finishItem(item, this.speakSystem(item.text, item.rate));
+      return;
+    }
     this._pending(false);
     const item = this._current;
     if (samples && samples.length) {

@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/zhangs1r/wordgrove/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License"></a>
-  <img src="https://img.shields.io/badge/version-1.2.37-blue" alt="Version 1.2.37">
+  <img src="https://img.shields.io/badge/version-1.2.38-blue" alt="Version 1.2.38">
   <img src="https://img.shields.io/badge/platform-Android%20%2B%20Web-orange" alt="Platform">
   <img src="https://img.shields.io/badge/AI-DeepSeek%20v4--flash-blue" alt="AI">
   <img src="https://img.shields.io/badge/TTS-Piper%20offline-purple" alt="TTS">
@@ -104,7 +104,8 @@ cd android && ./gradlew assembleDebug --no-daemon
 
 ## 📋 更新日志
 
-- **v1.2.37（最新）**：**OpenCode Go 订阅套餐直连恢复**（网关 Cloudflare 拦截已放开，设置页切「OpenCode Go」提供商即可，无需服务器代理）；**获取模型列表**（设置页一键拉取网关全量模型 25 个，选择对话/建卡模型并保存，按提供商缓存，切换不丢）；**修复查词结果太长无法上下拖动**（弹窗内容区统一可滚动、头部固定）；**修复一键建卡残留错误模型默认值**（未保存过设置的用户建卡不再 400）
+- **v1.2.38（最新）**：**修复积分不落库的根因**（旧版积分写入时事务异常回滚——当天的积分第二天/更新版本后会消失，升级后自动从本地备份找回此前丢掉的积分）；**每日积分记录**（今日页显示今日积分/50 进度，小院可回看最近 7 天每天得分）；**修复单词朗读乱音**（移除 WebGPU 运行时强制稳定引擎、朗读自动打断不叠音、复习卡可直接点喇叭读单词）；**一键复制**（对话与剧场所有消息——AI/旁白/角色/我的输入——新增复制按钮，整段话进剪贴板）
+- **v1.2.37**：**OpenCode Go 订阅套餐直连恢复**（网关 Cloudflare 拦截已放开，设置页切「OpenCode Go」提供商即可，无需服务器代理）；**获取模型列表**（设置页一键拉取网关全量模型 25 个，选择对话/建卡模型并保存，按提供商缓存，切换不丢）；**修复查词结果太长无法上下拖动**（弹窗内容区统一可滚动、头部固定）；**修复一键建卡残留错误模型默认值**（未保存过设置的用户建卡不再 400）
 - **v1.2.36**：安全加固（导入备份重建式清洗防注入、8 处属性转义补全、API 地址严格校验、CSP、Android 关闭系统备份、导入确认+可撤销）；**AI 思考强度可调**（设置页 13 个下拉：关闭思考/low/high/max，官方档位）；**超长对话 AI 压缩**（超过 220 条自动压缩早期记录，不再截断）；积分公平性修复（长会话每天可拿对话分、删词重建不再刷复习分、回滚重发不再刷剧场分、顶满 50 分不再烧档位）；修复 TTS 快速切换播错句、新用户复盘/建卡失败、句子本在无单词时不显示等 bug
 - **v1.2.35**：查词思考模式关闭（thinking disabled，最快）；本地缓存 LRU 300 保留
 - **v1.2.34**：网页版刷新永不更新完整修复（SW 注册 updateViaCache none + 缓存名升 v3 + 版本兜底自动刷新）

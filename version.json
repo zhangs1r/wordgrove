@@ -1,6 +1,6 @@
 {
-  "version": "1.2.37",
-  "notes": "1.2.37：OpenCode Go 订阅套餐直连恢复（网关 Cloudflare 拦截已放开，设置页切换提供商，无需代理）+ 获取模型列表（一键拉取网关全量模型并选择保存，按提供商缓存）+ 修复查词结果太长无法滚动（弹窗内容区可滚动）+ 修复一键建卡残留错误模型默认值",
-  "apk": "EnglishApp-v1.2.37.apk",
-  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.37/EnglishApp-v1.2.37.apk"
+  "version": "1.2.38",
+  "notes": "1.2.38：修复积分不落库的根因（旧版积分写入时事务异常回滚，当天的积分第二天/更新版本后会消失——升级后会自动从本地备份找回此前丢掉的积分）+ 新增每日积分记录（今日页显示今日积分/50，小院可回看最近 7 天每天得分）+ 修复单词朗读乱音（移除 WebGPU 运行时强制稳定引擎、朗读自动打断不叠音、复习卡可直接点喇叭读单词）+ 对话与剧场所有消息（AI/旁白/角色/我的输入）新增一键复制整段按钮",
+  "apk": "EnglishApp-v1.2.38.apk",
+  "url": "https://github.com/zhangs1r/wordgrove/releases/download/v1.2.38/EnglishApp-v1.2.38.apk"
 }
